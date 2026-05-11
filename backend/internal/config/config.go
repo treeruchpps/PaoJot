@@ -9,6 +9,14 @@ type Config struct {
 	DB     DBConfig
 	JWT    JWTConfig
 	Server ServerConfig
+	Google GoogleConfig
+}
+
+type GoogleConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	FrontendURL  string
 }
 
 type DBConfig struct {
@@ -48,6 +56,12 @@ func Load() *Config {
 		},
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8080"),
+		},
+		Google: GoogleConfig{
+			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
+			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
+			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:3000"),
 		},
 	}
 }

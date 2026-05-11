@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, List, Calendar, ScanLine, Loader2 } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, List, Calendar, ScanLine, Loader2, ChevronDown, DollarSign, Briefcase, Star, Smartphone, TrendingUp, CreditCard, Tag } from 'lucide-react';
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
 import { transactions as txApi, accounts as accountsApi, ocr as ocrApi } from '../services/api';
@@ -12,6 +12,141 @@ const TYPE_ICON  = { income: 'ArrowUp', expense: 'ArrowDown', transfer: 'ArrowLe
 const DAY_TH     = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
 const pad2 = (n) => String(n).padStart(2, '0');
+
+// ─── Account kind icon ────────────────────────────────────────────────────────
+const ACC_KIND_META = {
+  cash:         { icon: 'DollarSign', color: '#10b981' },
+  bank_account: { icon: 'Briefcase',  color: '#3b82f6' },
+  savings:      { icon: 'Star',       color: '#f59e0b' },
+  e_wallet:     { icon: 'Smartphone', color: '#3b82f6' },
+  investment:   { icon: 'TrendingUp', color: '#8b5cf6' },
+  credit_card:  { icon: 'CreditCard', color: '#ef4444' },
+  loan:         { icon: 'Tag',        color: '#f97316' },
+};
+function AccKindIcon({ kind, size = 15 }) {
+  const m = ACC_KIND_META[kind] || { icon: 'DollarSign', color: '#94a3b8' };
+  if (m.icon === 'DollarSign')  return <DollarSign  size={size} color={m.color} />;
+  if (m.icon === 'Briefcase')   return <Briefcase   size={size} color={m.color} />;
+  if (m.icon === 'Star')        return <Star        size={size} color={m.color} />;
+  if (m.icon === 'Smartphone')  return <Smartphone  size={size} color={m.color} />;
+  if (m.icon === 'TrendingUp')  return <TrendingUp  size={size} color={m.color} />;
+  if (m.icon === 'CreditCard')  return <CreditCard  size={size} color={m.color} />;
+  if (m.icon === 'Tag')         return <Tag         size={size} color={m.color} />;
+  return null;
+}
+
+// ─── Custom Select: หมวดหมู่ (category) ──────────────────────────────────────
+function CatSelect({ value, onChange, categories, placeholder = '— ไม่ระบุ —' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = categories.find((c) => c.id === value);
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 hover:border-blue-300 transition-colors">
+        {selected ? (
+          <>
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: (selected.color || '#94a3b8') + '25' }}>
+              <Icon name={selected.icon} size={13} color={selected.color || '#94a3b8'} />
+            </div>
+            <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
+          </>
+        ) : (
+          <span className="flex-1 text-left text-slate-400">{placeholder}</span>
+        )}
+        <ChevronDown size={13} color="#94a3b8"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+          {placeholder && (
+            <button type="button" onClick={() => { onChange(''); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-400 hover:bg-slate-50 transition-colors"
+              style={{ background: !value ? '#f8fafc' : undefined }}>
+              <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0" />
+              <span>{placeholder}</span>
+            </button>
+          )}
+          {categories.map((c) => (
+            <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"
+              style={{ background: value === c.id ? (c.color || '#94a3b8') + '10' : undefined }}>
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: (c.color || '#94a3b8') + '25' }}>
+                <Icon name={c.icon} size={13} color={c.color || '#94a3b8'} />
+              </div>
+              <span className="flex-1 text-left font-medium" style={{ color: value === c.id ? (c.color || '#374151') : '#374151' }}>
+                {c.name}
+              </span>
+              {value === c.id && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Custom Select: บัญชี (account) ──────────────────────────────────────────
+function AccSelect({ value, onChange, accounts }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = accounts.find((a) => a.id === value);
+  const km = (kind) => ACC_KIND_META[kind] || { color: '#94a3b8' };
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 hover:border-blue-300 transition-colors">
+        {selected ? (
+          <>
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: km(selected.kind).color + '25' }}>
+              <AccKindIcon kind={selected.kind} size={13} />
+            </div>
+            <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
+          </>
+        ) : (
+          <span className="flex-1 text-left text-slate-400">เลือกบัญชี</span>
+        )}
+        <ChevronDown size={13} color="#94a3b8"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+          {accounts.map((a) => (
+            <button key={a.id} type="button" onClick={() => { onChange(a.id); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"
+              style={{ background: value === a.id ? km(a.kind).color + '10' : undefined }}>
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: km(a.kind).color + '25' }}>
+                <AccKindIcon kind={a.kind} size={13} />
+              </div>
+              <span className="flex-1 text-left font-medium" style={{ color: value === a.id ? km(a.kind).color : '#374151' }}>
+                {a.name}
+              </span>
+              {value === a.id && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: km(a.kind).color }} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Calendar sub-component ──────────────────────────────────────────────────
 function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
@@ -576,10 +711,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     return nameMatch || noteMatch || amountMatch;
   });
 
-  // ── Summary (from accounts) ───────────────────────────────────────────────
-  const totalAssets = (accounts || []).filter((a) => a.type === 'asset').reduce((s, a) => s + a.balance, 0);
-  const totalLiab   = (accounts || []).filter((a) => a.type === 'liability').reduce((s, a) => s + a.balance, 0);
-  const netWorth    = totalAssets - totalLiab;
+  // ── Summary (from transactions) ───────────────────────────────────────────
+  const totalIncome  = (txList || []).filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalExpense = (txList || []).filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const netBalance   = totalIncome - totalExpense;
 
   return (
     <div className="p-6 space-y-5">
@@ -587,13 +722,13 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       {/* ── Summary cards ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-4">
         {[
+          { label: 'รายได้',  value: totalIncome,  color: '#10b981', bg: '#f0fdf4' },
+          { label: 'รายจ่าย', value: totalExpense, color: '#ef4444', bg: '#fff1f2' },
           {
-            label: 'มูลค่าสุทธิ', value: netWorth,
-            color: netWorth >= 0 ? '#3b82f6' : '#ef4444',
-            bg:    netWorth >= 0 ? '#eff6ff' : '#fff1f2',
+            label: 'คงเหลือ', value: netBalance,
+            color: netBalance >= 0 ? '#3b82f6' : '#ef4444',
+            bg:    netBalance >= 0 ? '#eff6ff' : '#fff1f2',
           },
-          { label: 'สินทรัพย์รวม', value: totalAssets, color: '#10b981', bg: '#f0fdf4' },
-          { label: 'หนี้สินรวม',   value: totalLiab,   color: '#ef4444', bg: '#fff1f2' },
         ].map((s, i) => (
           <div key={i} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '40' }}>
             <p className="text-xs text-slate-500 mb-1">{s.label}</p>
@@ -844,11 +979,12 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             {currentCats.length > 0 && (
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">หมวดหมู่</label>
-                <select value={form.category_id}
-                  onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                  {currentCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <CatSelect
+                  value={form.category_id}
+                  onChange={(v) => setForm({ ...form, category_id: v })}
+                  categories={currentCats}
+                  placeholder=""
+                />
               </div>
             )}
 
@@ -856,29 +992,29 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             {txType !== 'transfer' ? (
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">บัญชี</label>
-                <select value={form.account_id}
-                  onChange={(e) => setForm({ ...form, account_id: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
+                <AccSelect
+                  value={form.account_id}
+                  onChange={(v) => setForm({ ...form, account_id: v })}
+                  accounts={accounts}
+                />
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-500 mb-1 block">จากบัญชี</label>
-                  <select value={form.from_account_id}
-                    onChange={(e) => setForm({ ...form, from_account_id: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
+                  <AccSelect
+                    value={form.from_account_id}
+                    onChange={(v) => setForm({ ...form, from_account_id: v })}
+                    accounts={accounts}
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-500 mb-1 block">ไปยังบัญชี</label>
-                  <select value={form.to_account_id}
-                    onChange={(e) => setForm({ ...form, to_account_id: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
+                  <AccSelect
+                    value={form.to_account_id}
+                    onChange={(v) => setForm({ ...form, to_account_id: v })}
+                    accounts={accounts}
+                  />
                 </div>
               </div>
             )}

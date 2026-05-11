@@ -128,12 +128,6 @@ def ocr_image(image_bytes: bytes, mime: str) -> str:
         top_p=0.6,
         repetition_penalty=1.2,
     )
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return parsed.get("natural_text") or parsed.get("json") or raw
-    except (json.JSONDecodeError, TypeError):
-        pass
     return raw
 
 
@@ -198,8 +192,6 @@ async def process_documents(
     file: Annotated[UploadFile, File(description="รูปใบเสร็จหรือสลิป")],
     type: Literal["receipt", "bank_slip"] = Query(description="ประเภทเอกสาร: receipt หรือ bank_slip"),
 ):
-    print(f"[DEBUG] filename={file.filename} content_type={file.content_type} type={type}")
-
     if not API_KEY:
         raise HTTPException(status_code=500, detail="TYPHOON_API_KEY ยังไม่ได้ตั้งค่า")
 

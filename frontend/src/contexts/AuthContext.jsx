@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { auth as authApi, setTokens, clearTokens, getAccessToken } from '../services/api';
+import { auth as authApi, profile as profileApi, setTokens, clearTokens, getAccessToken } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -13,6 +13,37 @@ export function AuthProvider({ children }) {
   const isAuthenticated = !!user && !!getAccessToken();
 
   const clearError = () => setError(null);
+
+  // รับ token จาก Google OAuth callback URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const accessToken  = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    const oauthError   = params.get('error');
+
+    if (oauthError) {
+      setError('เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+
+    if (accessToken && refreshToken) {
+      setLoading(true);
+      setTokens(accessToken, refreshToken);
+      // ดึงข้อมูล user จาก token (decode หรือเรียก /profile)
+      profileApi.get().then((profile) => {
+        const userData = { id: profile.user_id, username: profile.display_name || '', email: '' };
+        localStorage.setItem('pm_user', JSON.stringify(userData));
+        setUser(userData);
+      }).catch(() => {
+        // fallback: set minimal user object
+        setUser({ id: '', username: '', email: '' });
+      }).finally(() => {
+        setLoading(false);
+        window.history.replaceState({}, '', '/');
+      });
+    }
+  }, []);
 
   const login = useCallback(async (email, password) => {
     setLoading(true);

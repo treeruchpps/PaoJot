@@ -90,6 +90,28 @@ export default function LoginPage({ onSwitch }) {
             </button>
           </form>
 
+          {/* Divider */}
+          <div className="mt-6 flex items-center gap-3">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-xs text-slate-400">หรือ</span>
+            <div className="flex-1 h-px bg-slate-200" />
+          </div>
+
+          {/* Google Login */}
+          <button
+            type="button"
+            onClick={() => { window.location.href = 'http://localhost:8080/api/v1/auth/google'; }}
+            className="mt-4 w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-sm font-semibold text-slate-700 shadow-sm"
+          >
+            <svg width="18" height="18" viewBox="0 0 48 48">
+              <path fill="#EA4335" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.1 29.6 1 24 1 14.8 1 7 6.7 3.7 14.7l7 5.4C12.4 13.8 17.7 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.4 5.7c4.3-4 6.8-9.9 6.8-16.9z"/>
+              <path fill="#FBBC05" d="M10.7 28.4c-.5-1.4-.8-2.9-.8-4.4s.3-3 .8-4.4l-7-5.4C2.3 17 1 20.4 1 24s1.3 7 3.7 9.8l7-5.4z"/>
+              <path fill="#34A853" d="M24 47c5.6 0 10.3-1.9 13.8-5.1l-7.4-5.7c-1.9 1.3-4.3 2-6.4 2-6.3 0-11.6-4.3-13.5-10.1l-7 5.4C7 41.3 14.8 47 24 47z"/>
+            </svg>
+            เข้าสู่ระบบด้วย Google
+          </button>
+
           <div className="mt-6 pt-6 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500">
               ยังไม่มีบัญชี?{' '}

@@ -25,7 +25,8 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	})
 
 	// Handlers
-	authH    := handlers.NewAuthHandler(db, cfg)
+	authH       := handlers.NewAuthHandler(db, cfg)
+	googleAuthH := handlers.NewGoogleAuthHandler(db, cfg)
 	profileH := handlers.NewProfileHandler(db)
 	accountH := handlers.NewAccountHandler(db)
 	categoryH := handlers.NewCategoryHandler(db)
@@ -41,9 +42,11 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	// Auth (public)
 	auth := v1.Group("/auth")
 	{
-		auth.POST("/register", authH.Register)
-		auth.POST("/login",    authH.Login)
-		auth.POST("/refresh",  authH.Refresh)
+		auth.POST("/register",          authH.Register)
+		auth.POST("/login",             authH.Login)
+		auth.POST("/refresh",           authH.Refresh)
+		auth.GET("/google",             googleAuthH.Redirect)
+		auth.GET("/google/callback",    googleAuthH.Callback)
 	}
 
 	// Protected routes
