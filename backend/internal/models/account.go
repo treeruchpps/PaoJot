@@ -14,8 +14,9 @@ const (
 	AccountKindSavings     AccountKind = "savings"
 	AccountKindInvestment  AccountKind = "investment"
 	AccountKindEWallet     AccountKind = "e_wallet"
-	AccountKindCreditCard  AccountKind = "credit_card"
-	AccountKindLoan        AccountKind = "loan"
+	AccountKindCreditCard   AccountKind = "credit_card"
+	AccountKindLoan         AccountKind = "loan"
+	AccountKindInstallment  AccountKind = "installment"
 )
 
 type Account struct {
@@ -46,3 +47,4 @@ type UpdateAccountRequest struct {
 	Currency *string      `json:"currency"`
 	IsActive *bool        `json:"is_active"`
 }
+

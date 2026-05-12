@@ -19,7 +19,7 @@ export default function SetupAccountPage({ onComplete }) {
         </h1>
         <p className="text-lg font-semibold text-blue-600 mb-2">{user?.username}</p>
         <p className="text-slate-500 text-sm leading-relaxed mb-8">
-          บัญชี PaoMoney ของคุณพร้อมใช้งานแล้ว<br />
+          บัญชี PaoJot ของคุณพร้อมใช้งานแล้ว<br />
           เริ่มจัดการการเงินส่วนตัวได้เลย
         </p>
 
@@ -28,7 +28,7 @@ export default function SetupAccountPage({ onComplete }) {
           onClick={onComplete}
           className="w-full btn-primary text-white py-3.5 rounded-2xl font-semibold text-base shadow-lg hover:shadow-xl transition-shadow"
         >
-          เข้าสู่ PaoMoney →
+          เข้าสู่ PaoJot →
         </button>
 
         <button

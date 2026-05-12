@@ -1,5 +1,5 @@
 // ====================================================
-// PaoMoney — Central API Client
+// PaoJot — Central API Client
 // Base URL: http://localhost:8080/api/v1
 // ====================================================
 
@@ -165,15 +165,42 @@ export const recurring = {
 };
 
 // ====================================================
-// OCR
+// RECEIPT SCANNING (async, single file)
 // ====================================================
-export const ocr = {
-  // type: 'receipt' | 'bank_slip'
-  scan: (file, type) => {
+export const receiptJobs = {
+  // อัปโหลดใบเสร็จ 1 ใบ → สร้าง job + background OCR/parse
+  create: (file) => {
     const form = new FormData();
     form.append('file', file);
-    return request(`/ocr?type=${type}`, { method: 'POST', body: form }, true, true);
+    return request('/receipt-jobs', { method: 'POST', body: form }, true, true);
   },
+  // poll สถานะ + ผลลัพธ์
+  get: (jobId) => request(`/receipt-jobs/${jobId}`),
+};
+
+// ====================================================
+// SLIP SCANNING (batch job)
+// ====================================================
+export const slipJobs = {
+  // Upload 1-5 slip images → creates a job and starts background processing
+  create: (files) => {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+    return request('/slip-jobs', { method: 'POST', body: form }, true, true);
+  },
+
+  // Poll job status + all slip results
+  get: (jobId) => request(`/slip-jobs/${jobId}`),
+
+  // List recent jobs
+  list: () => request('/slip-jobs'),
+
+  // Confirm a slip result → create transaction
+  save: (jobId, resultId, body) =>
+    request(`/slip-jobs/${jobId}/results/${resultId}/save`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };
 
 // ====================================================

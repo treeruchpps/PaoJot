@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import './index.css';
 
 import { AuthProvider, useAuth }  from './contexts/AuthContext';
-import { accounts as accountsApi, categories as categoriesApi, notifications as notiApi, getAccessToken } from './services/api';
+import { accounts as accountsApi, categories as categoriesApi, notifications as notiApi, profile as profileApi, getAccessToken } from './services/api';
 
 import LoginPage        from './pages/LoginPage';
 import RegisterPage     from './pages/RegisterPage';
@@ -44,19 +44,22 @@ function AppShell() {
   const [accounts,      setAccounts]      = useState([]);
   const [categories,    setCategories]    = useState([]);
   const [notiList,      setNotiList]      = useState([]);
+  const [avatarUrl,     setAvatarUrl]     = useState(null);
 
   // Bootstrap: check if user has accounts already
   const bootstrap = useCallback(async () => {
     setAppState('checking');
     try {
-      const [accs, cats] = await Promise.all([
+      const [accs, cats, prof] = await Promise.all([
         accountsApi.list(),
         categoriesApi.list(),
+        profileApi.get().catch(() => null),
       ]);
       // token ถูก clear (401 + refresh fail) → redirect กำลังเกิด ไม่ต้อง set state
       if (!getAccessToken()) return;
       setAccounts(accs || []);
       setCategories(cats || []);
+      setAvatarUrl(prof?.avatar_url || null);
       setAppState(accs && accs.length > 0 ? 'app' : 'setup');
       // โหลด notifications (generate จาก recurring ที่ครบกำหนดด้วย)
       notiApi.list().then((n) => setNotiList(n || [])).catch(() => {});
@@ -130,6 +133,7 @@ function AppShell() {
         accounts={accounts}
         collapsed={collapsed}
         setCollapsed={setCollapsed}
+        avatarUrl={avatarUrl}
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar

@@ -61,7 +61,7 @@ export default function RegisterPage({ onSwitch }) {
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
             <DollarSign size={32} color="white" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-800">PaoMoney</h1>
+          <h1 className="text-3xl font-bold text-slate-800">PaoJot</h1>
           <p className="text-slate-500 mt-1 text-sm">เริ่มต้นจัดการการเงินของคุณ</p>
         </div>
 

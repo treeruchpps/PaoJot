@@ -6,10 +6,17 @@ import (
 )
 
 type Config struct {
-	DB     DBConfig
-	JWT    JWTConfig
-	Server ServerConfig
-	Google GoogleConfig
+	DB      DBConfig
+	JWT     JWTConfig
+	Server  ServerConfig
+	Google  GoogleConfig
+	Typhoon TyphoonConfig
+}
+
+type TyphoonConfig struct {
+	APIKey       string
+	BaseURL      string
+	ExtractModel string
 }
 
 type GoogleConfig struct {
@@ -62,6 +69,11 @@ func Load() *Config {
 			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
 			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:3000"),
+		},
+		Typhoon: TyphoonConfig{
+			APIKey:       getEnv("TYPHOON_API_KEY", ""),
+			BaseURL:      getEnv("TYPHOON_BASE_URL", "https://api.opentyphoon.ai/v1"),
+			ExtractModel: getEnv("TYPHOON_EXTRACT_MODEL", "typhoon-v2.5-30b-a3b-instruct"),
 		},
 	}
 }

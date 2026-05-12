@@ -3,7 +3,7 @@ import Icon from '../common/Icon';
 import { NAV, fmt } from '../../constants/data';
 import { useAuth } from '../../contexts/AuthContext';
 
-export default function Sidebar({ view, setView, accounts, collapsed, setCollapsed }) {
+export default function Sidebar({ view, setView, accounts, collapsed, setCollapsed, avatarUrl }) {
   const { user, logout } = useAuth();
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a) => s + a.balance, 0);
   const totalLiab   = accounts.filter((a) => a.type === 'liability').reduce((s, a) => s + a.balance, 0);
@@ -24,7 +24,7 @@ export default function Sidebar({ view, setView, accounts, collapsed, setCollaps
           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: accent }}>
             <DollarSign size={18} color="white" />
           </div>
-          {!collapsed && <span className="text-base font-bold" style={{ color: accent }}>PaoMoney</span>}
+          {!collapsed && <span className="text-base font-bold" style={{ color: accent }}>PaoJot</span>}
         </button>
       </div>
 
@@ -32,7 +32,19 @@ export default function Sidebar({ view, setView, accounts, collapsed, setCollaps
       {!collapsed && (
         <div className="mx-3 mb-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ring-2 ring-white ring-offset-1" style={{ background: accent, boxShadow: `0 0 0 2px ${accent}40` }}>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={initials}
+                className="w-8 h-8 rounded-full object-cover ring-2 ring-white ring-offset-1"
+                style={{ boxShadow: `0 0 0 2px ${accent}40` }}
+                onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+              />
+            ) : null}
+            <div
+              className="w-8 h-8 rounded-full items-center justify-center text-white text-sm font-bold ring-2 ring-white ring-offset-1"
+              style={{ background: accent, boxShadow: `0 0 0 2px ${accent}40`, display: avatarUrl ? 'none' : 'flex' }}
+            >
               {initials}
             </div>
             <div className="flex-1 min-w-0">

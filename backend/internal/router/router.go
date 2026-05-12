@@ -35,7 +35,11 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	budgetH  := handlers.NewBudgetHandler(db)
 	recurH   := handlers.NewRecurringHandler(db)
 	notiH    := handlers.NewNotificationHandler(db)
-	ocrH     := handlers.NewOCRHandler()
+	slipH    := handlers.NewSlipHandler(db, cfg)
+	receiptH := handlers.NewReceiptHandler(db, cfg)
+
+	// Static file serving for uploaded slip images
+	r.Static("/uploads", "./uploads")
 
 	v1 := r.Group("/api/v1")
 
@@ -105,8 +109,15 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		protected.POST("/notifications/:id/skip",    notiH.Skip)
 		protected.PUT("/notifications/read-all",     notiH.ReadAll)
 
-		// OCR
-		protected.POST("/ocr", ocrH.Scan)
+		// Receipt scanning (async, single file)
+		protected.POST("/receipt-jobs",      receiptH.CreateJob)
+		protected.GET("/receipt-jobs/:id",   receiptH.GetJob)
+
+		// Slip scanning (batch job)
+		protected.GET("/slip-jobs",                                              slipH.ListJobs)
+		protected.POST("/slip-jobs",                                             slipH.CreateJob)
+		protected.GET("/slip-jobs/:id",                                          slipH.GetJob)
+		protected.POST("/slip-jobs/:job_id/results/:result_id/save",             slipH.SaveResult)
 	}
 
 	return r
