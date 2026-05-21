@@ -110,6 +110,7 @@ CREATE TABLE savings_goals (
     user_id        UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     account_id     UUID           REFERENCES accounts(id) ON DELETE SET NULL,
     name           VARCHAR(100)   NOT NULL,
+    image_url      TEXT,
     target_amount  NUMERIC(15, 2) NOT NULL CHECK (target_amount > 0),
     current_amount NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
     deadline       DATE,
@@ -129,12 +130,8 @@ CREATE TABLE budgets (
     name        VARCHAR(100)   NOT NULL,
     amount      NUMERIC(15, 2) NOT NULL CHECK (amount > 0),
     period      budget_period  NOT NULL DEFAULT 'monthly',
-    start_date  DATE           NOT NULL,
-    end_date    DATE,
-    is_active   BOOLEAN        NOT NULL DEFAULT TRUE,
     created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT chk_budget_dates CHECK (end_date IS NULL OR end_date >= start_date)
+    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================

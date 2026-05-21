@@ -10,13 +10,13 @@ const THAI_MONTHS  = [
   'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม',
 ];
-const PALETTE = ['#3b82f6','#10b981','#f59e0b','#3b82f6','#ef4444','#ec4899','#8b5cf6','#f97316'];
+const PALETTE = ['#2C6488','#10b981','#f59e0b','#2C6488','#ef4444','#ec4899','#5F9A7A','#f97316'];
 
 const PERIOD_CONFIG = [
   { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#f59e0b', bg: '#fffbeb', ring: '#fde68a' },
-  { id: 'week',  label: 'สัปดาห์นี้', icon: 'Calendar', color: '#3b82f6', bg: '#eff6ff', ring: '#bfdbfe' },
+  { id: 'week',  label: 'สัปดาห์นี้', icon: 'Calendar', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
   { id: 'month', label: 'เดือนนี้',   icon: 'BarChart2', color: '#10b981', bg: '#f0fdf4', ring: '#a7f3d0' },
-  { id: 'year',  label: 'ปีนี้',      icon: 'TrendingUp', color: '#3b82f6', bg: '#eff6ff', ring: '#bfdbfe' },
+  { id: 'year',  label: 'ปีนี้',      icon: 'TrendingUp', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
 ];
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -307,8 +307,8 @@ export default function AnalyticsView({ accounts, categories }) {
           {
             label: 'มูลค่าสุทธิ',
             value: netWorth,
-            color: netWorth >= 0 ? '#3b82f6' : '#ef4444',
-            bg:    netWorth >= 0 ? '#eff6ff' : '#fff1f2',
+            color: netWorth >= 0 ? '#2C6488' : '#ef4444',
+            bg:    netWorth >= 0 ? '#EAF3F7' : '#fff1f2',
           },
           { label: 'สินทรัพย์รวม', value: totalAssets, color: '#10b981', bg: '#f0fdf4' },
           { label: 'หนี้สินรวม',   value: totalLiab,   color: '#ef4444', bg: '#fff1f2' },
@@ -387,7 +387,7 @@ export default function AnalyticsView({ accounts, categories }) {
                   </div>
                   <div className="pt-1 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-xs text-slate-400">คงเหลือ</span>
-                    <span className={`text-xs font-bold ${stats.inc - stats.exp >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
+                    <span className={`text-xs font-bold ${stats.inc - stats.exp >= 0 ? 'text-[#2C6488]' : 'text-red-500'}`}>
                       {stats.inc - stats.exp < 0 ? '-' : ''}฿{fmt(stats.inc - stats.exp)}
                     </span>
                   </div>
@@ -486,8 +486,8 @@ export default function AnalyticsView({ accounts, categories }) {
                   return (
                     <div key={item.id} className="flex items-center gap-3">
                       <div className="w-6 text-center text-xs font-bold text-slate-400">#{i + 1}</div>
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50">
-                        <Icon name={item.catIcon} size={16} color="#3b82f6" />
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#EAF3F7]">
+                        <Icon name={item.catIcon} size={16} color="#2C6488" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-center mb-1">
@@ -495,7 +495,7 @@ export default function AnalyticsView({ accounts, categories }) {
                           <p className="text-xs font-bold text-slate-800 ml-2">฿{fmt(item.value)}</p>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#3b82f6' }} />
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#2C6488' }} />
                         </div>
                       </div>
                     </div>

@@ -5,10 +5,10 @@
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 
 .sidebar-item { transition: all 0.18s ease; }
-.sidebar-item:hover { background: rgba(99, 102, 241, 0.10); }
+.sidebar-item:hover { background: rgba(44, 100, 136, 0.10); }
 .sidebar-item.active {
-  background: linear-gradient(90deg, rgba(99,102,241,0.18) 0%, rgba(99,102,241,0.04) 100%);
-  border-left: 3px solid #3b82f6;
+  background: linear-gradient(90deg, rgba(44,100,136,0.18) 0%, rgba(44,100,136,0.04) 100%);
+  border-left: 3px solid #2C6488;
 }
 
 .card-hover { transition: transform 0.18s ease, box-shadow 0.18s ease; }
@@ -26,10 +26,10 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #3b82f6 0%, #818cf8 100%);
-  transition: opacity 0.15s;
+  background: #2C6488;
+  transition: background 0.15s, opacity 0.15s;
 }
-.btn-primary:hover { opacity: 0.88; }
+.btn-primary:hover { background: #25536F; }
 
 input, select { outline: none; }
-input:focus, select:focus { box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35); }
+input:focus, select:focus { box-shadow: 0 0 0 2px rgba(44, 100, 136, 0.30); }

@@ -3,8 +3,11 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"paomoney/internal/models"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,12 +22,69 @@ func NewSavingsGoalHandler(db *pgxpool.Pool) *SavingsGoalHandler {
 	return &SavingsGoalHandler{db: db}
 }
 
+// POST /api/v1/savings-goals/images
+func (h *SavingsGoalHandler) UploadImage(c *gin.Context) {
+	file, fh, err := c.Request.FormFile("image")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกรูปภาพ"})
+		return
+	}
+	defer file.Close()
+
+	mimeType := fh.Header.Get("Content-Type")
+	if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP"})
+		return
+	}
+	if fh.Size > 5*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "รูปภาพต้องมีขนาดไม่เกิน 5MB"})
+		return
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "อ่านไฟล์รูปภาพไม่สำเร็จ"})
+		return
+	}
+
+	uploadsDir := "uploads/goals"
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "สร้างโฟลเดอร์รูปภาพไม่สำเร็จ"})
+		return
+	}
+
+	ext := ".jpg"
+	if mimeType == "image/png" {
+		ext = ".png"
+	} else if mimeType == "image/webp" {
+		ext = ".webp"
+	}
+
+	userID := c.GetString("user_id")
+	filename := fmt.Sprintf("%s_%d%s", userID[:8], time.Now().UnixNano(), ext)
+	filePath := filepath.Join(uploadsDir, filename)
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกรูปภาพไม่สำเร็จ"})
+		return
+	}
+
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	if forwarded := c.GetHeader("X-Forwarded-Proto"); forwarded != "" {
+		scheme = forwarded
+	}
+
+	c.JSON(http.StatusOK, gin.H{"image_url": fmt.Sprintf("%s://%s/%s", scheme, c.Request.Host, filepath.ToSlash(filePath))})
+}
+
 // GET /api/v1/savings-goals
 func (h *SavingsGoalHandler) List(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	rows, err := h.db.Query(context.Background(),
-		`SELECT id, user_id, account_id, name, target_amount, current_amount, deadline, status, note, created_at, updated_at
+		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, note, created_at, updated_at
 		 FROM savings_goals WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
@@ -37,7 +97,7 @@ func (h *SavingsGoalHandler) List(c *gin.Context) {
 	goals := []models.SavingsGoal{}
 	for rows.Next() {
 		var g models.SavingsGoal
-		if err := rows.Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount,
+		if err := rows.Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 			&g.CurrentAmount, &g.Deadline, &g.Status, &g.Note, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			continue
 		}
@@ -56,6 +116,10 @@ func (h *SavingsGoalHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.AccountID == nil || *req.AccountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกบัญชีเก็บออม"})
+		return
+	}
 
 	var deadline *time.Time
 	if req.Deadline != nil {
@@ -69,11 +133,11 @@ func (h *SavingsGoalHandler) Create(c *gin.Context) {
 
 	var g models.SavingsGoal
 	err := h.db.QueryRow(context.Background(),
-		`INSERT INTO savings_goals (user_id, account_id, name, target_amount, current_amount, deadline, note)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, user_id, account_id, name, target_amount, current_amount, deadline, status, note, created_at, updated_at`,
-		userID, req.AccountID, req.Name, req.TargetAmount, req.CurrentAmount, deadline, req.Note,
-	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount,
+		`INSERT INTO savings_goals (user_id, account_id, name, image_url, target_amount, current_amount, deadline, note)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, note, created_at, updated_at`,
+		userID, req.AccountID, req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, deadline, req.Note,
+	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 		&g.CurrentAmount, &g.Deadline, &g.Status, &g.Note, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
@@ -91,10 +155,10 @@ func (h *SavingsGoalHandler) Get(c *gin.Context) {
 
 	var g models.SavingsGoal
 	err := h.db.QueryRow(context.Background(),
-		`SELECT id, user_id, account_id, name, target_amount, current_amount, deadline, status, note, created_at, updated_at
+		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, note, created_at, updated_at
 		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
 		id, userID,
-	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount,
+	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 		&g.CurrentAmount, &g.Deadline, &g.Status, &g.Note, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
@@ -115,6 +179,10 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.AccountID != nil && *req.AccountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกบัญชีเก็บออม"})
+		return
+	}
 
 	var deadline *time.Time
 	if req.Deadline != nil {
@@ -129,16 +197,18 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 	var g models.SavingsGoal
 	err := h.db.QueryRow(context.Background(),
 		`UPDATE savings_goals
-		 SET name           = COALESCE($1, name),
-		     target_amount  = COALESCE($2, target_amount),
-		     current_amount = COALESCE($3, current_amount),
-		     deadline       = COALESCE($4, deadline),
-		     status         = COALESCE($5, status),
-		     note           = COALESCE($6, note)
-		 WHERE id = $7 AND user_id = $8
-		 RETURNING id, user_id, account_id, name, target_amount, current_amount, deadline, status, note, created_at, updated_at`,
-		req.Name, req.TargetAmount, req.CurrentAmount, deadline, req.Status, req.Note, id, userID,
-	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount,
+		 SET account_id     = COALESCE($1, account_id),
+		     name           = COALESCE($2, name),
+		     image_url      = $3,
+		     target_amount  = COALESCE($4, target_amount),
+		     current_amount = COALESCE($5, current_amount),
+		     deadline       = COALESCE($6, deadline),
+		     status         = COALESCE($7, status),
+		     note           = COALESCE($8, note)
+		 WHERE id = $9 AND user_id = $10
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, note, created_at, updated_at`,
+		req.AccountID, req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, deadline, req.Status, req.Note, id, userID,
+	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 		&g.CurrentAmount, &g.Deadline, &g.Status, &g.Note, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
@@ -196,8 +266,12 @@ func (h *SavingsGoalHandler) Deposit(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
 		return
 	}
-	if g.Status == "completed" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "เป้าหมายนี้สำเร็จแล้ว"})
+	if g.Status != "in_progress" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ฝากเงินได้เฉพาะเป้าหมายที่กำลังออม"})
+		return
+	}
+	if g.AccountID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาผูกบัญชีเก็บออมก่อนฝากเงินเข้าเป้าหมาย"})
 		return
 	}
 
@@ -223,54 +297,35 @@ func (h *SavingsGoalHandler) Deposit(c *gin.Context) {
 	}
 	defer dbTx.Rollback(ctx)
 
-	if g.AccountID != nil {
-		// มีบัญชีเป้าหมาย → สร้าง transfer transaction
-		_, err = dbTx.Exec(ctx,
-			`INSERT INTO transactions (user_id, account_id, to_account_id, type, amount, name, note, transaction_date)
-			 VALUES ($1, $2, $3, 'transfer', $4, $5, $6, $7)`,
-			userID, req.FromAccountID, *g.AccountID, req.Amount, g.Name, noteText, txDate,
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create transaction"})
-			return
-		}
-		// หักจากบัญชีต้นทาง
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			req.Amount, req.FromAccountID, userID,
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update source balance"})
-			return
-		}
-		// เพิ่มในบัญชีเป้าหมาย
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-			req.Amount, *g.AccountID, userID,
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update goal balance"})
-			return
-		}
-	} else {
-		// ไม่มีบัญชีเป้าหมาย → บันทึกเป็น expense จากต้นทาง
-		_, err = dbTx.Exec(ctx,
-			`INSERT INTO transactions (user_id, account_id, type, amount, name, note, transaction_date)
-			 VALUES ($1, $2, 'expense', $3, $4, $5, $6)`,
-			userID, req.FromAccountID, req.Amount, g.Name, noteText, txDate,
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create transaction"})
-			return
-		}
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			req.Amount, req.FromAccountID, userID,
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update balance"})
-			return
-		}
+	if req.FromAccountID == *g.AccountID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "บัญชีต้นทางต้องไม่ใช่บัญชีเก็บออมของเป้าหมาย"})
+		return
+	}
+
+	_, err = dbTx.Exec(ctx,
+		`INSERT INTO transactions (user_id, account_id, to_account_id, type, amount, name, note, transaction_date)
+		 VALUES ($1, $2, $3, 'transfer', $4, $5, $6, $7)`,
+		userID, req.FromAccountID, *g.AccountID, req.Amount, g.Name, noteText, txDate,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create transaction"})
+		return
+	}
+	_, err = dbTx.Exec(ctx,
+		`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
+		req.Amount, req.FromAccountID, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update source balance"})
+		return
+	}
+	_, err = dbTx.Exec(ctx,
+		`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
+		req.Amount, *g.AccountID, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update goal balance"})
+		return
 	}
 
 	// อัปเดต current_amount และ status
@@ -285,9 +340,9 @@ func (h *SavingsGoalHandler) Deposit(c *gin.Context) {
 		`UPDATE savings_goals
 		 SET current_amount = $1, status = $2
 		 WHERE id = $3 AND user_id = $4
-		 RETURNING id, user_id, account_id, name, target_amount, current_amount, deadline, status, note, created_at, updated_at`,
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, note, created_at, updated_at`,
 		newAmount, newStatus, goalID, userID,
-	).Scan(&updated.ID, &updated.UserID, &updated.AccountID, &updated.Name, &updated.TargetAmount,
+	).Scan(&updated.ID, &updated.UserID, &updated.AccountID, &updated.Name, &updated.ImageURL, &updated.TargetAmount,
 		&updated.CurrentAmount, &updated.Deadline, &updated.Status, &updated.Note, &updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update goal"})

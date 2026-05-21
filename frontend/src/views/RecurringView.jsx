@@ -5,8 +5,8 @@ import { recurring as recurApi } from '../services/api';
 import { fmt } from '../constants/data';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน' };
-const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#3b82f6' };
-const TYPE_BG    = { income: '#f0fdf4', expense: '#fff1f2', transfer: '#eff6ff' };
+const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2C6488' };
+const TYPE_BG    = { income: '#f0fdf4', expense: '#fff1f2', transfer: '#EAF3F7' };
 const TYPE_ICON  = { income: 'ArrowUp', expense: 'ArrowDown', transfer: 'ArrowLeftRight' };
 
 const FREQ_LABEL = { daily: 'ทุกวัน', weekly: 'ทุกสัปดาห์', monthly: 'ทุกเดือน', yearly: 'ทุกปี' };
@@ -213,7 +213,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
               {r.is_active ? 'หยุดชั่วคราว' : 'เปิดใช้งาน'}
             </button>
             <button onClick={() => openEdit(r)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center transition-colors">
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
               <Pencil size={12} color="#64748b" />
             </button>
             <button onClick={() => remove(r.id)}
@@ -393,9 +393,9 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                     <button key={val} onClick={() => setForm({ ...form, frequency: val })}
                       className="py-1.5 rounded-xl border-2 text-xs font-medium transition-all text-center"
                       style={{
-                        borderColor: form.frequency === val ? '#3b82f6' : '#e2e8f0',
-                        background:  form.frequency === val ? '#eff6ff' : '#f8fafc',
-                        color:       form.frequency === val ? '#3b82f6' : '#64748b',
+                        borderColor: form.frequency === val ? '#2C6488' : '#e2e8f0',
+                        background:  form.frequency === val ? '#EAF3F7' : '#f8fafc',
+                        color:       form.frequency === val ? '#2C6488' : '#64748b',
                       }}>
                       {label}
                     </button>

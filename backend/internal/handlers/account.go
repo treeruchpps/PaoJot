@@ -110,12 +110,11 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		`UPDATE accounts
 		 SET name      = COALESCE($1, name),
 		     kind      = COALESCE($2, kind),
-		     balance   = COALESCE($3, balance),
-		     currency  = COALESCE($4, currency),
-		     is_active = COALESCE($5, is_active)
-		 WHERE id = $6 AND user_id = $7
+		     currency  = COALESCE($3, currency),
+		     is_active = COALESCE($4, is_active)
+		 WHERE id = $5 AND user_id = $6
 		 RETURNING id, user_id, name, type, kind, balance, currency, is_active, created_at, updated_at`,
-		req.Name, req.Kind, req.Balance, req.Currency, req.IsActive, id, userID,
+		req.Name, req.Kind, req.Currency, req.IsActive, id, userID,
 	).Scan(&a.ID, &a.UserID, &a.Name, &a.Type, &a.Kind, &a.Balance, &a.Currency, &a.IsActive, &a.CreatedAt, &a.UpdatedAt)
 
 	if err != nil {
@@ -130,13 +129,96 @@ func (h *AccountHandler) Update(c *gin.Context) {
 func (h *AccountHandler) Delete(c *gin.Context) {
 	userID := c.GetString("user_id")
 	id := c.Param("id")
+	ctx := context.Background()
 
-	result, err := h.db.Exec(context.Background(),
+	dbTx, err := h.db.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start transaction"})
+		return
+	}
+	defer dbTx.Rollback(ctx)
+
+	var exists bool
+	if err := dbTx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1 AND user_id = $2 AND is_active = true)`,
+		id, userID,
+	).Scan(&exists); err != nil || !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+		return
+	}
+
+	if _, err := dbTx.Exec(ctx,
+		`UPDATE accounts a
+		 SET balance = CASE
+			 WHEN a.type = 'liability' THEN a.balance + t.amount
+			 ELSE a.balance - t.amount
+		 END
+		 FROM transactions t
+		 WHERE t.user_id = $1
+		   AND t.type = 'transfer'
+		   AND t.account_id = $2
+		   AND t.to_account_id = a.id
+		   AND a.user_id = $1
+		   AND a.id <> $2`,
+		userID, id,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reverse destination account balances"})
+		return
+	}
+
+	if _, err := dbTx.Exec(ctx,
+		`UPDATE accounts a
+		 SET balance = a.balance + t.amount
+		 FROM transactions t
+		 WHERE t.user_id = $1
+		   AND t.type = 'transfer'
+		   AND t.to_account_id = $2
+		   AND t.account_id = a.id
+		   AND a.user_id = $1
+		   AND a.id <> $2`,
+		userID, id,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reverse source account balances"})
+		return
+	}
+
+	if _, err := dbTx.Exec(ctx,
+		`DELETE FROM transactions
+		 WHERE user_id = $1 AND (account_id = $2 OR to_account_id = $2)`,
+		userID, id,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete account transactions"})
+		return
+	}
+
+	if _, err := dbTx.Exec(ctx,
+		`DELETE FROM recurring_transactions
+		 WHERE user_id = $1 AND (account_id = $2 OR to_account_id = $2)`,
+		userID, id,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete recurring transactions"})
+		return
+	}
+
+	if _, err := dbTx.Exec(ctx,
+		`UPDATE savings_goals SET account_id = NULL WHERE user_id = $1 AND account_id = $2`,
+		userID, id,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to detach savings goals"})
+		return
+	}
+
+	result, err := dbTx.Exec(ctx,
 		`UPDATE accounts SET is_active = false WHERE id = $1 AND user_id = $2`,
 		id, userID,
 	)
 	if err != nil || result.RowsAffected() == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+		return
+	}
+
+	if err := dbTx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit account delete"})
 		return
 	}
 

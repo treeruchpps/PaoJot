@@ -30,7 +30,7 @@ async function request(path, options = {}, retry = true, isFormData = false) {
   // 401 → try refresh once
   if (res.status === 401 && retry) {
     const refreshed = await tryRefresh();
-    if (refreshed) return request(path, options, false);
+    if (refreshed) return request(path, options, false, isFormData);
     clearTokens();
     window.location.href = '/';
     return null;
@@ -137,6 +137,7 @@ export const transactions = {
 export const savingsGoals = {
   list:    ()         => request('/savings-goals'),
   create:  (body)     => request('/savings-goals',              { method: 'POST',   body: JSON.stringify(body) }),
+  uploadImage: (body) => request('/savings-goals/images',       { method: 'POST',   body }, true, true),
   get:     (id)       => request(`/savings-goals/${id}`),
   update:  (id, body) => request(`/savings-goals/${id}`,        { method: 'PUT',    body: JSON.stringify(body) }),
   delete:  (id)       => request(`/savings-goals/${id}`,        { method: 'DELETE' }),

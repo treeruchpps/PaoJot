@@ -85,6 +85,7 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		// Savings Goals
 		protected.GET("/savings-goals",              goalH.List)
 		protected.POST("/savings-goals",             goalH.Create)
+		protected.POST("/savings-goals/images",      goalH.UploadImage)
 		protected.GET("/savings-goals/:id",          goalH.Get)
 		protected.PUT("/savings-goals/:id",          goalH.Update)
 		protected.DELETE("/savings-goals/:id",       goalH.Delete)

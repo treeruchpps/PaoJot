@@ -23,8 +23,8 @@ func NewNotificationHandler(db *pgxpool.Pool) *NotificationHandler {
 // generate notifications จาก recurring ที่ครบกำหนด แล้วคืนทั้งหมดที่ยังไม่ action_taken
 func (h *NotificationHandler) List(c *gin.Context) {
 	userID := c.GetString("user_id")
-	ctx    := context.Background()
-	today  := time.Now().Truncate(24 * time.Hour)
+	ctx := context.Background()
+	today := time.Now().Truncate(24 * time.Hour)
 
 	// 1. ดึง recurring ที่ active และ next_due_date <= วันนี้
 	rows, err := h.db.Query(ctx,
@@ -59,7 +59,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 
 			if existCount == 0 {
 				title := BuildNotificationTitle(r)
-				msg   := FrequencyLabel(r.Frequency)
+				msg := FrequencyLabel(r.Frequency)
 				h.db.Exec(ctx, //nolint
 					`INSERT INTO notifications (user_id, recurring_id, title, message)
 					 VALUES ($1, $2, $3, $4)`,
@@ -82,17 +82,15 @@ func (h *NotificationHandler) List(c *gin.Context) {
 		              WHEN 'monthly' THEN date_trunc('month', CURRENT_DATE)::date
 		              WHEN 'weekly'  THEN date_trunc('week',  CURRENT_DATE)::date
 		              WHEN 'yearly'  THEN date_trunc('year',  CURRENT_DATE)::date
-		              ELSE b.start_date
 		            END
 		            AND t.transaction_date <= CASE b.period
 		              WHEN 'monthly' THEN (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day')::date
 		              WHEN 'weekly'  THEN (date_trunc('week',  CURRENT_DATE) + interval '6 days')::date
 		              WHEN 'yearly'  THEN (date_trunc('year',  CURRENT_DATE) + interval '1 year - 1 day')::date
-		              ELSE COALESCE(b.end_date, CURRENT_DATE)
 		            END
 		        ), 0) AS spent
 		 FROM budgets b
-		 WHERE b.user_id = $1 AND b.is_active = TRUE`,
+		 WHERE b.user_id = $1`,
 		userID,
 	)
 	if err2 == nil {
@@ -115,7 +113,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 			).Scan(&existCount)
 			if existCount == 0 {
 				title := fmt.Sprintf("เกินงบประมาณ: %s", budgetName)
-				msg   := fmt.Sprintf("ใช้ไปแล้ว ฿%.0f จากงบ ฿%.0f (เกิน ฿%.0f)", spent, budgetAmount, spent-budgetAmount)
+				msg := fmt.Sprintf("ใช้ไปแล้ว ฿%.0f จากงบ ฿%.0f (เกิน ฿%.0f)", spent, budgetAmount, spent-budgetAmount)
 				h.db.Exec(ctx, //nolint
 					`INSERT INTO notifications (user_id, budget_id, title, message)
 					 VALUES ($1, $2, $3, $4)`,
@@ -158,8 +156,8 @@ func (h *NotificationHandler) List(c *gin.Context) {
 // บันทึก transaction จริง + เลื่อน next_due_date + mark action_taken
 func (h *NotificationHandler) Confirm(c *gin.Context) {
 	userID := c.GetString("user_id")
-	nid    := c.Param("id")
-	ctx    := context.Background()
+	nid := c.Param("id")
+	ctx := context.Background()
 
 	// ดึง notification + recurring
 	var n models.Notification
@@ -275,8 +273,8 @@ func (h *NotificationHandler) Confirm(c *gin.Context) {
 // ข้าม → เลื่อน next_due_date + mark action_taken
 func (h *NotificationHandler) Skip(c *gin.Context) {
 	userID := c.GetString("user_id")
-	nid    := c.Param("id")
-	ctx    := context.Background()
+	nid := c.Param("id")
+	ctx := context.Background()
 
 	var recurringID *string
 	err := h.db.QueryRow(ctx,
@@ -288,7 +286,7 @@ func (h *NotificationHandler) Skip(c *gin.Context) {
 	}
 
 	if recurringID != nil {
-		var nextDue  time.Time
+		var nextDue time.Time
 		var frequency string
 		_ = h.db.QueryRow(ctx,
 			`SELECT next_due_date, frequency FROM recurring_transactions WHERE id = $1`, *recurringID,

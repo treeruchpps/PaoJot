@@ -13,7 +13,7 @@ const WEEK_START_OPTS = [
   { value: 6, label: 'วันเสาร์' },
 ];
 
-const accent = '#3b82f6';
+const accent = '#2C6488';
 
 export default function ProfileView() {
   const { user, logout } = useAuth();
@@ -108,7 +108,7 @@ export default function ProfileView() {
   if (loadingProfile) {
     return (
       <div className="p-6 flex items-center justify-center py-32">
-        <div className="w-8 h-8 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" />
+        <div className="w-8 h-8 rounded-full border-4 border-[#DCE8EE] border-t-[#2C6488] animate-spin" />
       </div>
     );
   }
@@ -124,7 +124,7 @@ export default function ProfileView() {
             <img
               src={avatarUrl}
               alt="avatar"
-              className="w-20 h-20 rounded-full object-cover border-2 border-blue-100"
+              className="w-20 h-20 rounded-full object-cover border-2 border-[#DCE8EE]"
             />
           ) : (
             <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold"

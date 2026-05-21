@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DollarSign, Shield, Eye, EyeOff } from 'lucide-react';
+import { Shield, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const WEEK_DAYS = [
@@ -54,14 +54,16 @@ export default function RegisterPage({ onSwitch }) {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#EAF3F7] via-white to-[#EAF7E8] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <DollarSign size={32} color="white" />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800">PaoJot</h1>
+          <img
+            src="/images/Logo_PaoJot.png"
+            alt="PaoJot"
+            className="w-24 h-24 rounded-3xl object-cover mx-auto mb-1"
+          />
+          <h1 className="text-3xl font-bold text-[#2C6488]">PaoJot</h1>
           <p className="text-slate-500 mt-1 text-sm">เริ่มต้นจัดการการเงินของคุณ</p>
         </div>
 
@@ -89,7 +91,7 @@ export default function RegisterPage({ onSwitch }) {
                 required
                 minLength={3}
                 maxLength={50}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
               />
             </div>
 
@@ -103,7 +105,7 @@ export default function RegisterPage({ onSwitch }) {
                 onChange={handleChange}
                 placeholder="your@email.com"
                 required
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
               />
             </div>
 
@@ -118,7 +120,7 @@ export default function RegisterPage({ onSwitch }) {
                   onChange={handleChange}
                   placeholder="อย่างน้อย 6 ตัวอักษร"
                   required
-                  className="w-full px-4 pr-10 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                  className="w-full px-4 pr-10 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
                 />
                 <button type="button" onClick={() => setShowPw(!showPw)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -137,7 +139,7 @@ export default function RegisterPage({ onSwitch }) {
                 onChange={handleChange}
                 placeholder="พิมพ์รหัสผ่านอีกครั้ง"
                 required
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
               />
             </div>
 
@@ -150,7 +152,7 @@ export default function RegisterPage({ onSwitch }) {
               <select
                 value={form.week_start_day}
                 onChange={(e) => setForm({ ...form, week_start_day: parseInt(e.target.value) })}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
               >
                 {WEEK_DAYS.map((d) => (
                   <option key={d.value} value={d.value}>{d.label}</option>
@@ -170,7 +172,7 @@ export default function RegisterPage({ onSwitch }) {
           <div className="mt-6 pt-6 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500">
               มีบัญชีแล้ว?{' '}
-              <button onClick={onSwitch} className="text-blue-600 font-semibold hover:underline">
+              <button onClick={onSwitch} className="text-[#2C6488] font-semibold hover:underline">
                 เข้าสู่ระบบ
               </button>
             </p>

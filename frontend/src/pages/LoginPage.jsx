@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DollarSign, Eye, EyeOff, ShieldUser, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, ShieldUser, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginPage({ onSwitch }) {
@@ -18,14 +18,16 @@ export default function LoginPage({ onSwitch }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#EAF3F7] via-white to-[#EAF7E8] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <DollarSign size={32} color="white" />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800">PaoJot</h1>
+          <img
+            src="/images/Logo_PaoJot.png"
+            alt="PaoJot"
+            className="w-24 h-24 rounded-3xl object-cover mx-auto mb-1"
+          />
+          <h1 className="text-3xl font-bold text-[#2C6488]">PaoJot</h1>
           <p className="text-slate-500 mt-1 text-sm">จัดการการเงินส่วนตัวได้ง่ายๆ</p>
         </div>
 
@@ -54,7 +56,7 @@ export default function LoginPage({ onSwitch }) {
                   onChange={handleChange}
                   placeholder="your@email.com"
                   required
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
                 />
               </div>
             </div>
@@ -72,7 +74,7 @@ export default function LoginPage({ onSwitch }) {
                   onChange={handleChange}
                   placeholder="รหัสผ่านอย่างน้อย 6 ตัว"
                   required
-                  className="w-full pl-9 pr-10 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+                  className="w-full pl-9 pr-10 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
                 />
                 <button type="button" onClick={() => setShowPw(!showPw)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -115,7 +117,7 @@ export default function LoginPage({ onSwitch }) {
           <div className="mt-6 pt-6 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500">
               ยังไม่มีบัญชี?{' '}
-              <button onClick={onSwitch} className="text-blue-600 font-semibold hover:underline">
+              <button onClick={onSwitch} className="text-[#2C6488] font-semibold hover:underline">
                 สมัครสมาชิก
               </button>
             </p>

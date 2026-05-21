@@ -159,6 +159,10 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "to_account_id required for transfer"})
 			return
 		}
+		if *req.ToAccountID == req.AccountID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source and destination accounts must be different"})
+			return
+		}
 		_, err = dbTx.Exec(ctx,
 			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
 			req.Amount, req.AccountID, userID,
@@ -258,6 +262,10 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 	).Scan(&old.ID, &old.UserID, &old.AccountID, &old.ToAccountID, &old.Type, &old.Amount)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "transaction not found"})
+		return
+	}
+	if old.Type == models.TransactionTypeTransfer && old.ToAccountID != nil && *old.ToAccountID == old.AccountID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source and destination accounts must be different"})
 		return
 	}
 

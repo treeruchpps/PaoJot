@@ -1,23 +1,24 @@
-import { Wallet } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function SetupAccountPage({ onComplete }) {
   const { user, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#EAF3F7] via-white to-[#EAF7E8] flex items-center justify-center p-4">
       <div className="w-full max-w-md text-center">
 
         {/* Logo */}
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-6 shadow-xl">
-          <Wallet size={38} color="white" />
-        </div>
+        <img
+          src="/images/Logo_PaoJot.png"
+          alt="PaoJot"
+          className="w-20 h-20 rounded-3xl object-cover mx-auto mb-6 shadow-xl"
+        />
 
         {/* Welcome text */}
         <h1 className="text-3xl font-bold text-slate-800 mb-2">
           ยินดีต้อนรับ 🎉
         </h1>
-        <p className="text-lg font-semibold text-blue-600 mb-2">{user?.username}</p>
+        <p className="text-lg font-semibold text-[#2C6488] mb-2">{user?.username}</p>
         <p className="text-slate-500 text-sm leading-relaxed mb-8">
           บัญชี PaoJot ของคุณพร้อมใช้งานแล้ว<br />
           เริ่มจัดการการเงินส่วนตัวได้เลย

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, CreditCard, Tag, Landmark, Edit, Trash2, Share2, Plus, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, CreditCard, Tag, Landmark, Edit, Trash2, Share2, Plus, X, ChevronDown } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import { accounts as accountsApi, transactions as txApi } from '../services/api';
 import { fmt } from '../constants/data';
@@ -9,13 +10,13 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 // ─── Kind metadata ────────────────────────────────────────────────────────────
 const KINDS = [
   { value: 'cash',         label: 'เงินสด',      icon: 'DollarSign', color: '#10b981', type: 'asset' },
-  { value: 'bank_account', label: 'บัญชีธนาคาร', icon: 'Briefcase',  color: '#3b82f6', type: 'asset' },
+  { value: 'bank_account', label: 'บัญชีธนาคาร', icon: 'Briefcase',  color: '#2C6488', type: 'asset' },
   { value: 'savings',      label: 'ออมทรัพย์',    icon: 'Star',       color: '#f59e0b', type: 'asset' },
-  { value: 'e_wallet',     label: 'E-Wallet',     icon: 'Smartphone', color: '#3b82f6', type: 'asset' },
-  { value: 'investment',   label: 'การลงทุน',     icon: 'TrendingUp', color: '#8b5cf6', type: 'asset' },
+  { value: 'e_wallet',     label: 'E-Wallet',     icon: 'Smartphone', color: '#2C6488', type: 'asset' },
+  { value: 'investment',   label: 'การลงทุน',     icon: 'TrendingUp', color: '#5F9A7A', type: 'asset' },
   { value: 'credit_card',  label: 'บัตรเครดิต',   icon: 'CreditCard', color: '#ef4444', type: 'liability' },
   { value: 'loan',         label: 'เงินกู้',      icon: 'Tag',        color: '#f97316', type: 'liability' },
-  { value: 'installment',  label: 'สินเชื่อ',     icon: 'Landmark',   color: '#8b5cf6', type: 'liability' },
+  { value: 'installment',  label: 'สินเชื่อ',     icon: 'Landmark',   color: '#5F9A7A', type: 'liability' },
 ];
 const ASSET_KINDS     = KINDS.filter((k) => k.type === 'asset');
 const LIABILITY_KINDS = KINDS.filter((k) => k.type === 'liability');
@@ -39,12 +40,75 @@ function KindIcon({ icon, color, size = 18 }) {
   return null;
 }
 
+function AssetKindDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
+  const [menuStyle, setMenuStyle] = useState({});
+  const ref = useRef(null);
+  const selected = getKind(value);
+
+  useEffect(() => {
+    if (!open || !ref.current) return;
+    const updatePosition = () => {
+      const rect = ref.current.getBoundingClientRect();
+      const menuHeight = ASSET_KINDS.length * 44 + 8;
+      const bottomSpace = window.innerHeight - rect.bottom;
+      const topSpace = rect.top;
+      const shouldDropUp = bottomSpace < menuHeight && topSpace > menuHeight;
+      setDropUp(shouldDropUp);
+      setMenuStyle({
+        position: 'fixed',
+        left: rect.left,
+        top: shouldDropUp ? rect.top - menuHeight - 4 : rect.bottom + 4,
+        width: rect.width,
+        zIndex: 1000,
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full h-9 border border-slate-200 rounded-lg px-2.5 text-sm bg-slate-50 text-slate-700 flex items-center gap-2 hover:border-[#BFD8E4] transition-colors">
+        <span className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: selected.color + '18' }}>
+          <KindIcon icon={selected.icon} color={selected.color} size={14} />
+        </span>
+        <span className="flex-1 text-left truncate">{selected.label}</span>
+        <ChevronDown size={13} color="#94a3b8" />
+      </button>
+
+      {open && createPortal(
+        <div style={menuStyle} className={`bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden ${dropUp ? 'origin-bottom' : 'origin-top'}`}>
+          {ASSET_KINDS.map((kind) => (
+            <button key={kind.value} type="button"
+              onClick={() => { onChange(kind.value); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-2.5 py-2 text-sm hover:bg-slate-50 transition-colors"
+              style={{ background: value === kind.value ? kind.color + '10' : undefined }}>
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: kind.color + '18' }}>
+                <KindIcon icon={kind.icon} color={kind.color} size={15} />
+              </span>
+              <span className="flex-1 text-left font-medium text-slate-700">{kind.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 export default function AccountsView({ accounts, onRefresh }) {
   // Add / Edit account modal
   const [showModal, setShowModal]             = useState(false);
   const [editId, setEditId]                   = useState(null);
-  const [editOrigBalance, setEditOrigBalance] = useState(0);
   const [form, setForm]                       = useState(emptyForm());
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
@@ -87,6 +151,16 @@ export default function AccountsView({ accounts, onRefresh }) {
   const poolPct       = poolAmt > 0 ? Math.min((poolAllocated / poolAmt) * 100, 100) : 0;
   const poolOver      = poolRemaining < -0.005;
   const poolDone      = poolAmt > 0 && Math.abs(poolRemaining) < 0.005;
+  const poolNamedRows = poolAddRows.filter((r) => r.name.trim()).length;
+  const poolSaveLabel = poolAddSaving
+    ? 'กำลังสร้าง...'
+    : poolAmt <= 0
+      ? 'ใส่ยอดรวมก่อน'
+      : poolOver
+        ? `ยอดเกิน ฿${fmt(Math.abs(poolRemaining))}`
+        : poolDone
+          ? `สร้าง ${poolNamedRows} บัญชี`
+          : `เหลือ ฿${fmt(Math.abs(poolRemaining))}`;
 
   const fillPoolRemaining = (id) => {
     if (poolRemaining <= 0) return;
@@ -129,7 +203,6 @@ export default function AccountsView({ accounts, onRefresh }) {
 
   const openEdit = (acc) => {
     setEditId(acc.id);
-    setEditOrigBalance(acc.balance);
     setForm({
       name: acc.name, type: acc.type, kind: acc.kind,
       balance: String(acc.balance), currency: acc.currency,
@@ -139,26 +212,21 @@ export default function AccountsView({ accounts, onRefresh }) {
 
   const save = async () => {
     if (!form.name.trim()) { setError('กรุณาใส่ชื่อบัญชี'); return; }
+    const newBalance = parseFloat(form.balance) || 0;
+    if (!editId && newBalance < 0) { setError('ยอดเงินต้องไม่ติดลบ'); return; }
     setSaving(true); setError('');
     try {
-      const newBalance = parseFloat(form.balance) || 0;
-      const body = {
-        name: form.name, type: form.type, kind: form.kind,
-        balance: newBalance, currency: form.currency,
-      };
       if (editId) {
+        const body = {
+          name: form.name, type: form.type, kind: form.kind,
+          currency: form.currency,
+        };
         await accountsApi.update(editId, body);
-        const diff = newBalance - editOrigBalance;
-        if (Math.abs(diff) >= 0.01) {
-          await txApi.create({
-            type: 'adjustment', amount: Math.abs(diff), account_id: editId,
-            transaction_date: todayStr(),
-            note: diff > 0
-              ? `ปรับยอดเพิ่ม (${editOrigBalance.toLocaleString()} → ${newBalance.toLocaleString()})`
-              : `ปรับยอดลด (${editOrigBalance.toLocaleString()} → ${newBalance.toLocaleString()})`,
-          }).catch(() => {});
-        }
       } else {
+        const body = {
+          name: form.name, type: form.type, kind: form.kind,
+          balance: newBalance, currency: form.currency,
+        };
         const created = await accountsApi.create(body);
         if (newBalance > 0 && created?.id) {
           await txApi.create({
@@ -173,7 +241,7 @@ export default function AccountsView({ accounts, onRefresh }) {
   };
 
   const remove = async (id) => {
-    if (!window.confirm('ต้องการลบบัญชีนี้?')) return;
+    if (!window.confirm('ต้องการลบบัญชีนี้? รายการธุรกรรมและรายการประจำที่เกี่ยวข้องกับบัญชีนี้จะถูกลบไปด้วย')) return;
     try { await accountsApi.delete(id); await onRefresh(); }
     catch (err) { alert(err.message); }
   };
@@ -230,7 +298,7 @@ export default function AccountsView({ accounts, onRefresh }) {
           </div>
           <div className="flex gap-1">
             <button onClick={() => openEdit(acc)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center transition-colors">
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
               <Edit size={12} color="#64748b" />
             </button>
             <button onClick={() => remove(acc.id)}
@@ -254,11 +322,11 @@ export default function AccountsView({ accounts, onRefresh }) {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'มูลค่าสุทธิ',   value: netWorth,    color: netWorth >= 0 ? '#3b82f6' : '#ef4444', bg: netWorth >= 0 ? '#eff6ff' : '#fff1f2' },
+          { label: 'มูลค่าสุทธิ',   value: netWorth,    color: netWorth >= 0 ? '#2C6488' : '#ef4444', bg: netWorth >= 0 ? '#EAF3F7' : '#fff1f2' },
           { label: 'สินทรัพย์รวม', value: totalAssets, color: '#10b981', bg: '#f0fdf4' },
           { label: 'หนี้สินรวม',   value: totalLiab,   color: '#ef4444', bg: '#fff1f2' },
         ].map((s, i) => (
-          <div key={i} className="rounded-2xl p-4 card-hover border" style={{ background: s.bg, borderColor: s.color + '40' }}>
+          <div key={i} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '40' }}>
             <p className="text-xs text-slate-500 mb-1">{s.label}</p>
             <p className="text-2xl font-bold" style={{ color: s.color }}>
               {s.value < 0 ? '-' : ''}฿{fmt(Math.abs(s.value))}
@@ -284,8 +352,8 @@ export default function AccountsView({ accounts, onRefresh }) {
           {assetAccounts.length > 0 && (
             <button onClick={openDist}
               className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-              style={{ color: '#3b82f6', borderColor: '#bfdbfe', background: '#eff6ff' }}>
-              <Share2 size={15} color="#3b82f6" /> แบ่งเงินเข้าบัญชี
+              style={{ color: '#2C6488', borderColor: '#BFD8E4', background: '#EAF3F7' }}>
+              <Share2 size={15} color="#2C6488" /> แบ่งเงินเข้าบัญชี
             </button>
           )}
         </div>
@@ -322,7 +390,7 @@ export default function AccountsView({ accounts, onRefresh }) {
 
       {/* Add/Edit modal */}
       {showModal && (
-        <Modal title={editId ? 'แก้ไขบัญชี' : 'เพิ่มบัญชี'} onClose={() => setShowModal(false)}>
+        <Modal title={editId ? 'แก้ไขบัญชี' : 'เพิ่มบัญชีหนี้สิน'} onClose={() => setShowModal(false)}>
           <div className="space-y-4">
             {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
@@ -351,19 +419,29 @@ export default function AccountsView({ accounts, onRefresh }) {
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อบัญชี</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="เช่น KTC Platinum"
+                placeholder=""
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
             </div>
 
             {/* Balance */}
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">
-                {form.type === 'liability' ? 'ยอดค้างชำระปัจจุบัน (฿)' : 'ยอดเงิน (฿)'}
-              </label>
-              <input type="number" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })}
-                placeholder="0.00"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
-            </div>
+            {editId ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <p className="text-xs font-medium text-slate-500 mb-1">ยอดปัจจุบัน</p>
+                <p className={`text-xl font-bold ${form.type === 'liability' ? 'text-red-500' : 'text-emerald-600'}`}>
+                  ฿{fmt(parseFloat(form.balance) || 0)}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">ยอดนี้มาจากรายการธุรกรรม หากยอดตั้งต้นผิดให้ลบบัญชีนี้แล้วสร้างใหม่</p>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">
+                  {form.type === 'liability' ? 'ยอดค้างชำระเริ่มต้น (฿)' : 'ยอดเงินเริ่มต้น (฿)'}
+                </label>
+                <input type="number" min="0" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })}
+                  placeholder="0.00"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+              </div>
+            )}
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(false)}
@@ -381,32 +459,36 @@ export default function AccountsView({ accounts, onRefresh }) {
 
       {/* Pool-add modal */}
       {showPoolAdd && (
-        <Modal title="เพิ่มบัญชีสินทรัพย์" onClose={() => setShowPoolAdd(false)}>
+        <Modal title="เพิ่มบัญชีสินทรัพย์" size="lg" onClose={() => setShowPoolAdd(false)}>
           <div className="space-y-4">
             {poolAddError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{poolAddError}</p>}
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1 block">ยอดเงินทั้งหมดที่มี (฿)</label>
               <input type="number" min="0" value={poolAddAmount}
-                onChange={(e) => setPoolAddAmount(e.target.value)} placeholder="เช่น 150000"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 font-bold" />
+                onChange={(e) => setPoolAddAmount(e.target.value)} placeholder=""
+                className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-2xl bg-slate-50 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488]" />
             </div>
             {poolAmt > 0 && (
-              <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                <div className="flex justify-between text-xs mb-2">
-                  <span className="text-slate-500 font-medium">กองเงินที่เหลือ</span>
-                  <span className={`font-bold text-sm ${poolOver ? 'text-red-500' : poolDone ? 'text-emerald-600' : 'text-blue-600'}`}>
-                    ฿{fmt(Math.abs(poolRemaining))}
-                    {poolOver && <span className="text-xs font-normal ml-1 text-red-400">(เกิน!)</span>}
-                    {poolDone && <span className="text-xs font-normal ml-1 text-emerald-400"> ✓ จัดสรรครบ</span>}
-                  </span>
+              <div className="rounded-2xl p-4 border border-slate-100 bg-white">
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <p className="text-[11px] text-slate-400">ยอดรวม</p>
+                    <p className="text-sm font-bold text-slate-700">฿{fmt(poolAmt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-slate-400">จัดสรรแล้ว</p>
+                    <p className="text-sm font-bold text-slate-700">฿{fmt(poolAllocated)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-slate-400">{poolOver ? 'ยอดเกิน' : 'คงเหลือ'}</p>
+                    <p className={`text-sm font-bold ${poolOver ? 'text-red-500' : poolDone ? 'text-emerald-600' : 'text-[#2C6488]'}`}>
+                      ฿{fmt(Math.abs(poolRemaining))}
+                    </p>
+                  </div>
                 </div>
                 <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-300 ${poolOver ? 'bg-red-400' : poolDone ? 'bg-emerald-400' : 'bg-blue-400'}`}
+                  <div className={`h-full rounded-full transition-all duration-300 ${poolOver ? 'bg-red-400' : poolDone ? 'bg-emerald-400' : 'bg-[#2C6488]'}`}
                     style={{ width: `${poolPct}%` }} />
-                </div>
-                <div className="flex justify-between text-xs mt-1.5 text-slate-400">
-                  <span>จัดสรรแล้ว ฿{fmt(poolAllocated)}</span>
-                  <span>จากกอง ฿{fmt(poolAmt)}</span>
                 </div>
               </div>
             )}
@@ -415,17 +497,22 @@ export default function AccountsView({ accounts, onRefresh }) {
                 <label className="text-xs font-medium text-slate-500">รายการบัญชีที่ต้องการสร้าง</label>
                 <button onClick={addPoolRow}
                   className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors"
-                  style={{ color: '#3b82f6', background: '#eff6ff' }}>
-                  <Plus size={12} color="#3b82f6" /> เพิ่มบัญชี
+                  style={{ color: '#2C6488', background: '#EAF3F7' }}>
+                  <Plus size={12} color="#2C6488" /> เพิ่มบัญชี
                 </button>
               </div>
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                 {poolAddRows.map((row, idx) => {
                   const k = getKind(row.kind);
                   return (
-                    <div key={row.id} className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                      <div className="flex items-center justify-between mb-2.5">
-                        <span className="text-xs font-semibold text-slate-500">บัญชีที่ {idx + 1}</span>
+                    <div key={row.id} className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: k.color + '18' }}>
+                            <KindIcon icon={k.icon} color={k.color} size={16} />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-500">บัญชีที่ {idx + 1}</span>
+                        </div>
                         {poolAddRows.length > 1 && (
                           <button onClick={() => removePoolRow(row.id)}
                             className="w-5 h-5 rounded-full bg-red-50 hover:bg-red-100 flex items-center justify-center transition-colors">
@@ -433,35 +520,31 @@ export default function AccountsView({ accounts, onRefresh }) {
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-5 gap-1.5 mb-2.5">
-                        {ASSET_KINDS.map((ak) => (
-                          <button key={ak.value} onClick={() => setPoolRowField(row.id, 'kind', ak.value)}
-                            className="flex flex-col items-center gap-0.5 p-1.5 rounded-xl border-2 transition-all"
-                            style={{ borderColor: row.kind === ak.value ? ak.color : '#e2e8f0', background: row.kind === ak.value ? ak.color + '15' : 'white' }}>
-                            <KindIcon icon={ak.icon} color={row.kind === ak.value ? ak.color : '#94a3b8'} size={16} />
-                            <span className="text-[10px] leading-tight text-center"
-                              style={{ color: row.kind === ak.value ? ak.color : '#94a3b8' }}>{ak.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
+                      <div className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-12 sm:col-span-4">
+                          <label className="text-[10px] font-medium text-slate-400 mb-0.5 block">ชนิดบัญชี</label>
+                          <AssetKindDropdown
+                            value={row.kind}
+                            onChange={(kind) => setPoolRowField(row.id, 'kind', kind)}
+                          />
+                        </div>
+                        <div className="col-span-12 sm:col-span-4">
                           <label className="text-[10px] font-medium text-slate-400 mb-0.5 block">ชื่อบัญชี</label>
                           <input value={row.name} onChange={(e) => setPoolRowField(row.id, 'name', e.target.value)}
                             placeholder={`เช่น ${k.label}`}
-                            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white text-slate-700" />
+                            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-slate-50 text-slate-700" />
                         </div>
-                        <div>
+                        <div className="col-span-12 sm:col-span-4">
                           <label className="text-[10px] font-medium text-slate-400 mb-0.5 block">ยอดเงิน (฿)</label>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5">
                             <input type="number" min="0" value={row.balance}
                               onChange={(e) => setPoolRowField(row.id, 'balance', e.target.value)}
                               placeholder="0"
-                              className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-right bg-white text-slate-700 font-medium" />
+                              className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-right bg-slate-50 text-slate-700 font-medium" />
                             {poolAmt > 0 && poolRemaining > 0.005 && (
                               <button onClick={() => fillPoolRemaining(row.id)} title="เติมยอดที่เหลือในกอง"
-                                className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 flex items-center justify-center flex-shrink-0 transition-colors">
-                                <Plus size={12} color="#3b82f6" />
+                                className="px-2 h-9 rounded-lg bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[11px] font-semibold text-[#2C6488] flex-shrink-0 transition-colors">
+                                เติม
                               </button>
                             )}
                           </div>
@@ -475,9 +558,9 @@ export default function AccountsView({ accounts, onRefresh }) {
             <div className="flex gap-3 pt-1">
               <button onClick={() => setShowPoolAdd(false)}
                 className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
-              <button onClick={savePoolAdd} disabled={poolAddSaving}
+              <button onClick={savePoolAdd} disabled={poolAddSaving || poolAmt <= 0 || poolOver}
                 className="flex-1 btn-primary text-white py-2.5 rounded-xl text-sm font-medium disabled:opacity-60">
-                {poolAddSaving ? 'กำลังสร้าง...' : `สร้าง ${poolAddRows.filter(r => r.name.trim()).length} บัญชี`}
+                {poolSaveLabel}
               </button>
             </div>
           </div>
@@ -512,7 +595,7 @@ export default function AccountsView({ accounts, onRefresh }) {
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-slate-500">จัดสรรแล้ว</span>
-                  <span className={`font-semibold ${distValid ? 'text-emerald-600' : remaining < 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                  <span className={`font-semibold ${distValid ? 'text-emerald-600' : remaining < 0 ? 'text-red-500' : 'text-[#2C6488]'}`}>
                     ฿{fmt(allocated)} / ฿{fmt(pool)}
                     {!distValid && remaining !== 0 && (
                       <span className="ml-2 font-normal text-slate-400">
@@ -522,7 +605,7 @@ export default function AccountsView({ accounts, onRefresh }) {
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${remaining < 0 ? 'bg-red-400' : distValid ? 'bg-emerald-400' : 'bg-blue-400'}`}
+                  <div className={`h-full rounded-full transition-all ${remaining < 0 ? 'bg-red-400' : distValid ? 'bg-emerald-400' : 'bg-[#6F9DB6]'}`}
                     style={{ width: `${Math.min((allocated / pool) * 100, 100)}%` }} />
                 </div>
               </div>
@@ -550,8 +633,8 @@ export default function AccountsView({ accounts, onRefresh }) {
                           className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right bg-white text-slate-700 font-medium" />
                         {pool > 0 && remaining > 0 && (
                           <button onClick={() => fillRemaining(idx)} title="เติมยอดที่เหลือ"
-                            className="w-6 h-6 rounded-lg bg-blue-50 hover:bg-blue-100 flex items-center justify-center transition-colors flex-shrink-0">
-                            <Plus size={11} color="#3b82f6" />
+                            className="w-6 h-6 rounded-lg bg-[#EAF3F7] hover:bg-[#DCE8EE] flex items-center justify-center transition-colors flex-shrink-0">
+                            <Plus size={11} color="#2C6488" />
                           </button>
                         )}
                       </div>

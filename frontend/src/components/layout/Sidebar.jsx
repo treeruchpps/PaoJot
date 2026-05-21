@@ -1,4 +1,4 @@
-import { DollarSign, Menu, LogOut } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import Icon from '../common/Icon';
 import { NAV, fmt } from '../../constants/data';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,7 +8,7 @@ export default function Sidebar({ view, setView, accounts, collapsed, setCollaps
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a) => s + a.balance, 0);
   const totalLiab   = accounts.filter((a) => a.type === 'liability').reduce((s, a) => s + a.balance, 0);
   const netWorth    = totalAssets - totalLiab;
-  const accent = '#3b82f6';
+  const accent = '#2C6488';
   const initials = user?.username?.slice(0, 1).toUpperCase() || '?';
 
   return (
@@ -16,15 +16,17 @@ export default function Sidebar({ view, setView, accounts, collapsed, setCollaps
       className={`flex flex-col ${collapsed ? 'w-16' : 'w-60'} flex-shrink-0 transition-all duration-200 border-r bg-white border-slate-100 shadow-sm`}
     >
       {/* Logo */}
-      <div className="px-4 py-5 flex items-center gap-3">
+      <div className="px-4 py-3 flex items-center gap-2">
         <button
           onClick={() => setView('analytics')}
-          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
         >
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: accent }}>
-            <DollarSign size={18} color="white" />
-          </div>
-          {!collapsed && <span className="text-base font-bold" style={{ color: accent }}>PaoJot</span>}
+          <img
+            src="/images/Logo_PaoJot.png"
+            alt="PaoJot"
+            className="w-14 h-14 rounded-2xl object-cover flex-shrink-0"
+          />
+          {!collapsed && <span className="text-2xl font-bold leading-none" style={{ color: '#2C6488' }}>PaoJot</span>}
         </button>
       </div>
 

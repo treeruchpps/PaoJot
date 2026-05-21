@@ -14,9 +14,9 @@ const (
 	AccountKindSavings     AccountKind = "savings"
 	AccountKindInvestment  AccountKind = "investment"
 	AccountKindEWallet     AccountKind = "e_wallet"
-	AccountKindCreditCard   AccountKind = "credit_card"
-	AccountKindLoan         AccountKind = "loan"
-	AccountKindInstallment  AccountKind = "installment"
+	AccountKindCreditCard  AccountKind = "credit_card"
+	AccountKindLoan        AccountKind = "loan"
+	AccountKindInstallment AccountKind = "installment"
 )
 
 type Account struct {
@@ -36,15 +36,13 @@ type CreateAccountRequest struct {
 	Name     string      `json:"name"     binding:"required,max=100"`
 	Type     AccountType `json:"type"     binding:"required,oneof=asset liability"`
 	Kind     AccountKind `json:"kind"     binding:"required"`
-	Balance  float64     `json:"balance"`
+	Balance  float64     `json:"balance"  binding:"gte=0"`
 	Currency string      `json:"currency"`
 }
 
 type UpdateAccountRequest struct {
 	Name     *string      `json:"name"`
 	Kind     *AccountKind `json:"kind"`
-	Balance  *float64     `json:"balance"`
 	Currency *string      `json:"currency"`
 	IsActive *bool        `json:"is_active"`
 }
-

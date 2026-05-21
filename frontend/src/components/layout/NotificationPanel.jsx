@@ -53,7 +53,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
         </div>
         {list.length > 0 && (
           <button onClick={readAll}
-            className="text-xs text-blue-500 hover:text-blue-700 font-medium">
+            className="text-xs text-[#2C6488] hover:text-[#25536F] font-medium">
             อ่านทั้งหมด
           </button>
         )}
@@ -70,8 +70,8 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
           list.map((n) => {
             const isBudget    = !!n.budget_id;
             const isRecurring = !!n.recurring_id;
-            const dotColor    = isBudget ? '#f59e0b' : '#3b82f6';
-            const bgColor     = n.is_read ? 'bg-white' : isBudget ? 'bg-amber-50/50' : 'bg-blue-50/40';
+            const dotColor    = isBudget ? '#f59e0b' : '#2C6488';
+            const bgColor     = n.is_read ? 'bg-white' : isBudget ? 'bg-amber-50/50' : 'bg-[#EAF3F7]/40';
 
             return (
               <div key={n.id} className={`px-5 py-4 transition-colors ${bgColor}`}>
@@ -81,7 +81,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
                   <div className="flex-shrink-0 mt-0.5">
                     {isBudget
                       ? <AlertTriangle size={15} color="#f59e0b" />
-                      : <RefreshCw    size={15} color="#3b82f6" />}
+                      : <RefreshCw    size={15} color="#2C6488" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -107,9 +107,9 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
                   <div className="flex gap-2 ml-6">
                     <button onClick={() => confirm(n.id)}
                       className="flex-1 text-xs py-2 rounded-xl font-semibold transition-colors"
-                      style={{ background: '#eff6ff', color: '#3b82f6' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#bfdbfe'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = '#eff6ff'; }}>
+                      style={{ background: '#EAF3F7', color: '#2C6488' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#BFD8E4'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = '#EAF3F7'; }}>
                       ✓ บันทึกรายการ
                     </button>
                     <button onClick={() => skip(n.id)}

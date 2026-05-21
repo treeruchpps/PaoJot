@@ -25,9 +25,9 @@ import { NAV } from './constants/data';
 // ─── Loading Spinner ──────────────────────────────────────────────────────────
 function Spinner() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    <div className="min-h-screen flex items-center justify-center bg-[#F6FAFC]">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-10 h-10 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" />
+        <div className="w-10 h-10 rounded-full border-4 border-[#DCE8EE] border-t-[#2C6488] animate-spin" />
         <p className="text-sm text-slate-500">กำลังโหลด...</p>
       </div>
     </div>
@@ -126,7 +126,7 @@ function AppShell() {
     : NAV.find((n) => n.id === view)?.label || '';
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-[#F6FAFC]">
       <Sidebar
         view={view}
         setView={setView}
@@ -158,6 +158,7 @@ function AppShell() {
               accounts={accounts}
               categories={categories}
               onRefreshAccounts={refreshAccounts}
+              onGoAccounts={() => setView('accounts')}
             />
           )}
           {view === 'budgets'      && (

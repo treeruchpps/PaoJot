@@ -37,7 +37,7 @@ type CreateRecurringRequest struct {
 
 type UpdateRecurringRequest struct {
 	CategoryID  *string  `json:"category_id"`
-	Amount      *float64 `json:"amount"`
+	Amount      *float64 `json:"amount" binding:"omitempty,gt=0"`
 	Name        *string  `json:"name"`
 	Note        *string  `json:"note"`
 	Frequency   *string  `json:"frequency"`

@@ -14,12 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"paomoney/internal/config"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"paomoney/internal/config"
 )
 
-// ─── Status constants ─────────────────────────────────────────────────────────
+// Status constants
 const (
 	jobPending    = "pending"
 	jobProcessing = "processing"
@@ -33,23 +34,23 @@ const (
 	slipError   = "error"
 )
 
-// ─── Response structs ─────────────────────────────────────────────────────────
+// Response structs
 type SlipResult struct {
-	ID              string   `json:"id"`
-	JobID           string   `json:"job_id"`
-	Status          string   `json:"status"`
-	Filename        string   `json:"filename"`
-	ImagePath       string   `json:"image_path"`
-	Bank            *string  `json:"bank"`
-	Amount          float64  `json:"amount"`
-	TransactionDate *string  `json:"transaction_date"`
-	TransactionTime *string  `json:"transaction_time"`
-	Sender          *string  `json:"sender"`
-	Receiver        *string  `json:"receiver"`
-	RefNo           *string  `json:"ref_no"`
-	IsDuplicate     bool     `json:"is_duplicate"`
-	ErrorMsg        *string  `json:"error_msg"`
-	CreatedAt       string   `json:"created_at"`
+	ID              string  `json:"id"`
+	JobID           string  `json:"job_id"`
+	Status          string  `json:"status"`
+	Filename        string  `json:"filename"`
+	ImagePath       string  `json:"image_path"`
+	Bank            *string `json:"bank"`
+	Amount          float64 `json:"amount"`
+	TransactionDate *string `json:"transaction_date"`
+	TransactionTime *string `json:"transaction_time"`
+	Sender          *string `json:"sender"`
+	Receiver        *string `json:"receiver"`
+	RefNo           *string `json:"ref_no"`
+	IsDuplicate     bool    `json:"is_duplicate"`
+	ErrorMsg        *string `json:"error_msg"`
+	CreatedAt       string  `json:"created_at"`
 }
 
 type SlipJob struct {
@@ -71,7 +72,7 @@ type SlipData struct {
 	RefNo    *string `json:"ref_no"`
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+// Handler
 type SlipHandler struct {
 	db  *pgxpool.Pool
 	cfg *config.Config
@@ -260,7 +261,7 @@ func (h *SlipHandler) SaveResult(c *gin.Context) {
 	var body struct {
 		AccountID       string  `json:"account_id"`
 		CategoryID      string  `json:"category_id"`
-		TxType          string  `json:"tx_type"`    // "income" | "expense"
+		TxType          string  `json:"tx_type"` // "income" | "expense"
 		Amount          float64 `json:"amount"`
 		Name            string  `json:"name"`
 		TransactionDate string  `json:"transaction_date"`

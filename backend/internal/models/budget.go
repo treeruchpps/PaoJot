@@ -17,9 +17,6 @@ type Budget struct {
 	Name       string       `json:"name"`
 	Amount     float64      `json:"amount"`
 	Period     BudgetPeriod `json:"period"`
-	StartDate  time.Time    `json:"start_date"`
-	EndDate    *time.Time   `json:"end_date"`
-	IsActive   bool         `json:"is_active"`
 	Spent      float64      `json:"spent"`
 	CreatedAt  time.Time    `json:"created_at"`
 	UpdatedAt  time.Time    `json:"updated_at"`
@@ -30,14 +27,11 @@ type CreateBudgetRequest struct {
 	Name       string       `json:"name"       binding:"required,max=100"`
 	Amount     float64      `json:"amount"     binding:"required,gt=0"`
 	Period     BudgetPeriod `json:"period"     binding:"required,oneof=weekly monthly yearly"`
-	StartDate  string       `json:"start_date"`
-	EndDate    *string      `json:"end_date"`
 }
 
 type UpdateBudgetRequest struct {
+	CategoryID *string       `json:"category_id"`
 	Name       *string       `json:"name"`
 	Amount     *float64      `json:"amount"    binding:"omitempty,gt=0"`
 	Period     *BudgetPeriod `json:"period"`
-	EndDate    *string       `json:"end_date"`
-	IsActive   *bool         `json:"is_active"`
 }

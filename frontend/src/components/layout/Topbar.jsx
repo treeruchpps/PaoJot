@@ -4,7 +4,7 @@ import NotificationPanel from './NotificationPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { profile as profileApi } from '../../services/api';
 
-const accent = '#3b82f6';
+const accent = '#2C6488';
 
 export default function Topbar({ pageTitle, onProfile, notifications, onNotificationRefresh, onRefreshAccounts }) {
   const { user } = useAuth();
@@ -62,7 +62,7 @@ export default function Topbar({ pageTitle, onProfile, notifications, onNotifica
         <button
           onClick={onProfile}
           title="โปรไฟล์"
-          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-white text-sm font-bold hover:opacity-80 transition-opacity ring-2 ring-offset-1 ring-transparent hover:ring-blue-300"
+          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-white text-sm font-bold hover:opacity-80 transition-opacity ring-2 ring-offset-1 ring-transparent hover:ring-[#BFD8E4]"
           style={avatarUrl ? {} : { background: accent }}>
           {avatarUrl
             ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />

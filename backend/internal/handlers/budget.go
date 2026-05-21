@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"paomoney/internal/models"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,7 +24,7 @@ func (h *BudgetHandler) List(c *gin.Context) {
 	// คำนวณยอดใช้จ่ายจริงในช่วงเวลาของแต่ละงบประมาณ ด้วย lateral subquery
 	rows, err := h.db.Query(context.Background(),
 		`SELECT b.id, b.user_id, b.category_id, b.name, b.amount, b.period,
-		        b.start_date, b.end_date, b.is_active, b.created_at, b.updated_at,
+		        b.created_at, b.updated_at,
 		        COALESCE((
 		          SELECT SUM(t.amount)
 		          FROM transactions t
@@ -36,13 +35,11 @@ func (h *BudgetHandler) List(c *gin.Context) {
 		              WHEN 'monthly' THEN date_trunc('month', CURRENT_DATE)::date
 		              WHEN 'weekly'  THEN date_trunc('week',  CURRENT_DATE)::date
 		              WHEN 'yearly'  THEN date_trunc('year',  CURRENT_DATE)::date
-		              ELSE b.start_date
 		            END
 		            AND t.transaction_date <= CASE b.period
 		              WHEN 'monthly' THEN (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day')::date
 		              WHEN 'weekly'  THEN (date_trunc('week',  CURRENT_DATE) + interval '6 days')::date
 		              WHEN 'yearly'  THEN (date_trunc('year',  CURRENT_DATE) + interval '1 year - 1 day')::date
-		              ELSE COALESCE(b.end_date, CURRENT_DATE)
 		            END
 		        ), 0) AS spent
 		 FROM budgets b
@@ -60,8 +57,7 @@ func (h *BudgetHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var b models.Budget
 		if err := rows.Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Name, &b.Amount,
-			&b.Period, &b.StartDate, &b.EndDate, &b.IsActive, &b.CreatedAt, &b.UpdatedAt,
-			&b.Spent); err != nil {
+			&b.Period, &b.CreatedAt, &b.UpdatedAt, &b.Spent); err != nil {
 			continue
 		}
 		budgets = append(budgets, b)
@@ -80,36 +76,14 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var startDate time.Time
-	if req.StartDate == "" {
-		startDate = time.Now().Truncate(24 * time.Hour)
-	} else {
-		parsed, parseErr := time.Parse("2006-01-02", req.StartDate)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start_date format, use YYYY-MM-DD"})
-			return
-		}
-		startDate = parsed
-	}
-
-	var endDate *time.Time
-	if req.EndDate != nil {
-		parsed, parseErr := time.Parse("2006-01-02", *req.EndDate)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid end_date format, use YYYY-MM-DD"})
-			return
-		}
-		endDate = &parsed
-	}
-
 	var b models.Budget
 	err := h.db.QueryRow(context.Background(),
-		`INSERT INTO budgets (user_id, category_id, name, amount, period, start_date, end_date)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, user_id, category_id, name, amount, period, start_date, end_date, is_active, created_at, updated_at`,
-		userID, req.CategoryID, req.Name, req.Amount, req.Period, startDate, endDate,
+		`INSERT INTO budgets (user_id, category_id, name, amount, period)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, user_id, category_id, name, amount, period, created_at, updated_at`,
+		userID, req.CategoryID, req.Name, req.Amount, req.Period,
 	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Name, &b.Amount,
-		&b.Period, &b.StartDate, &b.EndDate, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
+		&b.Period, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create budget"})
@@ -126,11 +100,11 @@ func (h *BudgetHandler) Get(c *gin.Context) {
 
 	var b models.Budget
 	err := h.db.QueryRow(context.Background(),
-		`SELECT id, user_id, category_id, name, amount, period, start_date, end_date, is_active, created_at, updated_at
+		`SELECT id, user_id, category_id, name, amount, period, created_at, updated_at
 		 FROM budgets WHERE id = $1 AND user_id = $2`,
 		id, userID,
 	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Name, &b.Amount,
-		&b.Period, &b.StartDate, &b.EndDate, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
+		&b.Period, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "budget not found"})
@@ -151,29 +125,18 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var endDate *time.Time
-	if req.EndDate != nil {
-		parsed, err := time.Parse("2006-01-02", *req.EndDate)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid end_date format, use YYYY-MM-DD"})
-			return
-		}
-		endDate = &parsed
-	}
-
 	var b models.Budget
 	err := h.db.QueryRow(context.Background(),
 		`UPDATE budgets
-		 SET name      = COALESCE($1, name),
-		     amount    = COALESCE($2, amount),
-		     period    = COALESCE($3, period),
-		     end_date  = COALESCE($4, end_date),
-		     is_active = COALESCE($5, is_active)
-		 WHERE id = $6 AND user_id = $7
-		 RETURNING id, user_id, category_id, name, amount, period, start_date, end_date, is_active, created_at, updated_at`,
-		req.Name, req.Amount, req.Period, endDate, req.IsActive, id, userID,
+		 SET category_id = $1,
+		     name        = COALESCE($2, name),
+		     amount      = COALESCE($3, amount),
+		     period      = COALESCE($4, period)
+		 WHERE id = $5 AND user_id = $6
+		 RETURNING id, user_id, category_id, name, amount, period, created_at, updated_at`,
+		req.CategoryID, req.Name, req.Amount, req.Period, id, userID,
 	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Name, &b.Amount,
-		&b.Period, &b.StartDate, &b.EndDate, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
+		&b.Period, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "budget not found"})
