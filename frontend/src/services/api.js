@@ -4,6 +4,7 @@
 // ====================================================
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
+export const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 // ---------- Token helpers ----------
 export const getAccessToken  = () => localStorage.getItem('pm_access_token');
@@ -170,13 +171,18 @@ export const recurring = {
 // ====================================================
 export const receiptJobs = {
   // อัปโหลดใบเสร็จ 1 ใบ → สร้าง job + background OCR/parse
-  create: (file) => {
+  create: (files) => {
     const form = new FormData();
-    form.append('file', file);
+    const list = Array.isArray(files) ? files : [files];
+    list.forEach((f) => form.append('files', f));
     return request('/receipt-jobs', { method: 'POST', body: form }, true, true);
   },
   // poll สถานะ + ผลลัพธ์
   get: (jobId) => request(`/receipt-jobs/${jobId}`),
+  list: () => request('/receipt-jobs'),
+  cancel: (jobId) => request(`/receipt-jobs/${jobId}/cancel`, { method: 'POST' }),
+  save: (jobId, resultId) => request(`/receipt-jobs/${jobId}/results/${resultId}/save`, { method: 'POST' }),
+  skip: (jobId, resultId) => request(`/receipt-jobs/${jobId}/results/${resultId}/skip`, { method: 'POST' }),
 };
 
 // ====================================================
@@ -195,6 +201,8 @@ export const slipJobs = {
 
   // List recent jobs
   list: () => request('/slip-jobs'),
+  cancel: (jobId) => request(`/slip-jobs/${jobId}/cancel`, { method: 'POST' }),
+  skip: (jobId, resultId) => request(`/slip-jobs/${jobId}/results/${resultId}/skip`, { method: 'POST' }),
 
   // Confirm a slip result → create transaction
   save: (jobId, resultId, body) =>
@@ -212,4 +220,17 @@ export const notifications = {
   confirm: (id) => request(`/notifications/${id}/confirm`, { method: 'POST' }),
   skip:    (id) => request(`/notifications/${id}/skip`,    { method: 'POST' }),
   readAll: ()   => request('/notifications/read-all',      { method: 'PUT'  }),
+};
+
+// ====================================================
+// AI FINANCIAL SUMMARY
+// ====================================================
+export const aiSummary = {
+  get: (periodType = 'monthly') =>
+    request(`/ai-summary?period_type=${encodeURIComponent(periodType)}`),
+  generate: (periodType = 'monthly') =>
+    request('/ai-summary', {
+      method: 'POST',
+      body: JSON.stringify({ period_type: periodType }),
+    }),
 };

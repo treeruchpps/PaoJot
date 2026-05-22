@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Icon from '../components/common/Icon';
-import { Sun, Calendar, BarChart2, TrendingUp, TrendingDown } from 'lucide-react';
-import { transactions as txApi, profile as profileApi } from '../services/api';
+import { Sun, Calendar, BarChart2, TrendingUp, TrendingDown, Wallet, ReceiptText, AlertCircle, Sparkles, RefreshCw, X } from 'lucide-react';
+import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi } from '../services/api';
 import { fmt } from '../constants/data';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -196,6 +196,11 @@ export default function AnalyticsView({ accounts, categories }) {
   const [txList,       setTxList]       = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [barData,      setBarData]      = useState([]);
+  const [aiPeriod,     setAiPeriod]     = useState('monthly');
+  const [aiState,      setAiState]      = useState(null);
+  const [aiLoading,    setAiLoading]    = useState(false);
+  const [aiError,      setAiError]      = useState('');
+  const [showAiSummary, setShowAiSummary] = useState(true);
 
   // ── Fetch profile once ────────────────────────────────────────────────────
   useEffect(() => {
@@ -253,6 +258,36 @@ export default function AnalyticsView({ accounts, categories }) {
 
   useEffect(() => { fetchAll(weekStartDay); }, [weekStartDay, fetchAll]);
 
+  const loadAiSummary = useCallback(async (periodType = aiPeriod) => {
+    try {
+      setAiError('');
+      const data = await aiSummaryApi.get(periodType);
+      setAiState(data);
+    } catch (err) {
+      setAiError(err.message || 'โหลดสรุป AI ไม่สำเร็จ');
+    }
+  }, [aiPeriod]);
+
+  useEffect(() => { loadAiSummary(aiPeriod); }, [aiPeriod, weekStartDay, loadAiSummary]);
+
+  const handleGenerateSummary = async (periodType = aiPeriod) => {
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const data = await aiSummaryApi.generate(periodType);
+      setAiState(data);
+      setShowAiSummary(true);
+    } catch (err) {
+      setAiError(err.message || 'สรุปด้วย AI ไม่สำเร็จ');
+      try {
+        const data = await aiSummaryApi.get(periodType);
+        setAiState(data);
+      } catch {}
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // When period tab changes, just swap txList from cached stats
   const handlePeriodSelect = (id) => {
     setPeriod(id);
@@ -264,7 +299,21 @@ export default function AnalyticsView({ accounts, categories }) {
   const totalLiab   = accounts.filter((a) => a.type === 'liability').reduce((s, a) => s + a.balance, 0);
   const netWorth    = totalAssets - totalLiab;
 
+  const income = txList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const selectedPeriodLabel = PERIOD_CONFIG.find((p) => p.id === period)?.label || '';
+  const spendRate = income > 0 ? Math.min((expense / income) * 100, 999) : 0;
+  const topAccounts = [...accounts]
+    .filter((a) => a.type === 'asset')
+    .sort((a, b) => b.balance - a.balance)
+    .slice(0, 5);
+  const recentTx = [...txList]
+    .sort((a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')))
+    .slice(0, 5);
+  const aiSummary = aiState?.summary;
+  const hasAiSummary = !!aiSummary;
+  const showAiSummaryCard = hasAiSummary && showAiSummary;
+  const overviewSpan = showAiSummaryCard ? 'lg:col-span-7' : 'lg:col-span-12';
 
   const getCatName = (id) => {
     if (!id) return 'อื่นๆ';
@@ -301,25 +350,211 @@ export default function AnalyticsView({ accounts, categories }) {
   return (
     <div className="p-6 space-y-5">
 
-      {/* ── Net Worth ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          {
-            label: 'มูลค่าสุทธิ',
-            value: netWorth,
-            color: netWorth >= 0 ? '#2C6488' : '#ef4444',
-            bg:    netWorth >= 0 ? '#EAF3F7' : '#fff1f2',
-          },
-          { label: 'สินทรัพย์รวม', value: totalAssets, color: '#10b981', bg: '#f0fdf4' },
-          { label: 'หนี้สินรวม',   value: totalLiab,   color: '#ef4444', bg: '#fff1f2' },
-        ].map((s, i) => (
-          <div key={i} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '40' }}>
-            <p className="text-xs text-slate-500 mb-1">{s.label}</p>
-            <p className="text-2xl font-bold" style={{ color: s.color }}>
-              {s.value < 0 ? '-' : ''}฿{fmt(s.value)}
-            </p>
+      {/* ── Overview ───────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-12 gap-4 items-stretch">
+        <div className={`col-span-12 ${overviewSpan} rounded-2xl border border-[#DCE8EE] bg-[#EAF3F7] p-5 overflow-hidden h-full min-h-[280px] flex flex-col justify-between`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold text-[#2C6488] mb-2">ภาพรวมการเงิน</p>
+              <h2 className="text-sm text-slate-500 mb-1">มูลค่าสุทธิ</h2>
+              <p className="text-4xl font-bold" style={{ color: netWorth >= 0 ? '#2C6488' : '#ef4444' }}>
+                {netWorth < 0 ? '-' : ''}฿{fmt(netWorth)}
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center border border-white">
+              <Wallet size={24} color="#2C6488" />
+            </div>
           </div>
-        ))}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-white/75 border border-white px-3 py-3">
+              <p className="text-xs text-slate-500 mb-1">สินทรัพย์รวม</p>
+              <p className="text-lg font-bold text-emerald-600">฿{fmt(totalAssets)}</p>
+            </div>
+            <div className="rounded-xl bg-white/75 border border-white px-3 py-3">
+              <p className="text-xs text-slate-500 mb-1">หนี้สินรวม</p>
+              <p className="text-lg font-bold text-red-500">฿{fmt(totalLiab)}</p>
+            </div>
+          </div>
+          {!showAiSummaryCard && (
+            <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white/70 border border-white px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">AI สรุปการเงิน</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {hasAiSummary
+                    ? 'มีสรุปที่สร้างไว้แล้ว กดเปิดเพื่อดูอีกครั้ง'
+                    : aiState?.eligible === false
+                    ? aiState.reason
+                    : aiState?.stale
+                      ? 'ข้อมูลมีการเปลี่ยนแปลง กดสรุปใหม่เพื่ออัปเดต'
+                      : 'เลือกช่วงเวลาแล้วให้ AI ช่วยสรุปภาพรวมแบบสั้น ๆ'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-xl bg-white border border-[#DCE8EE] p-1">
+                  {[
+                    ['weekly', 'สัปดาห์'],
+                    ['monthly', 'เดือน'],
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAiPeriod(id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${aiPeriod === id ? 'bg-[#2C6488] text-white' : 'text-slate-500 hover:text-[#2C6488]'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {hasAiSummary && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAiSummary(true)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white text-[#2C6488] border border-[#DCE8EE] text-xs font-semibold"
+                  >
+                    <Sparkles size={14} />
+                    เปิดสรุป
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleGenerateSummary(aiPeriod)}
+                  disabled={aiLoading || aiState?.eligible === false}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#2C6488] text-white text-xs font-semibold disabled:opacity-50"
+                >
+                  {aiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  {aiState?.stale ? 'สรุปใหม่' : 'สรุปด้วย AI'}
+                </button>
+              </div>
+            </div>
+          )}
+          {aiError && !hasAiSummary && (
+            <p className="mt-2 text-xs text-red-500">{aiError}</p>
+          )}
+        </div>
+
+        {showAiSummaryCard && (
+          <div className="col-span-12 lg:col-span-5 rounded-2xl bg-white p-5 shadow-sm border border-slate-100 h-full min-h-[280px] max-h-[280px] flex flex-col">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} color="#2C6488" />
+                <h3 className="text-sm font-semibold text-slate-700">AI สรุปการเงิน</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
+                  {[
+                    ['weekly', 'สัปดาห์'],
+                    ['monthly', 'เดือน'],
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAiPeriod(id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${aiPeriod === id ? 'bg-[#2C6488] text-white' : 'text-slate-500 hover:text-[#2C6488]'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateSummary(aiPeriod)}
+                  disabled={aiLoading || aiState?.eligible === false}
+                  className="w-8 h-8 rounded-xl bg-[#EAF3F7] text-[#2C6488] inline-flex items-center justify-center disabled:opacity-50"
+                  title={aiState?.stale ? 'สรุปใหม่' : 'รีเฟรชสรุป'}
+                >
+                  <RefreshCw size={15} className={aiLoading ? 'animate-spin' : ''} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAiSummary(false)}
+                  className="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 inline-flex items-center justify-center hover:bg-slate-100"
+                  title="ปิดสรุป"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto pr-2">
+              <div className="rounded-xl bg-[#EAF3F7] border border-[#DCE8EE] px-3 py-3 mb-3">
+                <p className="text-xs font-semibold text-[#2C6488] mb-1">{aiSummary.title || 'สรุปการเงิน'}</p>
+                <p className="text-sm text-slate-700 leading-relaxed">{aiSummary.overview}</p>
+              </div>
+
+              <div className="space-y-3">
+                {aiSummary.highlights?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5">ข้อสังเกต</p>
+                    <div className="space-y-1.5">
+                      {aiSummary.highlights.slice(0, 4).map((item, idx) => (
+                        <p key={idx} className="text-xs text-slate-600 leading-relaxed">• {item}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {aiSummary.cautions?.length > 0 && (
+                  <div className="rounded-xl bg-amber-50 px-3 py-2.5">
+                    <p className="text-xs font-semibold text-amber-700 mb-1">ควรระวัง</p>
+                    <div className="space-y-1.5">
+                      {aiSummary.cautions.slice(0, 3).map((item, idx) => (
+                        <p key={idx} className="text-xs text-amber-700 leading-relaxed">• {item}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {aiSummary.suggestions?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5">คำแนะนำ</p>
+                    <div className="space-y-1.5">
+                      {aiSummary.suggestions.slice(0, 5).map((item, idx) => (
+                        <p key={idx} className="text-xs text-slate-600 leading-relaxed">{idx + 1}. {item}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {aiState?.stale && (
+                <p className="mt-3 text-xs text-amber-600">ข้อมูลมีการเปลี่ยนแปลง กดรีเฟรชเพื่อสรุปใหม่</p>
+              )}
+              {aiError && (
+                <p className="mt-3 text-xs text-red-500">{aiError}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {false && hasAiSummary && (
+          <div className="col-span-12 lg:col-span-5 rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle size={16} color="#2C6488" />
+            <h3 className="text-sm font-semibold text-slate-700">วันนี้ควรรู้</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="rounded-xl bg-slate-50 px-3 py-3">
+              <p className="text-xs text-slate-400 mb-1">{selectedPeriodLabel} ใช้ไปเทียบกับรายรับ</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(spendRate, 100)}%`, background: spendRate > 100 ? '#ef4444' : '#2C6488' }} />
+                </div>
+                <span className={`text-xs font-bold ${spendRate > 100 ? 'text-red-500' : 'text-[#2C6488]'}`}>
+                  {income > 0 ? `${spendRate.toFixed(0)}%` : 'ไม่มีรายรับ'}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-emerald-50 px-3 py-3">
+                <p className="text-xs text-slate-500 mb-1">รายรับ</p>
+                <p className="text-sm font-bold text-emerald-600">+฿{fmt(income)}</p>
+              </div>
+              <div className="rounded-xl bg-red-50 px-3 py-3">
+                <p className="text-xs text-slate-500 mb-1">รายจ่าย</p>
+                <p className="text-sm font-bold text-red-500">-฿{fmt(expense)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
       </div>
 
       {/* ── Period Cards ────────────────────────────────────────────────────── */}
@@ -384,12 +619,6 @@ export default function AnalyticsView({ accounts, categories }) {
                       <span className="text-xs text-slate-500">รายจ่าย</span>
                     </div>
                     <span className="text-xs font-bold text-red-500">-฿{fmt(stats.exp)}</span>
-                  </div>
-                  <div className="pt-1 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs text-slate-400">คงเหลือ</span>
-                    <span className={`text-xs font-bold ${stats.inc - stats.exp >= 0 ? 'text-[#2C6488]' : 'text-red-500'}`}>
-                      {stats.inc - stats.exp < 0 ? '-' : ''}฿{fmt(stats.inc - stats.exp)}
-                    </span>
                   </div>
                 </div>
               )}
@@ -465,6 +694,64 @@ export default function AnalyticsView({ accounts, categories }) {
                     </span>{' '}
                     จากเดือนก่อน
                   </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-slate-700">รายการล่าสุด</h3>
+                <ReceiptText size={16} color="#94a3b8" />
+              </div>
+              {recentTx.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs">ยังไม่มีรายการในช่วงนี้</div>
+              ) : (
+                <div className="space-y-3">
+                  {recentTx.map((tx) => {
+                    const cat = (categories || []).find((c) => c.id === tx.category_id);
+                    return (
+                      <div key={tx.id} className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ background: tx.type === 'income' ? '#f0fdf4' : tx.type === 'expense' ? '#fff1f2' : '#EAF3F7' }}>
+                          <Icon name={cat?.icon || 'Tag'} size={16} color={tx.type === 'income' ? '#10b981' : tx.type === 'expense' ? '#ef4444' : '#2C6488'} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-700 truncate">{tx.name || tx.note || 'ไม่มีชื่อรายการ'}</p>
+                          <p className="text-xs text-slate-400">{tx.transaction_date?.slice(0, 10) || ''}</p>
+                        </div>
+                        <p className={`text-sm font-bold ${tx.type === 'expense' ? 'text-red-500' : 'text-emerald-600'}`}>
+                          {tx.type === 'expense' ? '-' : '+'}฿{fmt(tx.amount)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-slate-700">บัญชีหลัก</h3>
+                <Wallet size={16} color="#94a3b8" />
+              </div>
+              {topAccounts.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs">ยังไม่มีบัญชีสินทรัพย์</div>
+              ) : (
+                <div className="space-y-3">
+                  {topAccounts.map((a) => (
+                    <div key={a.id} className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                        <Wallet size={16} color="#2C6488" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{a.name}</p>
+                        <p className="text-xs text-slate-400">{a.kind || 'บัญชี'}</p>
+                      </div>
+                      <p className="text-sm font-bold text-[#2C6488]">฿{fmt(a.balance)}</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

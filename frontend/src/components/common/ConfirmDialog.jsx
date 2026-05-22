@@ -1,0 +1,62 @@
+import { AlertTriangle, Loader2, Trash2, XCircle } from 'lucide-react';
+import Modal from './Modal';
+
+export default function ConfirmDialog({
+  open,
+  title = 'ยืนยันการทำรายการ',
+  message,
+  confirmText = 'ยืนยัน',
+  cancelText = 'ปิด',
+  tone = 'danger',
+  loading = false,
+  onConfirm,
+  onClose,
+}) {
+  if (!open) return null;
+
+  const isDanger = tone === 'danger';
+  const Icon = isDanger ? Trash2 : AlertTriangle;
+  const iconColor = isDanger ? '#ef4444' : '#f59e0b';
+  const iconBg = isDanger ? '#fff1f2' : '#fffbeb';
+  const buttonClass = isDanger
+    ? 'bg-red-500 hover:bg-red-600'
+    : 'bg-amber-500 hover:bg-amber-600';
+
+  return (
+    <Modal title={title} onClose={loading ? () => {} : onClose}>
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: iconBg }}>
+            <Icon size={21} color={iconColor} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm text-slate-700 leading-relaxed">{message}</p>
+            <p className="text-xs text-slate-400 mt-1">การทำรายการนี้อาจไม่สามารถย้อนกลับได้</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            <XCircle size={15} />
+            {cancelText}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 ${buttonClass}`}
+          >
+            {loading ? <Loader2 size={15} className="animate-spin" /> : null}
+            {loading ? 'กำลังทำรายการ...' : confirmText}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}

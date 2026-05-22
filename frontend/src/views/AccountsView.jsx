@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, CreditCard, Tag, Landmark, Edit, Trash2, Share2, Plus, X, ChevronDown } from 'lucide-react';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 import { accounts as accountsApi, transactions as txApi } from '../services/api';
 import { fmt } from '../constants/data';
 
@@ -128,6 +129,8 @@ export default function AccountsView({ accounts, onRefresh }) {
   const [allocations, setAllocations] = useState([]);
   const [distSaving, setDistSaving]   = useState(false);
   const [distError, setDistError]     = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const assetAccounts = accounts.filter((a) => a.type === 'asset');
   const liabAccounts  = accounts.filter((a) => a.type === 'liability');
@@ -240,10 +243,15 @@ export default function AccountsView({ accounts, onRefresh }) {
     finally { setSaving(false); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm('ต้องการลบบัญชีนี้? รายการธุรกรรมและรายการประจำที่เกี่ยวข้องกับบัญชีนี้จะถูกลบไปด้วย')) return;
-    try { await accountsApi.delete(id); await onRefresh(); }
-    catch (err) { alert(err.message); }
+  const remove = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await accountsApi.delete(deleteTarget.id);
+      await onRefresh();
+      setDeleteTarget(null);
+    } catch (err) { alert(err.message); }
+    finally { setDeleting(false); }
   };
 
   // ── Distribute ─────────────────────────────────────────────────────────────
@@ -301,7 +309,7 @@ export default function AccountsView({ accounts, onRefresh }) {
               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
               <Edit size={12} color="#64748b" />
             </button>
-            <button onClick={() => remove(acc.id)}
+            <button onClick={() => setDeleteTarget(acc)}
               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
               <Trash2 size={12} color="#94a3b8" />
             </button>
@@ -341,18 +349,18 @@ export default function AccountsView({ accounts, onRefresh }) {
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={openPoolAdd}
             className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-            style={{ color: '#059669', borderColor: '#6ee7b7', background: '#ecfdf5' }}>
-            <Plus size={15} color="#059669" /> เพิ่มบัญชีสินทรัพย์
+            style={{ color: '#10b981', borderColor: '#10b98133', background: '#f0fdf4' }}>
+            <Plus size={15} color="#10b981" /> เพิ่มบัญชีสินทรัพย์
           </button>
           <button onClick={() => openAdd('liability')}
             className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-            style={{ color: '#ef4444', borderColor: '#fecaca', background: '#fff1f2' }}>
+            style={{ color: '#ef4444', borderColor: '#ef444433', background: '#fff1f2' }}>
             <Plus size={15} color="#ef4444" /> เพิ่มบัญชีหนี้สิน
           </button>
           {assetAccounts.length > 0 && (
             <button onClick={openDist}
               className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-              style={{ color: '#2C6488', borderColor: '#BFD8E4', background: '#EAF3F7' }}>
+              style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}>
               <Share2 size={15} color="#2C6488" /> แบ่งเงินเข้าบัญชี
             </button>
           )}
@@ -654,6 +662,15 @@ export default function AccountsView({ accounts, onRefresh }) {
           </div>
         </Modal>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="ลบบัญชี"
+        message={`ต้องการลบบัญชี "${deleteTarget?.name || ''}" ใช่ไหม? รายการธุรกรรมและรายการประจำที่เกี่ยวข้องกับบัญชีนี้จะถูกลบไปด้วย`}
+        confirmText="ลบบัญชี"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={remove}
+      />
     </div>
   );
 }

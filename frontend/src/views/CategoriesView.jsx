@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Icon from '../components/common/Icon';
 import { Plus, GripVertical, X } from 'lucide-react';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 import { categories as categoriesApi } from '../services/api';
 
 const ICON_OPTS  = ['UtensilsCrossed','Car','ShoppingBag','Tv','Heart','Zap','GraduationCap','Home','Briefcase','Laptop','Gift','Smartphone','Plane','Shield','Monitor','Tag','Star','DollarSign','CreditCard','PiggyBank','Landmark','ArrowLeftRight','Wallet','Banknote'];
@@ -17,6 +18,8 @@ export default function CategoriesView({ onRefresh }) {
   const [form, setForm]           = useState({ name: '', icon: 'Tag', color: '#2C6488' });
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Drag state
   const [orderMap,    setOrderMap]    = useState({});   // { [tab]: [id, ...] }
@@ -121,10 +124,17 @@ export default function CategoriesView({ onRefresh }) {
     finally { setSaving(false); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm('ต้องการลบหมวดหมู่นี้?')) return;
-    try { await categoriesApi.delete(id); await fetchCats(); if (onRefresh) onRefresh(); }
+  const remove = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await categoriesApi.delete(deleteTarget.id);
+      await fetchCats();
+      if (onRefresh) onRefresh();
+      setDeleteTarget(null);
+    }
     catch (err) { alert(err.message); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -187,7 +197,7 @@ export default function CategoriesView({ onRefresh }) {
                 {c.user_id && (
                   <button
                     onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); remove(c.id); }}
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }}
                     className="absolute top-2 right-2 w-5 h-5 rounded-full bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                     style={{ cursor: 'default' }}>
                     <X size={10} color="#ef4444" />
@@ -258,6 +268,15 @@ export default function CategoriesView({ onRefresh }) {
           </div>
         </Modal>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="ลบหมวดหมู่"
+        message={`ต้องการลบหมวดหมู่ "${deleteTarget?.name || ''}" ใช่ไหม?`}
+        confirmText="ลบหมวดหมู่"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={remove}
+      />
     </div>
   );
 }

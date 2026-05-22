@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowUp, ArrowDown, ArrowLeftRight, Sun, CalendarDays, Calendar as CalendarIcon, Star, Clock, Pencil, Trash2, Plus, RefreshCw } from 'lucide-react';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import { AccountSelect, CategorySelect } from '../components/common/FinanceSelects';
 import { recurring as recurApi } from '../services/api';
 import { fmt } from '../constants/data';
 
@@ -34,6 +36,8 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   const [form,      setForm]      = useState(emptyForm(accounts));
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const expCats      = (categories || []).filter((c) => c.type === 'expense');
   const incCats      = (categories || []).filter((c) => c.type === 'income');
@@ -121,12 +125,15 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
     } catch (err) { alert(err.message); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm('ต้องการลบรายการทำซ้ำนี้?')) return;
+  const remove = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await recurApi.delete(id);
+      await recurApi.delete(deleteTarget.id);
       await fetchList();
+      setDeleteTarget(null);
     } catch (err) { alert(err.message); }
+    finally { setDeleting(false); }
   };
 
   const active   = list.filter((r) => r.is_active);
@@ -216,7 +223,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
               <Pencil size={12} color="#64748b" />
             </button>
-            <button onClick={() => remove(r.id)}
+            <button onClick={() => setDeleteTarget(r)}
               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
               <Trash2 size={12} color="#94a3b8" />
             </button>
@@ -247,9 +254,16 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       {loading ? (
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลด...</div>
       ) : list.length === 0 ? (
-        <div className="py-20 flex flex-col items-center gap-3 text-slate-400">
+        <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
           <RefreshCw size={40} color="#cbd5e1" />
-          <p className="text-sm">ยังไม่มีรายการทำซ้ำ กดเพิ่มด้านบน</p>
+          <div>
+            <p className="text-sm font-semibold text-slate-600">ยังไม่มีรายการทำซ้ำ</p>
+            <p className="text-xs text-slate-400 mt-1">เพิ่มรายการแรกเพื่อให้ระบบช่วยเตือนเมื่อถึงกำหนด</p>
+          </div>
+          <button onClick={openAdd}
+            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
+            <Plus size={15} color="white" /> สร้างรายการแรก
+          </button>
         </div>
       ) : (
         <div className="space-y-6">
@@ -284,9 +298,10 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
         <Modal
           title={editId ? 'แก้ไขรายการประจำ' : 'เพิ่มรายการประจำ'}
           onClose={() => { setShowModal(false); setEditId(null); }}
+          size="lg"
         >
           {/* Scrollable content */}
-          <div className="overflow-y-auto max-h-[65vh] space-y-3 pr-1">
+          <div className="space-y-3">
             {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
             {/* ประเภท */}
@@ -311,15 +326,15 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
             </div>
 
             {/* ชื่อรายการ + จำนวนเงิน */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
                 <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อรายการ</label>
                 <input value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="เช่น ค่าเช่า, Netflix"
                   className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="text-xs font-medium text-slate-500 mb-1 block">จำนวนเงิน (฿)</label>
                 <input type="number" value={form.amount} placeholder="0.00" min="0"
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
@@ -329,25 +344,24 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
 
             {/* หมวดหมู่ + บัญชี (non-transfer) */}
             {form.type !== 'transfer' ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {currentCats.length > 0 && (
-                  <div>
+                  <div className="min-w-0">
                     <label className="text-xs font-medium text-slate-500 mb-1 block">หมวดหมู่</label>
-                    <select value={form.category_id}
-                      onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700">
-                      <option value="">— ไม่ระบุ —</option>
-                      {currentCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <CategorySelect
+                      value={form.category_id}
+                      onChange={(v) => setForm({ ...form, category_id: v })}
+                      categories={currentCats}
+                    />
                   </div>
                 )}
-                <div>
+                <div className="min-w-0">
                   <label className="text-xs font-medium text-slate-500 mb-1 block">บัญชี</label>
-                  <select value={form.account_id}
-                    onChange={(e) => setForm({ ...form, account_id: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700">
-                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
+                  <AccountSelect
+                    value={form.account_id}
+                    onChange={(v) => setForm({ ...form, account_id: v })}
+                    accounts={accounts}
+                  />
                 </div>
               </div>
             ) : (
@@ -355,38 +369,37 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                 {currentCats.length > 0 && (
                   <div>
                     <label className="text-xs font-medium text-slate-500 mb-1 block">หมวดหมู่</label>
-                    <select value={form.category_id}
-                      onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700">
-                      <option value="">— ไม่ระบุ —</option>
-                      {currentCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <CategorySelect
+                      value={form.category_id}
+                      onChange={(v) => setForm({ ...form, category_id: v })}
+                      categories={currentCats}
+                    />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="min-w-0">
                     <label className="text-xs font-medium text-slate-500 mb-1 block">จากบัญชี</label>
-                    <select value={form.account_id}
-                      onChange={(e) => setForm({ ...form, account_id: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700">
-                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
+                    <AccountSelect
+                      value={form.account_id}
+                      onChange={(v) => setForm({ ...form, account_id: v })}
+                      accounts={accounts}
+                    />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="text-xs font-medium text-slate-500 mb-1 block">ไปยังบัญชี</label>
-                    <select value={form.to_account_id}
-                      onChange={(e) => setForm({ ...form, to_account_id: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700">
-                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
+                    <AccountSelect
+                      value={form.to_account_id}
+                      onChange={(v) => setForm({ ...form, to_account_id: v })}
+                      accounts={accounts}
+                    />
                   </div>
                 </div>
               </div>
             )}
 
             {/* ความถี่ + วันครบกำหนด */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
                 <label className="text-xs font-medium text-slate-500 mb-1.5 block">ความถี่</label>
                 <div className="grid grid-cols-2 gap-1.5">
                   {Object.entries(FREQ_LABEL).map(([val, label]) => (
@@ -402,7 +415,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                   ))}
                 </div>
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="text-xs font-medium text-slate-500 mb-1 block">ครบกำหนดถัดไป</label>
                 <input type="date" value={form.next_due_date}
                   onChange={(e) => setForm({ ...form, next_due_date: e.target.value })}
@@ -432,6 +445,15 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
           </div>
         </Modal>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="ลบรายการทำซ้ำ"
+        message={`ต้องการลบรายการทำซ้ำ "${deleteTarget?.name || 'ไม่มีชื่อรายการ'}" ใช่ไหม?`}
+        confirmText="ลบรายการ"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={remove}
+      />
     </div>
   );
 }

@@ -58,13 +58,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		weekStart, user.ID,
 	)
 
-	access, _ := middleware.GenerateAccessToken(user.ID, user.Email, &h.cfg.JWT)
-	refresh, _ := middleware.GenerateRefreshToken(user.ID, user.Email, &h.cfg.JWT)
-
-	c.JSON(http.StatusCreated, models.AuthResponse{
-		AccessToken:  access,
-		RefreshToken: refresh,
-		User:         user,
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "registered successfully",
+		"user":    user,
 	})
 }
 

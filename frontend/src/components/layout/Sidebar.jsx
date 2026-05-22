@@ -16,15 +16,15 @@ export default function Sidebar({ view, setView, accounts, collapsed, setCollaps
       className={`flex flex-col ${collapsed ? 'w-16' : 'w-60'} flex-shrink-0 transition-all duration-200 border-r bg-white border-slate-100 shadow-sm`}
     >
       {/* Logo */}
-      <div className="px-4 py-3 flex items-center gap-2">
+      <div className={`${collapsed ? 'px-2 py-3 justify-center' : 'px-4 py-3'} flex items-center gap-2`}>
         <button
           onClick={() => setView('analytics')}
-          className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+          className={`${collapsed ? 'justify-center' : ''} flex items-center gap-1.5 hover:opacity-80 transition-opacity`}
         >
           <img
             src="/images/Logo_PaoJot.png"
             alt="PaoJot"
-            className="w-14 h-14 rounded-2xl object-cover flex-shrink-0"
+            className={`${collapsed ? 'w-9 h-9 rounded-xl' : 'w-14 h-14 rounded-2xl'} object-cover flex-shrink-0 transition-all duration-200`}
           />
           {!collapsed && <span className="text-2xl font-bold leading-none" style={{ color: '#2C6488' }}>PaoJot</span>}
         </button>

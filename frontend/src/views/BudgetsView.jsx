@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, AlertCircle, Wallet, CalendarDays, Calendar, CalendarRange, CheckCircle2 } from 'lucide-react';
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 import { budgets as budgetsApi, transactions as txApi } from '../services/api';
 import { fmt } from '../constants/data';
 
@@ -71,6 +72,8 @@ export default function BudgetsView({ categories }) {
   const [form,      setForm]      = useState(EMPTY_FORM);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // ── ดึงข้อมูล ──────────────────────────────────────────────────────────────
   const fetchAll = async () => {
@@ -161,9 +164,15 @@ export default function BudgetsView({ categories }) {
     finally { setSaving(false); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm('ต้องการลบงบประมาณนี้?')) return;
-    try { await budgetsApi.delete(id); await fetchAll(); } catch (err) { alert(err.message); }
+  const remove = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await budgetsApi.delete(deleteTarget.id);
+      await fetchAll();
+      setDeleteTarget(null);
+    } catch (err) { alert(err.message); }
+    finally { setDeleting(false); }
   };
 
   // ── Summary ───────────────────────────────────────────────────────────────
@@ -296,9 +305,14 @@ export default function BudgetsView({ categories }) {
       {loading ? (
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลด...</div>
       ) : visibleBudgets.length === 0 ? (
-        <div className="py-20 flex flex-col items-center gap-3 text-slate-400">
+        <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
           <Wallet size={40} color="#cbd5e1" />
-          <p className="text-sm">{budgetList.length === 0 ? 'ยังไม่มีงบประมาณ' : 'ไม่มีงบในช่วงนี้'}</p>
+          <div>
+            <p className="text-sm font-semibold text-slate-600">{budgetList.length === 0 ? 'ยังไม่มีงบประมาณ' : 'ไม่มีงบในช่วงนี้'}</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {budgetList.length === 0 ? 'สร้างงบแรกเพื่อเริ่มติดตามค่าใช้จ่ายให้ชัดขึ้น' : 'ลองเปลี่ยนช่วงเวลาเพื่อดูงบประมาณอื่น'}
+            </p>
+          </div>
           {budgetList.length === 0 && (
             <button onClick={openCreate}
               className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
@@ -352,7 +366,7 @@ export default function BudgetsView({ categories }) {
                               className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
                               <Edit size={11} color="#94a3b8" />
                             </button>
-                            <button onClick={() => remove(b.id)}
+                            <button onClick={() => setDeleteTarget(b)}
                               className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
                               <Trash2 size={11} color="#94a3b8" />
                             </button>
@@ -473,6 +487,15 @@ export default function BudgetsView({ categories }) {
           </div>
         </Modal>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="ลบงบประมาณ"
+        message={`ต้องการลบงบประมาณ "${deleteTarget?.name || ''}" ใช่ไหม?`}
+        confirmText="ลบงบประมาณ"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={remove}
+      />
     </div>
   );
 }

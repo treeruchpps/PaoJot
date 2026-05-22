@@ -1,39 +1,64 @@
 import { useState } from 'react';
 import { Eye, EyeOff, ShieldUser, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { API_ORIGIN } from '../services/api';
 
-export default function LoginPage({ onSwitch }) {
-  const { login, loading, error, clearError } = useAuth();
+export default function LoginPage({ onSwitch, notice }) {
+  const { login, submitting, error, clearError } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [submitted, setSubmitted] = useState(false);
   const [showPw, setShowPw] = useState(false);
+
+  const validate = (values) => {
+    const next = {};
+    const email = values.email.trim();
+    if (!email) next.email = 'กรุณากรอกอีเมล';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = 'รูปแบบอีเมลไม่ถูกต้อง';
+    if (!values.password) next.password = 'กรุณากรอกรหัสผ่าน';
+    else if (values.password.length < 6) next.password = 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร';
+    return next;
+  };
 
   const handleChange = (e) => {
     clearError();
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const next = { ...form, [e.target.name]: e.target.value };
+    setForm(next);
+    if (submitted) setFieldErrors(validate(next));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await login(form.email, form.password);
+    setSubmitted(true);
+    const nextErrors = validate(form);
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+    await login(form.email.trim().toLowerCase(), form.password);
   };
 
+  const inputClass = (hasError, withIcon = false, withRightIcon = false) =>
+    `w-full ${withIcon ? 'pl-9' : 'pl-4'} ${withRightIcon ? 'pr-10' : 'pr-4'} py-3 rounded-xl border bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 transition-all ${
+      hasError ? 'border-red-300 focus:ring-red-100 focus:border-red-400' : 'border-slate-200 focus:ring-[#BFD8E4] focus:border-[#2C6488]'
+    }`;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#EAF3F7] via-white to-[#EAF7E8] flex items-center justify-center p-4">
+    <div className="min-h-dvh bg-gradient-to-br from-[#EAF3F7] via-white to-[#EAF7E8] flex items-center justify-center p-4 overflow-y-auto">
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <img
-            src="/images/Logo_PaoJot.png"
-            alt="PaoJot"
-            className="w-24 h-24 rounded-3xl object-cover mx-auto mb-1"
-          />
-          <h1 className="text-3xl font-bold text-[#2C6488]">PaoJot</h1>
-          <p className="text-slate-500 mt-1 text-sm">จัดการการเงินส่วนตัวได้ง่ายๆ</p>
+        <div className="text-center mb-4">
+          <img src="/images/Logo_PaoJot.png" alt="PaoJot" className="w-20 h-20 rounded-3xl object-cover mx-auto" />
+          <h1 className="text-2xl font-bold text-[#2C6488] leading-tight">PaoJot</h1>
+          <p className="text-slate-500 text-sm">จัดการการเงินส่วนตัวได้ง่าย ๆ</p>
         </div>
 
-        {/* Card */}
-        <div className="bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
-          <h2 className="text-xl font-bold text-slate-800 mb-6">เข้าสู่ระบบ</h2>
+        <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-100">
+          <h2 className="text-xl font-bold text-slate-800 mb-4">เข้าสู่ระบบ</h2>
+
+          {notice && (
+            <div className="mb-4 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2">
+              <ShieldUser size={16} color="#10b981" />
+              <p className="text-sm text-emerald-700">{notice}</p>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2">
@@ -42,7 +67,7 @@ export default function LoginPage({ onSwitch }) {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-3">
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1.5 block">อีเมล</label>
               <div className="relative">
@@ -55,10 +80,11 @@ export default function LoginPage({ onSwitch }) {
                   value={form.email}
                   onChange={handleChange}
                   placeholder="your@email.com"
-                  required
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
+                  aria-invalid={!!fieldErrors.email}
+                  className={inputClass(!!fieldErrors.email, true)}
                 />
               </div>
+              {fieldErrors.email && <p className="mt-1.5 text-xs text-red-500">{fieldErrors.email}</p>}
             </div>
 
             <div>
@@ -73,37 +99,39 @@ export default function LoginPage({ onSwitch }) {
                   value={form.password}
                   onChange={handleChange}
                   placeholder="รหัสผ่านอย่างน้อย 6 ตัว"
-                  required
-                  className="w-full pl-9 pr-10 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488] transition-all"
+                  aria-invalid={!!fieldErrors.password}
+                  className={inputClass(!!fieldErrors.password, true, true)}
                 />
-                <button type="button" onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
                   {showPw ? <Eye size={16} color="currentColor" /> : <EyeOff size={16} color="currentColor" />}
                 </button>
               </div>
+              {fieldErrors.password && <p className="mt-1.5 text-xs text-red-500">{fieldErrors.password}</p>}
             </div>
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full btn-primary text-white py-3 rounded-xl font-semibold text-sm mt-2 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+              disabled={submitting}
+              className="w-full btn-primary text-white py-2.5 rounded-xl font-semibold text-sm mt-1 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
             >
-              {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
+              {submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="mt-6 flex items-center gap-3">
+          <div className="mt-4 flex items-center gap-3">
             <div className="flex-1 h-px bg-slate-200" />
             <span className="text-xs text-slate-400">หรือ</span>
             <div className="flex-1 h-px bg-slate-200" />
           </div>
 
-          {/* Google Login */}
           <button
             type="button"
-            onClick={() => { window.location.href = 'http://localhost:8080/api/v1/auth/google'; }}
-            className="mt-4 w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-sm font-semibold text-slate-700 shadow-sm"
+            onClick={() => { window.location.href = `${API_ORIGIN}/api/v1/auth/google`; }}
+            className="mt-3 w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-sm font-semibold text-slate-700 shadow-sm"
           >
             <svg width="18" height="18" viewBox="0 0 48 48">
               <path fill="#EA4335" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.1 29.6 1 24 1 14.8 1 7 6.7 3.7 14.7l7 5.4C12.4 13.8 17.7 9.5 24 9.5z"/>
@@ -114,10 +142,10 @@ export default function LoginPage({ onSwitch }) {
             เข้าสู่ระบบด้วย Google
           </button>
 
-          <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+          <div className="mt-4 pt-4 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500">
               ยังไม่มีบัญชี?{' '}
-              <button onClick={onSwitch} className="text-[#2C6488] font-semibold hover:underline">
+              <button type="button" onClick={onSwitch} className="text-[#2C6488] font-semibold hover:underline">
                 สมัครสมาชิก
               </button>
             </p>

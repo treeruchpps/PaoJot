@@ -5,6 +5,8 @@ import {
   ImageIcon, Trophy, AlertCircle, ArrowRightLeft, Upload, X
 } from 'lucide-react';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import { AccountSelect } from '../components/common/FinanceSelects';
 import { savingsGoals as goalsApi } from '../services/api';
 import { fmt } from '../constants/data';
 
@@ -33,10 +35,6 @@ const EMPTY_FORM = {
   note: '',
 };
 
-function accountLabel(account) {
-  return `${account.name} (คงเหลือ ฿${fmt(account.balance)})`;
-}
-
 function goalMath(goal) {
   const target = Number(goal.target_amount) || 0;
   const current = Number(goal.current_amount) || 0;
@@ -64,6 +62,8 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
   const [depositSaving, setDepositSaving] = useState(false);
   const [depositError, setDepositError] = useState('');
   const [justCompleted, setJustCompleted] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const assetAccounts = accounts.filter((a) => a.type === 'asset');
 
@@ -143,28 +143,38 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
     finally { setSaving(false); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm('ต้องการลบเป้าหมายนี้?')) return;
-    try { await goalsApi.delete(id); await fetchGoals(); } catch (err) { alert(err.message); }
+  const remove = async (goal) => {
+    setConfirmAction({ type: 'delete', goal });
   };
 
-  const cancelGoal = async (g) => {
-    if (!window.confirm('ต้องการยกเลิกเป้าหมายนี้? เป้าหมายจะยังอยู่ในประวัติแต่ฝากเงินต่อไม่ได้')) return;
+  const cancelGoal = async (goal) => {
+    setConfirmAction({ type: 'cancel', goal });
+  };
+
+  const confirmGoalAction = async () => {
+    if (!confirmAction?.goal) return;
+    const g = confirmAction.goal;
+    setConfirmLoading(true);
     try {
-      await goalsApi.update(g.id, {
-        account_id: g.account_id || null,
-        name: g.name,
-        image_url: g.image_url || null,
-        target_amount: Number(g.target_amount),
-        current_amount: Number(g.current_amount),
-        deadline: g.deadline?.slice(0, 10) || null,
-        status: 'cancelled',
-        note: g.note || null,
-      });
+      if (confirmAction.type === 'delete') {
+        await goalsApi.delete(g.id);
+      } else {
+        await goalsApi.update(g.id, {
+          account_id: g.account_id || null,
+          name: g.name,
+          image_url: g.image_url || null,
+          target_amount: Number(g.target_amount),
+          current_amount: Number(g.current_amount),
+          deadline: g.deadline?.slice(0, 10) || null,
+          status: 'cancelled',
+          note: g.note || null,
+        });
+      }
       await fetchGoals();
+      setConfirmAction(null);
     } catch (err) {
       alert(err.message);
-    }
+    } finally { setConfirmLoading(false); }
   };
 
   const openDeposit = (g) => {
@@ -327,7 +337,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                           <X size={12} color="#64748b" />
                         </button>
                       )}
-                      <button onClick={() => remove(g.id)}
+                      <button onClick={() => remove(g)}
                         title="ลบเป้าหมาย"
                         className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
                         <Trash2 size={12} color="#64748b" />
@@ -461,11 +471,12 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
               <p className="text-xs font-bold text-slate-500 uppercase">บัญชีเก็บออม</p>
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">บัญชีที่จะรับเงินเข้าเป้าหมาย</label>
-                <select value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                  <option value="">— เลือกบัญชีเก็บออม —</option>
-                  {assetAccounts.map((a) => <option key={a.id} value={a.id}>{accountLabel(a)}</option>)}
-                </select>
+                <AccountSelect
+                  value={form.account_id}
+                  onChange={(v) => setForm({ ...form, account_id: v })}
+                  accounts={assetAccounts}
+                  placeholder="เลือกบัญชีเก็บออม"
+                />
                 <p className="text-xs text-slate-400 mt-1">เวลาฝากเงิน ระบบจะบันทึกเป็นการโอนเข้าบัญชีนี้</p>
               </div>
             </section>
@@ -568,16 +579,12 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
 
                 <div>
                   <label className="text-xs font-medium text-slate-500 mb-1 block">โอนจากบัญชี</label>
-                  <select value={depositForm.from_account_id}
-                    onChange={(e) => setDepositForm({ ...depositForm, from_account_id: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                    <option value="">— เลือกบัญชีต้นทาง —</option>
-                    {assetAccounts
-                      .filter((a) => a.id !== depositGoal.account_id)
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>{accountLabel(a)}</option>
-                      ))}
-                  </select>
+                  <AccountSelect
+                    value={depositForm.from_account_id}
+                    onChange={(v) => setDepositForm({ ...depositForm, from_account_id: v })}
+                    accounts={assetAccounts.filter((a) => a.id !== depositGoal.account_id)}
+                    placeholder="เลือกบัญชีต้นทาง"
+                  />
                   {depositGoal.account_id && (
                     <p className="text-xs text-slate-400 mt-1">
                       เข้า: {accounts.find((a) => a.id === depositGoal.account_id)?.name || '?'} (฿{fmt(accounts.find((a) => a.id === depositGoal.account_id)?.balance || 0)})
@@ -623,6 +630,18 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
           </div>
         </Modal>
       )}
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.type === 'cancel' ? 'ยกเลิกเป้าหมาย' : 'ลบเป้าหมาย'}
+        message={confirmAction?.type === 'cancel'
+          ? `ต้องการยกเลิกเป้าหมาย "${confirmAction?.goal?.name || ''}" ใช่ไหม? เป้าหมายจะยังอยู่ในประวัติแต่ฝากเงินต่อไม่ได้`
+          : `ต้องการลบเป้าหมาย "${confirmAction?.goal?.name || ''}" ใช่ไหม?`}
+        confirmText={confirmAction?.type === 'cancel' ? 'ยกเลิกเป้าหมาย' : 'ลบเป้าหมาย'}
+        tone={confirmAction?.type === 'cancel' ? 'warning' : 'danger'}
+        loading={confirmLoading}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={confirmGoalAction}
+      />
     </div>
   );
 }

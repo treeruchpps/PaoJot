@@ -226,18 +226,52 @@ CREATE TABLE slip_ref_log (
 ALTER TABLE transactions ADD COLUMN image_path TEXT;
 
 -- ============================================================
--- ตาราง receipt_jobs (async OCR สำหรับใบเสร็จทีละใบ)
+-- ตาราง receipt_jobs (async OCR สำหรับใบเสร็จแบบ batch)
 -- ============================================================
 CREATE TABLE receipt_jobs (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+    total_count INT NOT NULL DEFAULT 0,
+    done_count  INT NOT NULL DEFAULT 0,
     filename    VARCHAR(255),
     image_path  TEXT,
     result_json TEXT,
     error_msg   TEXT,
     created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE receipt_results (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id      UUID NOT NULL REFERENCES receipt_jobs(id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status      VARCHAR(20) NOT NULL DEFAULT 'queued',
+    filename    VARCHAR(255),
+    image_path  TEXT,
+    ocr_text    TEXT,
+    result_json TEXT,
+    error_msg   TEXT,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- ตาราง ai_summaries (cache สรุปการเงินจาก LLM)
+-- ============================================================
+CREATE TABLE ai_summaries (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    period_type    VARCHAR(20) NOT NULL CHECK (period_type IN ('weekly', 'monthly')),
+    period_start   DATE        NOT NULL,
+    period_end     DATE        NOT NULL,
+    week_start_day SMALLINT    NOT NULL DEFAULT 1,
+    model          TEXT        NOT NULL,
+    data_hash      TEXT        NOT NULL,
+    summary_json   JSONB       NOT NULL,
+    created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, period_type, period_start, period_end, week_start_day)
 );
 
 -- ============================================================
@@ -258,9 +292,11 @@ CREATE INDEX idx_recurring_next_due          ON recurring_transactions(next_due_
 CREATE INDEX idx_notifications_user_id       ON notifications(user_id);
 CREATE INDEX idx_notifications_is_read       ON notifications(user_id, is_read);
 CREATE INDEX idx_receipt_jobs_user_id         ON receipt_jobs(user_id);
+CREATE INDEX idx_receipt_results_job_id       ON receipt_results(job_id);
 CREATE INDEX idx_slip_jobs_user_id           ON slip_jobs(user_id);
 CREATE INDEX idx_slip_results_job_id         ON slip_results(job_id);
 CREATE INDEX idx_slip_ref_log_user           ON slip_ref_log(user_id, ref_no);
+CREATE INDEX idx_ai_summaries_user_period    ON ai_summaries(user_id, period_type, period_start, period_end);
 
 -- ============================================================
 -- FUNCTION + TRIGGER: auto-update updated_at
@@ -293,12 +329,20 @@ CREATE TRIGGER trg_receipt_jobs_updated_at
     BEFORE UPDATE ON receipt_jobs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER trg_receipt_results_updated_at
+    BEFORE UPDATE ON receipt_results
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER trg_slip_jobs_updated_at
     BEFORE UPDATE ON slip_jobs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER trg_slip_results_updated_at
     BEFORE UPDATE ON slip_results
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_ai_summaries_updated_at
+    BEFORE UPDATE ON ai_summaries
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER trg_savings_goals_updated_at

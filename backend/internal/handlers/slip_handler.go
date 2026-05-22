@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -144,11 +145,8 @@ func (h *SlipHandler) CreateJob(c *gin.Context) {
 			// ถ้า convert ไม่ได้ก็ส่งต่อ OCR แบบเดิม
 		}
 
-		// บันทึกไฟล์
-		ext := ".jpg"
-		if mimeType == "image/png" {
-			ext = ".png"
-		}
+		// บันทึกไฟล์ด้วยนามสกุลที่ตรงกับชนิดไฟล์จริง
+		ext := imageExtensionForMime(mimeType)
 		filename := fmt.Sprintf("%s_%d%s", jobID[:8], time.Now().UnixNano(), ext)
 		filePath := filepath.Join(uploadsDir, filename)
 		if err := os.WriteFile(filePath, data, 0644); err != nil {
@@ -250,6 +248,35 @@ func (h *SlipHandler) ListJobs(c *gin.Context) {
 		jobs = append(jobs, j)
 	}
 	c.JSON(http.StatusOK, jobs)
+}
+
+func (h *SlipHandler) CancelJob(c *gin.Context) {
+	jobID := c.Param("id")
+	userID := c.GetString("user_id")
+	ctx := context.Background()
+
+	tag, err := h.db.Exec(ctx,
+		`UPDATE slip_jobs
+		 SET status='cancelled', updated_at=NOW()
+		 WHERE id=$1 AND user_id=$2 AND status IN ('pending','processing')`,
+		jobID, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ job ที่ยกเลิกได้"})
+		return
+	}
+
+	h.db.Exec(ctx,
+		`UPDATE slip_results
+		 SET status='cancelled', updated_at=NOW()
+		 WHERE job_id=$1 AND user_id=$2 AND status IN ('queued','ocr','parsing')`,
+		jobID, userID,
+	)
+	c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
 }
 
 // ─── POST /api/v1/slip-jobs/:job_id/results/:result_id/save ──────────────────
@@ -355,12 +382,38 @@ func (h *SlipHandler) SaveResult(c *gin.Context) {
 }
 
 // ─── Background worker ────────────────────────────────────────────────────────
+func (h *SlipHandler) SkipResult(c *gin.Context) {
+	jobID := c.Param("id")
+	resultID := c.Param("result_id")
+	userID := c.GetString("user_id")
+
+	tag, err := h.db.Exec(context.Background(),
+		`UPDATE slip_results
+		 SET status='skipped', updated_at=NOW()
+		 WHERE id=$1 AND job_id=$2 AND user_id=$3 AND status='done'`,
+		resultID, jobID, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบผล OCR ที่ข้ามได้"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "skipped"})
+}
+
 func (h *SlipHandler) processJob(jobID, userID string) {
 	ctx := context.Background()
 
-	h.db.Exec(ctx,
-		`UPDATE slip_jobs SET status='processing', updated_at=NOW() WHERE id=$1`, jobID,
+	tag, err := h.db.Exec(ctx,
+		`UPDATE slip_jobs SET status='processing', updated_at=NOW()
+		 WHERE id=$1 AND status <> 'cancelled'`, jobID,
 	)
+	if err != nil || tag.RowsAffected() == 0 {
+		return
+	}
 
 	// ดึง slip ที่รอคิว
 	rows, err := h.db.Query(ctx,
@@ -383,14 +436,23 @@ func (h *SlipHandler) processJob(jobID, userID string) {
 	rows.Close()
 
 	for i, slip := range slips {
+		if h.isSlipJobCancelled(ctx, jobID) {
+			return
+		}
 		// Rate limit: 2 req/s → รอ 3 วินาทีระหว่างแต่ละใบ (OCR + Parse = 2 calls)
 		if i > 0 {
 			time.Sleep(3 * time.Second)
+		}
+		if h.isSlipJobCancelled(ctx, jobID) {
+			return
 		}
 		h.processOneSlip(ctx, slip.id, slip.imagePath, slip.filename, userID)
 	}
 
 	// อัปเดต job เป็น done
+	if h.isSlipJobCancelled(ctx, jobID) {
+		return
+	}
 	h.db.Exec(ctx,
 		`UPDATE slip_jobs SET status='done', updated_at=NOW() WHERE id=$1`, jobID,
 	)
@@ -409,6 +471,17 @@ func (h *SlipHandler) processOneSlip(ctx context.Context, slipID, imagePath, fil
 	}
 
 	// ── Step 1: อ่านไฟล์ ─────────────────────────────────────────────────────
+	reject := func(msg string) {
+		h.db.Exec(ctx,
+			`UPDATE slip_results SET status='rejected', error_msg=$1, updated_at=NOW() WHERE id=$2`,
+			msg, slipID,
+		)
+		h.db.Exec(ctx,
+			`UPDATE slip_jobs SET done_count=done_count+1, updated_at=NOW()
+			 WHERE id=(SELECT job_id FROM slip_results WHERE id=$1)`, slipID,
+		)
+	}
+
 	fullPath := strings.TrimPrefix(imagePath, "/")
 	imageBytes, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -416,13 +489,7 @@ func (h *SlipHandler) processOneSlip(ctx context.Context, slipID, imagePath, fil
 		return
 	}
 
-	mimeType := "image/jpeg"
-	switch strings.ToLower(filepath.Ext(filename)) {
-	case ".png":
-		mimeType = "image/png"
-	case ".heic", ".heif":
-		mimeType = "image/heic"
-	}
+	mimeType := imageMimeForExtension(filepath.Ext(filename))
 
 	// ── Step 2: OCR ──────────────────────────────────────────────────────────
 	h.db.Exec(ctx,
@@ -432,6 +499,11 @@ func (h *SlipHandler) processOneSlip(ctx context.Context, slipID, imagePath, fil
 	ocrText, err := h.callTyphoonOCR(imageBytes, mimeType)
 	if err != nil {
 		fail(fmt.Sprintf("OCR ล้มเหลว: %v", err))
+		return
+	}
+	var currentJobID string
+	_ = h.db.QueryRow(ctx, `SELECT job_id FROM slip_results WHERE id=$1`, slipID).Scan(&currentJobID)
+	if h.isSlipJobCancelled(ctx, currentJobID) {
 		return
 	}
 	h.db.Exec(ctx,
@@ -451,6 +523,18 @@ func (h *SlipHandler) processOneSlip(ctx context.Context, slipID, imagePath, fil
 	}
 
 	// ── Step 4: ตรวจสลิปซ้ำ ──────────────────────────────────────────────────
+	if h.isSlipJobCancelled(ctx, currentJobID) {
+		return
+	}
+	if classifyOCRDocument(ocrText) == ocrDocReceipt {
+		reject("รูปนี้ดูเหมือนใบเสร็จ กรุณาใช้เมนูสแกนใบเสร็จ")
+		return
+	}
+	if !hasSlipTransferEvidence(ocrText, parsed) {
+		reject("รูปนี้ดูไม่ใช่สลิปโอนเงิน หรืออ่านข้อมูลสำคัญไม่พบ")
+		return
+	}
+
 	isDuplicate := false
 	if parsed.RefNo != nil && *parsed.RefNo != "" {
 		var cnt int
@@ -481,6 +565,14 @@ func (h *SlipHandler) processOneSlip(ctx context.Context, slipID, imagePath, fil
 }
 
 // ─── Typhoon OCR ──────────────────────────────────────────────────────────────
+func (h *SlipHandler) isSlipJobCancelled(ctx context.Context, jobID string) bool {
+	var status string
+	if err := h.db.QueryRow(ctx, `SELECT status FROM slip_jobs WHERE id=$1`, jobID).Scan(&status); err != nil {
+		return true
+	}
+	return status == "cancelled"
+}
+
 type typhoonOCRResp struct {
 	Results []struct {
 		Success bool `json:"success"`
@@ -650,13 +742,91 @@ func (h *SlipHandler) callTyphoonParser(ocrText string) (*SlipData, error) {
 // ─── HEIC → JPEG (ตรวจจับ + แจ้งเตือน) ─────────────────────────────────────
 // TODO: เพิ่ม go get github.com/adrium/goheif เพื่อ convert HEIC จริง
 func convertHEIC(data []byte) ([]byte, error) {
-	// ตรวจ magic bytes: HEIC มี "ftyp" ที่ offset 4
 	if len(data) < 12 || string(data[4:8]) != "ftyp" {
-		return nil, fmt.Errorf("ไม่ใช่ HEIC")
+		return nil, fmt.Errorf("not HEIC")
 	}
-	// Placeholder: คืนค่า error เพื่อให้ส่งต่อ OCR ไปเลย
-	// (Typhoon OCR รองรับบางรูปแบบ HEIC ได้)
-	return nil, fmt.Errorf("HEIC conversion ยังไม่รองรับ")
+
+	if converted, err := convertHEICWithMagick(data); err == nil {
+		return converted, nil
+	}
+	if converted, err := convertHEICWithHeifConvert(data); err == nil {
+		return converted, nil
+	}
+
+	return nil, fmt.Errorf("HEIC conversion requires ImageMagick (magick) or libheif (heif-convert)")
+}
+
+func convertHEICWithMagick(data []byte) ([]byte, error) {
+	if _, err := exec.LookPath("magick"); err != nil {
+		return nil, err
+	}
+	in, out, cleanup, err := writeTempHEIC(data)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	if err := exec.Command("magick", in, out).Run(); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(out)
+}
+
+func convertHEICWithHeifConvert(data []byte) ([]byte, error) {
+	if _, err := exec.LookPath("heif-convert"); err != nil {
+		return nil, err
+	}
+	in, out, cleanup, err := writeTempHEIC(data)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	if err := exec.Command("heif-convert", in, out).Run(); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(out)
+}
+
+func writeTempHEIC(data []byte) (string, string, func(), error) {
+	dir, err := os.MkdirTemp("", "paomoney-heic-*")
+	if err != nil {
+		return "", "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	in := filepath.Join(dir, "input.heic")
+	out := filepath.Join(dir, "output.jpg")
+	if err := os.WriteFile(in, data, 0600); err != nil {
+		cleanup()
+		return "", "", nil, err
+	}
+	return in, out, cleanup, nil
+}
+
+func imageExtensionForMime(mimeType string) string {
+	switch mimeType {
+	case "image/png":
+		return ".png"
+	case "image/heic":
+		return ".heic"
+	case "image/heif":
+		return ".heif"
+	default:
+		return ".jpg"
+	}
+}
+
+func imageMimeForExtension(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".png":
+		return "image/png"
+	case ".heic":
+		return "image/heic"
+	case ".heif":
+		return "image/heif"
+	default:
+		return "image/jpeg"
+	}
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
