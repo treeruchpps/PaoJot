@@ -6,17 +6,13 @@ type AccountType string
 type AccountKind string
 
 const (
-	AccountTypeAsset     AccountType = "asset"
-	AccountTypeLiability AccountType = "liability"
+	AccountTypeAsset AccountType = "asset"
 
 	AccountKindCash        AccountKind = "cash"
 	AccountKindBankAccount AccountKind = "bank_account"
 	AccountKindSavings     AccountKind = "savings"
 	AccountKindInvestment  AccountKind = "investment"
 	AccountKindEWallet     AccountKind = "e_wallet"
-	AccountKindCreditCard  AccountKind = "credit_card"
-	AccountKindLoan        AccountKind = "loan"
-	AccountKindInstallment AccountKind = "installment"
 )
 
 type Account struct {
@@ -34,7 +30,7 @@ type Account struct {
 
 type CreateAccountRequest struct {
 	Name     string      `json:"name"     binding:"required,max=100"`
-	Type     AccountType `json:"type"     binding:"required,oneof=asset liability"`
+	Type     AccountType `json:"type"     binding:"required,oneof=asset"`
 	Kind     AccountKind `json:"kind"     binding:"required"`
 	Balance  float64     `json:"balance"  binding:"gte=0"`
 	Currency string      `json:"currency"`

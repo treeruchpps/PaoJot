@@ -23,7 +23,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 
 	rows, err := h.db.Query(context.Background(),
 		`SELECT id, user_id, name, type, kind, balance, currency, is_active, created_at, updated_at
-		 FROM accounts WHERE user_id = $1 AND is_active = true ORDER BY created_at ASC`,
+		 FROM accounts WHERE user_id = $1 AND is_active = true AND type = 'asset' ORDER BY created_at ASC`,
 		userID,
 	)
 	if err != nil {
@@ -57,6 +57,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	if req.Currency == "" {
 		req.Currency = "THB"
 	}
+	req.Type = models.AccountTypeAsset
 
 	var a models.Account
 	err := h.db.QueryRow(context.Background(),
@@ -149,10 +150,7 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 	if _, err := dbTx.Exec(ctx,
 		`UPDATE accounts a
-		 SET balance = CASE
-			 WHEN a.type = 'liability' THEN a.balance + t.amount
-			 ELSE a.balance - t.amount
-		 END
+		 SET balance = a.balance - t.amount
 		 FROM transactions t
 		 WHERE t.user_id = $1
 		   AND t.type = 'transfer'

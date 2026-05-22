@@ -36,7 +36,7 @@ function Spinner() {
 
 // ─── Main App Shell (requires auth) ──────────────────────────────────────────
 function AppShell() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, clearError } = useAuth();
   const [authPage, setAuthPage]     = useState('login'); // 'login' | 'register'
   const [authNotice, setAuthNotice] = useState('');
   const [appState, setAppState]     = useState('checking'); // 'checking'|'setup'|'app'
@@ -106,11 +106,12 @@ function AppShell() {
   // ── Not authenticated: show login / register ──
   if (!isAuthenticated) {
     if (authPage === 'login') {
-      return <LoginPage notice={authNotice} onSwitch={() => { setAuthNotice(''); setAuthPage('register'); }} />;
+      return <LoginPage notice={authNotice} onSwitch={() => { clearError(); setAuthNotice(''); setAuthPage('register'); }} />;
     }
     return <RegisterPage
-      onSwitch={() => setAuthPage('login')}
+      onSwitch={() => { clearError(); setAuthPage('login'); }}
       onRegisterSuccess={() => {
+        clearError();
         setAuthNotice('สมัครสมาชิกสำเร็จ กรุณาเข้าสู่ระบบ');
         setAuthPage('login');
       }}

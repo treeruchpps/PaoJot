@@ -168,29 +168,10 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 			req.Amount, req.AccountID, userID,
 		)
 		if err == nil {
-			// ตรวจสอบประเภทบัญชีปลายทาง:
-			// asset  → รับเงิน = เพิ่ม balance
-			// liability → ชำระหนี้ = ลด balance
-			var toAccType string
-			err = dbTx.QueryRow(ctx,
-				`SELECT type FROM accounts WHERE id = $1 AND user_id = $2`,
-				*req.ToAccountID, userID,
-			).Scan(&toAccType)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "destination account not found"})
-				return
-			}
-			if toAccType == "liability" {
-				_, err = dbTx.Exec(ctx,
-					`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-					req.Amount, *req.ToAccountID, userID,
-				)
-			} else {
-				_, err = dbTx.Exec(ctx,
-					`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-					req.Amount, *req.ToAccountID, userID,
-				)
-			}
+			_, err = dbTx.Exec(ctx,
+				`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
+				req.Amount, *req.ToAccountID, userID,
+			)
 		}
 	case models.TransactionTypeAdjustment:
 		// ปรับยอด: บันทึกเพื่อ audit trail เท่านั้น ไม่เปลี่ยน balance
@@ -296,22 +277,10 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 				old.Amount, old.AccountID, userID,
 			)
 			if err == nil {
-				var toAccType string
-				_ = dbTx.QueryRow(ctx,
-					`SELECT type FROM accounts WHERE id = $1 AND user_id = $2`,
-					*old.ToAccountID, userID,
-				).Scan(&toAccType)
-				if toAccType == "liability" {
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-						old.Amount, *old.ToAccountID, userID,
-					)
-				} else {
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-						old.Amount, *old.ToAccountID, userID,
-					)
-				}
+				_, err = dbTx.Exec(ctx,
+					`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
+					old.Amount, *old.ToAccountID, userID,
+				)
 			}
 		}
 	case models.TransactionTypeAdjustment:
@@ -360,22 +329,10 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 				t.Amount, t.AccountID, userID,
 			)
 			if err == nil {
-				var toAccType string
-				_ = dbTx.QueryRow(ctx,
-					`SELECT type FROM accounts WHERE id = $1 AND user_id = $2`,
-					*t.ToAccountID, userID,
-				).Scan(&toAccType)
-				if toAccType == "liability" {
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-						t.Amount, *t.ToAccountID, userID,
-					)
-				} else {
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-						t.Amount, *t.ToAccountID, userID,
-					)
-				}
+				_, err = dbTx.Exec(ctx,
+					`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
+					t.Amount, *t.ToAccountID, userID,
+				)
 			}
 		}
 	case models.TransactionTypeAdjustment:
@@ -451,25 +408,10 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 				t.Amount, t.AccountID, userID,
 			)
 			if err == nil {
-				// คืน balance ปลายทาง — ตรวจสอบประเภทก่อน reverse
-				var toAccType string
-				_ = dbTx.QueryRow(ctx,
-					`SELECT type FROM accounts WHERE id = $1 AND user_id = $2`,
-					*t.ToAccountID, userID,
-				).Scan(&toAccType)
-				if toAccType == "liability" {
-					// เคยลด liability ก็บวกคืน
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-						t.Amount, *t.ToAccountID, userID,
-					)
-				} else {
-					// เคยบวก asset ก็ลบคืน
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-						t.Amount, *t.ToAccountID, userID,
-					)
-				}
+				_, err = dbTx.Exec(ctx,
+					`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
+					t.Amount, *t.ToAccountID, userID,
+				)
 			}
 		}
 	case models.TransactionTypeAdjustment:

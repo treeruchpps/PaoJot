@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Briefcase, ChevronDown, CreditCard, DollarSign, Smartphone, Star, Tag, TrendingUp } from 'lucide-react';
+import { Briefcase, ChevronDown, DollarSign, Smartphone, Star, TrendingUp } from 'lucide-react';
 import Icon from './Icon';
 import { fmt } from '../../constants/data';
 
@@ -9,8 +9,6 @@ const ACC_KIND_META = {
   savings:      { icon: 'Star',       color: '#f59e0b' },
   e_wallet:     { icon: 'Smartphone', color: '#2C6488' },
   investment:   { icon: 'TrendingUp', color: '#5F9A7A' },
-  credit_card:  { icon: 'CreditCard', color: '#ef4444' },
-  loan:         { icon: 'Tag',        color: '#f97316' },
 };
 
 function AccKindIcon({ kind, size = 15 }) {
@@ -20,8 +18,6 @@ function AccKindIcon({ kind, size = 15 }) {
   if (m.icon === 'Star')        return <Star        size={size} color={m.color} />;
   if (m.icon === 'Smartphone')  return <Smartphone  size={size} color={m.color} />;
   if (m.icon === 'TrendingUp')  return <TrendingUp  size={size} color={m.color} />;
-  if (m.icon === 'CreditCard')  return <CreditCard  size={size} color={m.color} />;
-  if (m.icon === 'Tag')         return <Tag         size={size} color={m.color} />;
   return null;
 }
 
@@ -89,7 +85,7 @@ export function AccountSelect({ value, onChange, accounts = [], placeholder = 'à
   const ref = useRef(null);
   const selected = accounts.find((a) => a.id === value);
   const km = (kind) => ACC_KIND_META[kind] || { color: '#94a3b8' };
-  const balanceColor = (account) => account?.type === 'liability' ? '#ef4444' : '#64748b';
+  const balanceColor = () => '#64748b';
 
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };

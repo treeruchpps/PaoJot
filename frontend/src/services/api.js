@@ -27,9 +27,10 @@ async function request(path, options = {}, retry = true, isFormData = false) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const isPublicAuthRequest = path.startsWith('/auth/login') || path.startsWith('/auth/register') || path.startsWith('/auth/refresh');
 
   // 401 → try refresh once
-  if (res.status === 401 && retry) {
+  if (res.status === 401 && retry && !isPublicAuthRequest) {
     const refreshed = await tryRefresh();
     if (refreshed) return request(path, options, false, isFormData);
     clearTokens();

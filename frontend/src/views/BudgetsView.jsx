@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, AlertCircle, Wallet, CalendarDays, Calendar, CalendarRange, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit, Trash2, AlertCircle, Wallet, ChartPie, CalendarDays, Calendar, CalendarRange, CheckCircle2 } from 'lucide-react';
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -283,7 +283,7 @@ export default function BudgetsView({ categories }) {
         </div>
         <button onClick={openCreate}
           className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-          <Plus size={15} color="white" /> เพิ่มงบ
+          <Plus size={15} color="white" /> เพิ่มงบประมาณ
         </button>
       </div>
 
@@ -306,7 +306,7 @@ export default function BudgetsView({ categories }) {
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลด...</div>
       ) : visibleBudgets.length === 0 ? (
         <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
-          <Wallet size={40} color="#cbd5e1" />
+          <ChartPie size={40} color="#cbd5e1" />
           <div>
             <p className="text-sm font-semibold text-slate-600">{budgetList.length === 0 ? 'ยังไม่มีงบประมาณ' : 'ไม่มีงบในช่วงนี้'}</p>
             <p className="text-xs text-slate-400 mt-1">

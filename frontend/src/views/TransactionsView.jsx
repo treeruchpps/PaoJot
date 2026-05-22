@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, List, Calendar, ScanLine, Loader2, ChevronDown, DollarSign, Briefcase, Star, Smartphone, TrendingUp, CreditCard, Tag, CheckCircle2, XCircle, Clock, Upload, ImageIcon, Wallet } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, List, Calendar, ScanLine, Loader2, ChevronDown, DollarSign, Briefcase, Star, Smartphone, TrendingUp, CheckCircle2, XCircle, Clock, Upload, ImageIcon, Wallet } from 'lucide-react';
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -60,8 +60,6 @@ const ACC_KIND_META = {
   savings:      { icon: 'Star',       color: '#f59e0b' },
   e_wallet:     { icon: 'Smartphone', color: '#2C6488' },
   investment:   { icon: 'TrendingUp', color: '#5F9A7A' },
-  credit_card:  { icon: 'CreditCard', color: '#ef4444' },
-  loan:         { icon: 'Tag',        color: '#f97316' },
 };
 function AccKindIcon({ kind, size = 15 }) {
   const m = ACC_KIND_META[kind] || { icon: 'DollarSign', color: '#94a3b8' };
@@ -70,8 +68,6 @@ function AccKindIcon({ kind, size = 15 }) {
   if (m.icon === 'Star')        return <Star        size={size} color={m.color} />;
   if (m.icon === 'Smartphone')  return <Smartphone  size={size} color={m.color} />;
   if (m.icon === 'TrendingUp')  return <TrendingUp  size={size} color={m.color} />;
-  if (m.icon === 'CreditCard')  return <CreditCard  size={size} color={m.color} />;
-  if (m.icon === 'Tag')         return <Tag         size={size} color={m.color} />;
   return null;
 }
 
@@ -141,7 +137,7 @@ function AccSelect({ value, onChange, accounts }) {
   const ref = useRef(null);
   const selected = accounts.find((a) => a.id === value);
   const km = (kind) => ACC_KIND_META[kind] || { color: '#94a3b8' };
-  const balanceColor = (account) => account?.type === 'liability' ? '#ef4444' : '#64748b';
+  const balanceColor = () => '#64748b';
 
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };

@@ -6,8 +6,6 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function Sidebar({ view, setView, accounts, collapsed, setCollapsed, avatarUrl }) {
   const { user, logout } = useAuth();
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a) => s + a.balance, 0);
-  const totalLiab   = accounts.filter((a) => a.type === 'liability').reduce((s, a) => s + a.balance, 0);
-  const netWorth    = totalAssets - totalLiab;
   const accent = '#2C6488';
   const initials = user?.username?.slice(0, 1).toUpperCase() || '?';
 
@@ -51,7 +49,7 @@ export default function Sidebar({ view, setView, accounts, collapsed, setCollaps
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-700 truncate">{user?.username || '—'}</p>
-              <p className="text-xs text-slate-400">฿{fmt(netWorth)} สุทธิ</p>
+              <p className="text-xs text-slate-400">฿{fmt(totalAssets)} รวม</p>
             </div>
           </div>
         </div>

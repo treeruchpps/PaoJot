@@ -296,8 +296,6 @@ export default function AnalyticsView({ accounts, categories }) {
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a)     => s + a.balance, 0);
-  const totalLiab   = accounts.filter((a) => a.type === 'liability').reduce((s, a) => s + a.balance, 0);
-  const netWorth    = totalAssets - totalLiab;
 
   const income = txList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -356,9 +354,9 @@ export default function AnalyticsView({ accounts, categories }) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold text-[#2C6488] mb-2">ภาพรวมการเงิน</p>
-              <h2 className="text-sm text-slate-500 mb-1">มูลค่าสุทธิ</h2>
-              <p className="text-4xl font-bold" style={{ color: netWorth >= 0 ? '#2C6488' : '#ef4444' }}>
-                {netWorth < 0 ? '-' : ''}฿{fmt(netWorth)}
+              <h2 className="text-sm text-slate-500 mb-1">ยอดเงินรวม</h2>
+              <p className="text-4xl font-bold" style={{ color: '#2C6488' }}>
+                ฿{fmt(totalAssets)}
               </p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center border border-white">
@@ -367,12 +365,12 @@ export default function AnalyticsView({ accounts, categories }) {
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-white/75 border border-white px-3 py-3">
-              <p className="text-xs text-slate-500 mb-1">สินทรัพย์รวม</p>
+              <p className="text-xs text-slate-500 mb-1">เงินทั้งหมด</p>
               <p className="text-lg font-bold text-emerald-600">฿{fmt(totalAssets)}</p>
             </div>
             <div className="rounded-xl bg-white/75 border border-white px-3 py-3">
-              <p className="text-xs text-slate-500 mb-1">หนี้สินรวม</p>
-              <p className="text-lg font-bold text-red-500">฿{fmt(totalLiab)}</p>
+              <p className="text-xs text-slate-500 mb-1">บัญชีทั้งหมด</p>
+              <p className="text-lg font-bold text-[#2C6488]">{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
             </div>
           </div>
           {!showAiSummaryCard && (
@@ -737,7 +735,7 @@ export default function AnalyticsView({ accounts, categories }) {
                 <Wallet size={16} color="#94a3b8" />
               </div>
               {topAccounts.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">ยังไม่มีบัญชีสินทรัพย์</div>
+                <div className="py-8 text-center text-slate-400 text-xs">ยังไม่มีบัญชี</div>
               ) : (
                 <div className="space-y-3">
                   {topAccounts.map((a) => (

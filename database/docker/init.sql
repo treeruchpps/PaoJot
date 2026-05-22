@@ -26,17 +26,14 @@ CREATE TABLE user_profiles (
 
 -- ENUM TYPES
 
-CREATE TYPE account_type AS ENUM ('asset', 'liability');
+CREATE TYPE account_type AS ENUM ('asset');
 
 CREATE TYPE account_kind AS ENUM (
     'cash',
     'bank_account',
     'savings',
     'investment',
-    'e_wallet',
-    'credit_card',
-    'loan',
-    'installment'
+    'e_wallet'
 );
 
 CREATE TYPE transaction_type AS ENUM (
@@ -402,10 +399,8 @@ INSERT INTO categories (id, user_id, name, type, icon, color) VALUES
     (uuid_generate_v4(), NULL, 'อื่นๆ',                'income',  'Tag',             '#94a3b8'),
     -- การโอน (transfer)
     (uuid_generate_v4(), NULL, 'โอนผ่านธนาคาร',        'transfer','ArrowLeftRight',  '#6366f1'),
-    (uuid_generate_v4(), NULL, 'ชำระบัตรเครดิต',       'transfer','CreditCard',      '#ef4444'),
     (uuid_generate_v4(), NULL, 'ฝากและถอน',            'transfer','PiggyBank',       '#10b981'),
     (uuid_generate_v4(), NULL, 'การยืมเงิน',           'transfer','Banknote',        '#f59e0b'),
     (uuid_generate_v4(), NULL, 'การให้ยืมเงิน',        'transfer','Wallet',          '#3b82f6'),
     (uuid_generate_v4(), NULL, 'การชำระคืน',           'transfer','Landmark',        '#f97316'),
-    (uuid_generate_v4(), NULL, 'การเรียกเก็บหนี้',     'transfer','DollarSign',      '#ec4899'),
     (uuid_generate_v4(), NULL, 'อื่นๆ',                'transfer','Tag',             '#94a3b8');

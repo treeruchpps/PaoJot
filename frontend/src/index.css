@@ -33,3 +33,9 @@
 
 input, select { outline: none; }
 input:focus, select:focus { box-shadow: 0 0 0 2px rgba(44, 100, 136, 0.30); }
+
+/* Hide the browser's built-in password reveal icon so only our custom eye button is shown. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}

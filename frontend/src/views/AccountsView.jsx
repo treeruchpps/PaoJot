@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, CreditCard, Tag, Landmark, Edit, Trash2, Share2, Plus, X, ChevronDown } from 'lucide-react';
+import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { accounts as accountsApi, transactions as txApi } from '../services/api';
@@ -15,12 +15,8 @@ const KINDS = [
   { value: 'savings',      label: 'ออมทรัพย์',    icon: 'Star',       color: '#f59e0b', type: 'asset' },
   { value: 'e_wallet',     label: 'E-Wallet',     icon: 'Smartphone', color: '#2C6488', type: 'asset' },
   { value: 'investment',   label: 'การลงทุน',     icon: 'TrendingUp', color: '#5F9A7A', type: 'asset' },
-  { value: 'credit_card',  label: 'บัตรเครดิต',   icon: 'CreditCard', color: '#ef4444', type: 'liability' },
-  { value: 'loan',         label: 'เงินกู้',      icon: 'Tag',        color: '#f97316', type: 'liability' },
-  { value: 'installment',  label: 'สินเชื่อ',     icon: 'Landmark',   color: '#5F9A7A', type: 'liability' },
 ];
 const ASSET_KINDS     = KINDS.filter((k) => k.type === 'asset');
-const LIABILITY_KINDS = KINDS.filter((k) => k.type === 'liability');
 const getKind = (v) => KINDS.find((k) => k.value === v) || KINDS[0];
 
 const emptyForm = () => ({
@@ -35,9 +31,6 @@ function KindIcon({ icon, color, size = 18 }) {
   if (icon === 'Star')        return <Star        size={size} color={color} />;
   if (icon === 'Smartphone')  return <Smartphone  size={size} color={color} />;
   if (icon === 'TrendingUp')  return <TrendingUp  size={size} color={color} />;
-  if (icon === 'CreditCard')  return <CreditCard  size={size} color={color} />;
-  if (icon === 'Tag')         return <Tag         size={size} color={color} />;
-  if (icon === 'Landmark')    return <Landmark    size={size} color={color} />;
   return null;
 }
 
@@ -133,11 +126,7 @@ export default function AccountsView({ accounts, onRefresh }) {
   const [deleting, setDeleting] = useState(false);
 
   const assetAccounts = accounts.filter((a) => a.type === 'asset');
-  const liabAccounts  = accounts.filter((a) => a.type === 'liability');
-
   const totalAssets = assetAccounts.reduce((s, a) => s + a.balance, 0);
-  const totalLiab   = liabAccounts.reduce((s, a)  => s + a.balance, 0);
-  const netWorth    = totalAssets - totalLiab;
 
   // ── Pool-add helpers ───────────────────────────────────────────────────────
   const openPoolAdd = () => {
@@ -198,12 +187,6 @@ export default function AccountsView({ accounts, onRefresh }) {
   };
 
   // ── Add / Edit account ─────────────────────────────────────────────────────
-  const openAdd = (presetType = 'liability') => {
-    setEditId(null);
-    setForm({ ...emptyForm(), type: presetType, kind: presetType === 'liability' ? 'credit_card' : 'cash' });
-    setError(''); setShowModal(true);
-  };
-
   const openEdit = (acc) => {
     setEditId(acc.id);
     setForm({
@@ -221,13 +204,13 @@ export default function AccountsView({ accounts, onRefresh }) {
     try {
       if (editId) {
         const body = {
-          name: form.name, type: form.type, kind: form.kind,
+          name: form.name, type: 'asset', kind: form.kind,
           currency: form.currency,
         };
         await accountsApi.update(editId, body);
       } else {
         const body = {
-          name: form.name, type: form.type, kind: form.kind,
+          name: form.name, type: 'asset', kind: form.kind,
           balance: newBalance, currency: form.currency,
         };
         const created = await accountsApi.create(body);
@@ -288,12 +271,11 @@ export default function AccountsView({ accounts, onRefresh }) {
     setAlloc(idx, String((parseFloat(allocations[idx].amount) || 0) + remaining));
   };
 
-  // ── Account Card (shared for asset & liability) ────────────────────────────
+  // ── Account Card ───────────────────────────────────────────────────────────
   const AccountCard = ({ acc }) => {
     const k = getKind(acc.kind);
-    const isLiab = acc.type === 'liability';
     return (
-      <div className={`bg-white rounded-2xl p-5 shadow-sm border card-hover ${isLiab ? 'border-red-100' : 'border-slate-100'}`}>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 card-hover">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: k.color + '18' }}>
@@ -315,7 +297,7 @@ export default function AccountsView({ accounts, onRefresh }) {
             </button>
           </div>
         </div>
-        <p className={`text-2xl font-bold ${isLiab ? 'text-red-500' : 'text-emerald-600'}`}>
+        <p className="text-2xl font-bold text-emerald-600">
           ฿{fmt(acc.balance)}
         </p>
         <p className="text-xs text-slate-400 mt-0.5">{acc.currency}</p>
@@ -328,16 +310,15 @@ export default function AccountsView({ accounts, onRefresh }) {
     <div className="p-6 space-y-5">
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         {[
-          { label: 'มูลค่าสุทธิ',   value: netWorth,    color: netWorth >= 0 ? '#2C6488' : '#ef4444', bg: netWorth >= 0 ? '#EAF3F7' : '#fff1f2' },
-          { label: 'สินทรัพย์รวม', value: totalAssets, color: '#10b981', bg: '#f0fdf4' },
-          { label: 'หนี้สินรวม',   value: totalLiab,   color: '#ef4444', bg: '#fff1f2' },
+          { label: 'ยอดเงินรวม', value: totalAssets, color: '#2C6488', bg: '#EAF3F7', prefix: '฿' },
+          { label: 'บัญชีทั้งหมด', value: assetAccounts.length, color: '#10b981', bg: '#f0fdf4', suffix: ' บัญชี' },
         ].map((s, i) => (
           <div key={i} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '40' }}>
             <p className="text-xs text-slate-500 mb-1">{s.label}</p>
             <p className="text-2xl font-bold" style={{ color: s.color }}>
-              {s.value < 0 ? '-' : ''}฿{fmt(Math.abs(s.value))}
+              {s.prefix || ''}{s.prefix ? fmt(s.value) : s.value}{s.suffix || ''}
             </p>
           </div>
         ))}
@@ -348,49 +329,38 @@ export default function AccountsView({ accounts, onRefresh }) {
         <h2 className="text-base font-semibold text-slate-700">บัญชีทั้งหมด</h2>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={openPoolAdd}
-            className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-            style={{ color: '#10b981', borderColor: '#10b98133', background: '#f0fdf4' }}>
-            <Plus size={15} color="#10b981" /> เพิ่มบัญชีสินทรัพย์
-          </button>
-          <button onClick={() => openAdd('liability')}
-            className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-            style={{ color: '#ef4444', borderColor: '#ef444433', background: '#fff1f2' }}>
-            <Plus size={15} color="#ef4444" /> เพิ่มบัญชีหนี้สิน
+            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
+            <Plus size={15} color="white" /> เพิ่มบัญชี
           </button>
           {assetAccounts.length > 0 && (
             <button onClick={openDist}
-              className="text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium border-2 transition-colors"
-              style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}>
-              <Share2 size={15} color="#2C6488" /> แบ่งเงินเข้าบัญชี
+              className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
+              <Share2 size={15} color="white" /> แบ่งเงินเข้าบัญชี
             </button>
           )}
         </div>
       </div>
 
-      {/* Asset accounts */}
       {assetAccounts.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-3">สินทรัพย์</p>
+          <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-3">บัญชีเงิน</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {assetAccounts.map((acc) => <AccountCard key={acc.id} acc={acc} />)}
           </div>
         </div>
       )}
 
-      {/* Liability accounts */}
-      {liabAccounts.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-3">หนี้สิน</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {liabAccounts.map((acc) => <AccountCard key={acc.id} acc={acc} />)}
-          </div>
-        </div>
-      )}
-
-      {accounts.length === 0 && (
-        <div className="py-20 flex flex-col items-center gap-3 text-slate-400">
+      {assetAccounts.length === 0 && (
+        <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
           <Briefcase size={40} color="#cbd5e1" />
-          <p className="text-sm">ยังไม่มีบัญชี กดเพิ่มบัญชีด้านบน</p>
+          <div>
+            <p className="text-sm font-semibold text-slate-600">ยังไม่มีบัญชี</p>
+            <p className="text-xs text-slate-400 mt-1">สร้างบัญชีแรกเพื่อเริ่มบันทึกรายรับ รายจ่าย และโอนเงิน</p>
+          </div>
+          <button onClick={openPoolAdd}
+            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
+            <Plus size={15} color="white" /> สร้างบัญชีแรก
+          </button>
         </div>
       )}
 
@@ -398,7 +368,7 @@ export default function AccountsView({ accounts, onRefresh }) {
 
       {/* Add/Edit modal */}
       {showModal && (
-        <Modal title={editId ? 'แก้ไขบัญชี' : 'เพิ่มบัญชีหนี้สิน'} onClose={() => setShowModal(false)}>
+        <Modal title={editId ? 'แก้ไขบัญชี' : 'เพิ่มบัญชี'} onClose={() => setShowModal(false)}>
           <div className="space-y-4">
             {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
@@ -406,7 +376,7 @@ export default function AccountsView({ accounts, onRefresh }) {
             <div>
               <label className="text-xs font-medium text-slate-500 mb-2 block">ชนิดบัญชี</label>
               <div className="grid grid-cols-2 gap-2">
-                {(form.type === 'liability' ? LIABILITY_KINDS : ASSET_KINDS).map((k) => (
+                {ASSET_KINDS.map((k) => (
                   <button key={k.value} onClick={() => setForm({ ...form, kind: k.value })}
                     className="flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition-all"
                     style={{
@@ -435,7 +405,7 @@ export default function AccountsView({ accounts, onRefresh }) {
             {editId ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
                 <p className="text-xs font-medium text-slate-500 mb-1">ยอดปัจจุบัน</p>
-                <p className={`text-xl font-bold ${form.type === 'liability' ? 'text-red-500' : 'text-emerald-600'}`}>
+                <p className="text-xl font-bold text-emerald-600">
                   ฿{fmt(parseFloat(form.balance) || 0)}
                 </p>
                 <p className="text-xs text-slate-400 mt-1">ยอดนี้มาจากรายการธุรกรรม หากยอดตั้งต้นผิดให้ลบบัญชีนี้แล้วสร้างใหม่</p>
@@ -443,7 +413,7 @@ export default function AccountsView({ accounts, onRefresh }) {
             ) : (
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  {form.type === 'liability' ? 'ยอดค้างชำระเริ่มต้น (฿)' : 'ยอดเงินเริ่มต้น (฿)'}
+                  ยอดเงินเริ่มต้น (฿)
                 </label>
                 <input type="number" min="0" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })}
                   placeholder="0.00"
@@ -467,7 +437,7 @@ export default function AccountsView({ accounts, onRefresh }) {
 
       {/* Pool-add modal */}
       {showPoolAdd && (
-        <Modal title="เพิ่มบัญชีสินทรัพย์" size="lg" onClose={() => setShowPoolAdd(false)}>
+        <Modal title="เพิ่มบัญชี" size="lg" onClose={() => setShowPoolAdd(false)}>
           <div className="space-y-4">
             {poolAddError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{poolAddError}</p>}
             <div>
@@ -619,7 +589,7 @@ export default function AccountsView({ accounts, onRefresh }) {
               </div>
             )}
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-2 block">โยนเข้าบัญชี (สินทรัพย์เท่านั้น)</label>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">โยนเข้าบัญชี</label>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {allocations.map((alloc, idx) => {
                   const k = getKind(alloc.kind);

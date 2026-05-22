@@ -22,6 +22,7 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
     week_start_day: 0,
   });
   const [showPw, setShowPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
 
@@ -110,7 +111,7 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
                 name="email"
                 value={form.email}
                 onChange={handleChange}
-                placeholder="your@email.com"
+                placeholder="อีเมล"
                 aria-invalid={!!fieldErrors.email}
                 className={inputClass(!!fieldErrors.email)}
               />
@@ -142,15 +143,24 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
 
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1.5 block">ยืนยันรหัสผ่าน</label>
-              <input
-                type={showPw ? 'text' : 'password'}
-                name="confirmPassword"
-                value={form.confirmPassword}
-                onChange={handleChange}
-                placeholder="พิมพ์รหัสผ่านอีกครั้ง"
-                aria-invalid={!!fieldErrors.confirmPassword}
-                className={inputClass(!!fieldErrors.confirmPassword)}
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPw ? 'text' : 'password'}
+                  name="confirmPassword"
+                  value={form.confirmPassword}
+                  onChange={handleChange}
+                  placeholder="พิมพ์รหัสผ่านอีกครั้ง"
+                  aria-invalid={!!fieldErrors.confirmPassword}
+                  className={inputClass(!!fieldErrors.confirmPassword, true)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPw(!showConfirmPw)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showConfirmPw ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+              </div>
               {fieldErrors.confirmPassword && <p className="mt-1.5 text-xs text-red-500">{fieldErrors.confirmPassword}</p>}
             </div>
 

@@ -79,7 +79,7 @@ export default function LoginPage({ onSwitch, notice }) {
                   name="email"
                   value={form.email}
                   onChange={handleChange}
-                  placeholder="your@email.com"
+                  placeholder="อีเมล"
                   aria-invalid={!!fieldErrors.email}
                   className={inputClass(!!fieldErrors.email, true)}
                 />

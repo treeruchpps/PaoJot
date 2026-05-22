@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"paomoney/internal/models"
 	"time"
@@ -69,65 +68,11 @@ func (h *NotificationHandler) List(c *gin.Context) {
 		}
 	}
 
-	// 3. ตรวจงบประมาณที่เกิน → สร้าง notification ถ้ายังไม่มี
-	budgetRows, err2 := h.db.Query(ctx,
-		`SELECT b.id, b.name, b.amount, b.period,
-		        COALESCE((
-		          SELECT SUM(t.amount)
-		          FROM transactions t
-		          WHERE t.user_id = b.user_id
-		            AND t.type = 'expense'
-		            AND (b.category_id IS NULL OR t.category_id = b.category_id)
-		            AND t.transaction_date >= CASE b.period
-		              WHEN 'monthly' THEN date_trunc('month', CURRENT_DATE)::date
-		              WHEN 'weekly'  THEN date_trunc('week',  CURRENT_DATE)::date
-		              WHEN 'yearly'  THEN date_trunc('year',  CURRENT_DATE)::date
-		            END
-		            AND t.transaction_date <= CASE b.period
-		              WHEN 'monthly' THEN (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day')::date
-		              WHEN 'weekly'  THEN (date_trunc('week',  CURRENT_DATE) + interval '6 days')::date
-		              WHEN 'yearly'  THEN (date_trunc('year',  CURRENT_DATE) + interval '1 year - 1 day')::date
-		            END
-		        ), 0) AS spent
-		 FROM budgets b
-		 WHERE b.user_id = $1`,
-		userID,
-	)
-	if err2 == nil {
-		defer budgetRows.Close()
-		for budgetRows.Next() {
-			var budgetID, budgetName, period string
-			var budgetAmount, spent float64
-			if err := budgetRows.Scan(&budgetID, &budgetName, &budgetAmount, &period, &spent); err != nil {
-				continue
-			}
-			if spent <= budgetAmount {
-				continue // ยังไม่เกิน
-			}
-			// ตรวจว่ามี notification budget นี้ที่ยังไม่ dismiss อยู่แล้วไหม
-			var existCount int
-			_ = h.db.QueryRow(ctx,
-				`SELECT COUNT(*) FROM notifications
-				 WHERE budget_id = $1 AND action_taken = FALSE`,
-				budgetID,
-			).Scan(&existCount)
-			if existCount == 0 {
-				title := fmt.Sprintf("เกินงบประมาณ: %s", budgetName)
-				msg := fmt.Sprintf("ใช้ไปแล้ว ฿%.0f จากงบ ฿%.0f (เกิน ฿%.0f)", spent, budgetAmount, spent-budgetAmount)
-				h.db.Exec(ctx, //nolint
-					`INSERT INTO notifications (user_id, budget_id, title, message)
-					 VALUES ($1, $2, $3, $4)`,
-					userID, budgetID, title, msg,
-				)
-			}
-		}
-	}
-
-	// 4. คืน notification ทั้งหมดที่ยังไม่ action_taken (เรียงใหม่ก่อน)
+	// 3. คืน notification รายการทำซ้ำที่ยังไม่ action_taken (เรียงใหม่ก่อน)
 	nrows, err := h.db.Query(ctx,
 		`SELECT id, user_id, recurring_id, budget_id, title, message, is_read, action_taken, created_at
 		 FROM notifications
-		 WHERE user_id = $1 AND action_taken = FALSE
+		 WHERE user_id = $1 AND action_taken = FALSE AND recurring_id IS NOT NULL
 		 ORDER BY created_at DESC`,
 		userID,
 	)
@@ -223,18 +168,9 @@ func (h *NotificationHandler) Confirm(c *gin.Context) {
 				`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
 				r.Amount, r.AccountID, userID)
 			if err == nil {
-				var toType string
-				dbTx.QueryRow(ctx,
-					`SELECT type FROM accounts WHERE id = $1`, *r.ToAccountID).Scan(&toType)
-				if toType == "liability" {
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-						r.Amount, *r.ToAccountID, userID)
-				} else {
-					_, err = dbTx.Exec(ctx,
-						`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-						r.Amount, *r.ToAccountID, userID)
-				}
+				_, err = dbTx.Exec(ctx,
+					`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
+					r.Amount, *r.ToAccountID, userID)
 			}
 		}
 	}

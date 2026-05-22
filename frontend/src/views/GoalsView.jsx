@@ -423,7 +423,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
             {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
             {assetAccounts.length === 0 && (
               <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-xl">
-                ต้องมีบัญชีสินทรัพย์ก่อนจึงจะสร้างเป้าหมายการออมได้
+                ต้องมีบัญชีก่อนจึงจะสร้างเป้าหมายการออมได้
               </p>
             )}
 
