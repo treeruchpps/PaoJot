@@ -5,6 +5,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 import { AccountSelect, CategorySelect } from '../components/common/FinanceSelects';
 import { recurring as recurApi } from '../services/api';
 import { fmt } from '../constants/data';
+import { formatDisplayDate } from '../utils/dateFormat';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2C6488' };
@@ -204,7 +205,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
             }`}>
               <Clock size={12} color={overdue && r.is_active ? '#ef4444' : '#94a3b8'} />
               {overdue && r.is_active ? 'ค้างชำระ · ' : 'ถัดไป · '}
-              {r.next_due_date}
+              {formatDisplayDate(r.next_due_date)}
             </div>
           </div>
 

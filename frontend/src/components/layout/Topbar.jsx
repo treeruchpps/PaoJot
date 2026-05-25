@@ -3,6 +3,7 @@ import { Bell } from 'lucide-react';
 import NotificationPanel from './NotificationPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { profile as profileApi } from '../../services/api';
+import { formatDisplayDate } from '../../utils/dateFormat';
 
 const accent = '#2C6488';
 
@@ -20,9 +21,7 @@ export default function Topbar({ pageTitle, onProfile, notifications, onNotifica
 
   const unreadCount = (notifications || []).filter((n) => !n.is_read).length;
 
-  const today = new Date().toLocaleDateString('th-TH', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  });
+  const today = formatDisplayDate(new Date());
 
   return (
     <header className="flex-shrink-0 border-b px-6 py-4 flex items-center justify-between bg-white border-slate-100 shadow-sm">

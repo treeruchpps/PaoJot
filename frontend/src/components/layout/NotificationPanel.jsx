@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { BellOff, RefreshCw } from 'lucide-react';
 import { notifications as notiApi } from '../../services/api';
+import { formatDisplayDateTime } from '../../utils/dateFormat';
 
 export default function NotificationPanel({ list, onClose, onRefresh, onRefreshAccounts }) {
   const panelRef = useRef(null);
@@ -90,9 +91,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
                       <p className="text-xs text-slate-400 mt-0.5">{n.message}</p>
                     )}
                     <p className="text-xs text-slate-300 mt-1">
-                      {new Date(n.created_at).toLocaleDateString('th-TH', {
-                        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                      })}
+                      {formatDisplayDateTime(n.created_at)}
                     </p>
                   </div>
                 </div>

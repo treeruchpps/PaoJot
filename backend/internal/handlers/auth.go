@@ -110,7 +110,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	var req struct {
 		CurrentPassword string `json:"current_password" binding:"required"`
-		NewPassword     string `json:"new_password"     binding:"required,min=6"`
+		NewPassword     string `json:"new_password"     binding:"required,min=8"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

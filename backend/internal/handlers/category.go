@@ -14,12 +14,24 @@ type CategoryHandler struct {
 }
 
 func NewCategoryHandler(db *pgxpool.Pool) *CategoryHandler {
+	ensureDefaultCategories(context.Background(), db)
 	return &CategoryHandler{db: db}
+}
+
+func ensureDefaultCategories(ctx context.Context, db *pgxpool.Pool) {
+	_, _ = db.Exec(ctx, `
+		INSERT INTO categories (user_id, name, type, icon, color)
+		SELECT NULL, 'ชำระหนี้', 'expense', 'CreditCard', '#2C6488'
+		WHERE NOT EXISTS (
+			SELECT 1 FROM categories
+			WHERE user_id IS NULL AND type = 'expense' AND name = 'ชำระหนี้'
+		)
+	`)
 }
 
 // GET /api/v1/categories
 func (h *CategoryHandler) List(c *gin.Context) {
-	userID     := c.GetString("user_id")
+	userID := c.GetString("user_id")
 	typeFilter := c.Query("type")
 
 	query := `SELECT id, user_id, name, type, icon, color, created_at
@@ -83,7 +95,7 @@ func (h *CategoryHandler) Create(c *gin.Context) {
 // PUT /api/v1/categories/:id
 func (h *CategoryHandler) Update(c *gin.Context) {
 	userID := c.GetString("user_id")
-	id     := c.Param("id")
+	id := c.Param("id")
 
 	var req models.UpdateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -114,7 +126,7 @@ func (h *CategoryHandler) Update(c *gin.Context) {
 // DELETE /api/v1/categories/:id
 func (h *CategoryHandler) Delete(c *gin.Context) {
 	userID := c.GetString("user_id")
-	id     := c.Param("id")
+	id := c.Param("id")
 
 	result, err := h.db.Exec(context.Background(),
 		`DELETE FROM categories WHERE id = $1 AND user_id = $2`,

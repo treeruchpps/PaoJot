@@ -155,27 +155,23 @@ func (h *NotificationHandler) Confirm(c *gin.Context) {
 	txType := models.TransactionType(r.Type)
 	switch txType {
 	case models.TransactionTypeIncome:
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-			r.Amount, r.AccountID, userID)
+		err = creditAccount(ctx, dbTx, userID, r.AccountID, r.Amount)
 	case models.TransactionTypeExpense:
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			r.Amount, r.AccountID, userID)
+		err = debitAccount(ctx, dbTx, userID, r.AccountID, r.Amount)
 	case models.TransactionTypeTransfer:
 		if r.ToAccountID != nil {
-			_, err = dbTx.Exec(ctx,
-				`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-				r.Amount, r.AccountID, userID)
+			err = debitAccount(ctx, dbTx, userID, r.AccountID, r.Amount)
 			if err == nil {
-				_, err = dbTx.Exec(ctx,
-					`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-					r.Amount, *r.ToAccountID, userID)
+				err = creditAccount(ctx, dbTx, userID, *r.ToAccountID, r.Amount)
 			}
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update balance"})
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
 		return
 	}
 

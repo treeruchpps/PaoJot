@@ -47,6 +47,8 @@ type aiSummaryResponse struct {
 	DataHash       string           `json:"data_hash"`
 	Eligible       bool             `json:"eligible"`
 	Reason         string           `json:"reason,omitempty"`
+	AIConsent      bool             `json:"ai_consent"`
+	AIConsentAt    *time.Time       `json:"ai_consent_at,omitempty"`
 	Summary        *aiSummaryResult `json:"summary,omitempty"`
 	Cached         bool             `json:"cached"`
 	Stale          bool             `json:"stale"`
@@ -172,6 +174,22 @@ func (h *AISummaryHandler) Generate(c *gin.Context) {
 func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType string, generate bool) (*aiSummaryResponse, error) {
 	weekStartDay, _ := h.getWeekStartDay(ctx, userID)
 	start, end := currentPeriodRange(periodType, weekStartDay)
+	consent, consentAt, err := h.getAIConsent(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !consent {
+		return &aiSummaryResponse{
+			PeriodType:   periodType,
+			PeriodStart:  start.Format("2006-01-02"),
+			PeriodEnd:    end.Format("2006-01-02"),
+			WeekStartDay: weekStartDay,
+			Model:        h.cfg.Typhoon.ExtractModel,
+			Eligible:     false,
+			Reason:       "กรุณาเปิดการยินยอมใช้ข้อมูลกับ AI ในหน้าโปรไฟล์ก่อน",
+			AIConsent:    false,
+		}, nil
+	}
 	input, err := h.buildInput(ctx, userID, periodType, start, end, weekStartDay)
 	if err != nil {
 		return nil, err
@@ -188,6 +206,8 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 		DataHash:       dataHash,
 		Eligible:       eligible,
 		Reason:         reason,
+		AIConsent:      consent,
+		AIConsentAt:    consentAt,
 		TransactionCnt: input.TransactionCount,
 		ExpenseCnt:     input.ExpenseCount,
 	}
@@ -240,6 +260,17 @@ func (h *AISummaryHandler) getWeekStartDay(ctx context.Context, userID string) (
 	return day, nil
 }
 
+func (h *AISummaryHandler) getAIConsent(ctx context.Context, userID string) (bool, *time.Time, error) {
+	var enabled bool
+	var consentAt *time.Time
+	err := h.db.QueryRow(ctx,
+		`SELECT ai_summary_enabled, ai_summary_consent_at
+		 FROM user_profiles WHERE user_id = $1`,
+		userID,
+	).Scan(&enabled, &consentAt)
+	return enabled, consentAt, err
+}
+
 func (h *AISummaryHandler) buildInput(ctx context.Context, userID, periodType string, start, end time.Time, weekStartDay int) (*aiSummaryInput, error) {
 	income, expense, txCount, expenseCount, err := h.periodTotals(ctx, userID, start, end)
 	if err != nil {
@@ -290,7 +321,7 @@ func (h *AISummaryHandler) periodTotals(ctx context.Context, userID string, star
 		SELECT
 			COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0),
-			COUNT(*),
+			COUNT(*) FILTER (WHERE type IN ('income', 'expense')),
 			COUNT(*) FILTER (WHERE type = 'expense')
 		FROM transactions
 		WHERE user_id = $1 AND transaction_date >= $2 AND transaction_date <= $3
@@ -325,25 +356,24 @@ func (h *AISummaryHandler) topExpenseCategories(ctx context.Context, userID stri
 }
 
 func (h *AISummaryHandler) budgetAlerts(ctx context.Context, userID, periodType string, start, end time.Time) ([]aiBudgetAlert, error) {
-	budgetPeriod := "monthly"
-	if periodType == "weekly" {
-		budgetPeriod = "weekly"
-	}
-
 	rows, err := h.db.Query(ctx, `
-		SELECT b.name, b.amount,
+		SELECT COALESCE(c.name, 'รวมทุกหมวด'), b.amount,
 		       COALESCE((
 		         SELECT SUM(t.amount)
 		         FROM transactions t
 		         WHERE t.user_id = b.user_id
 		           AND t.type = 'expense'
 		           AND (b.category_id IS NULL OR t.category_id = b.category_id)
-		           AND t.transaction_date >= $3 AND t.transaction_date <= $4
+		           AND t.transaction_date >= $2 AND t.transaction_date <= $3
 		       ), 0) AS spent
 		FROM budgets b
-		WHERE b.user_id = $1 AND b.period = $2
+		LEFT JOIN categories c ON c.id = b.category_id
+		WHERE b.user_id = $1
+		  AND b.is_active = TRUE
+		  AND b.start_date <= $3
+		  AND b.end_date >= $2
 		ORDER BY b.created_at DESC
-	`, userID, budgetPeriod, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	`, userID, start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
 		return nil, err
 	}
@@ -579,13 +609,13 @@ func summaryEligibility(input *aiSummaryInput) (bool, string) {
 		return false, "ยังไม่มีรายจ่ายในช่วงนี้"
 	}
 	if input.PeriodType == "weekly" {
-		if input.TransactionCount < 5 && input.ExpenseCount < 3 {
-			return false, "ข้อมูลสัปดาห์นี้ยังน้อยเกินไปสำหรับสรุปด้วย AI"
+		if input.TransactionCount <= 10 {
+			return false, "ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในสัปดาห์นี้ก่อน จึงจะสรุปด้วย AI ได้"
 		}
 		return true, ""
 	}
-	if input.TransactionCount < 10 && input.ExpenseCount < 5 {
-		return false, "ข้อมูลเดือนนี้ยังน้อยเกินไปสำหรับสรุปด้วย AI"
+	if input.TransactionCount <= 30 {
+		return false, "ต้องมีรายการรายรับ/รายจ่ายมากกว่า 30 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้"
 	}
 	return true, ""
 }

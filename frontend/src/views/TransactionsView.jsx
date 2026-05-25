@@ -5,6 +5,7 @@ import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { transactions as txApi, slipJobs as slipJobsApi, receiptJobs as receiptJobsApi } from '../services/api';
 import { fmt } from '../constants/data';
+import { formatDisplayDate } from '../utils/dateFormat';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน', adjustment: 'ปรับยอด' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2563eb', adjustment: '#f59e0b' };
@@ -301,7 +302,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-700">
-              รายการวันที่ {selectedDate}
+              รายการวันที่ {formatDisplayDate(selectedDate)}
             </p>
             <span className="text-xs text-slate-400">{selectedTxs.length} รายการ</span>
           </div>
@@ -384,7 +385,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const hasAccounts = (accounts || []).length > 0;
 
   const [txList,       setTxList]       = useState([]);
+  const [txMeta,       setTxMeta]       = useState({ total: 0, total_income: 0, total_expense: 0 });
   const [loading,      setLoading]      = useState(true);
+  const [exporting,    setExporting]    = useState(false);
   const [viewMode,     setViewMode]     = useState('list');   // 'list' | 'calendar'
   const [showModal,    setShowModal]    = useState(false);
   const [txType,       setTxType]       = useState('expense');
@@ -403,6 +406,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       setSortBy(key);
       setSortDir(key === 'date' ? 'desc' : 'asc');
     }
+    setCurrentPage(1);
   };
   const [form, setForm] = useState({
     name: '', amount: '', note: '', category_id: '',
@@ -614,6 +618,12 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const saveOcrReceipt = async () => {
     const selected = ocrItems.filter((it) => it.include && it.unit_price > 0);
     if (selected.length === 0) { setOcrError('เลือกรายการอย่างน้อย 1 อัน'); return; }
+    const total = selected.reduce((sum, it) => sum + (parseFloat(it.unit_price) * (parseFloat(it.quantity) || 1)), 0);
+    const account = accounts.find((a) => a.id === ocrAccount);
+    if (total > Number(account?.balance || 0)) {
+      setOcrError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(account?.balance || 0)}`);
+      return;
+    }
     setOcrSaving(true); setOcrError('');
     try {
       await Promise.all(selected.map((it) =>
@@ -809,6 +819,13 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     if (!rv) return;
     if (!rv.amount || parseFloat(rv.amount) <= 0) { setSlipError('กรุณาใส่จำนวนเงิน'); return; }
     if (!rv.account_id) { setSlipError('กรุณาเลือกบัญชี'); return; }
+    if ((rv.tx_type || 'expense') === 'expense') {
+      const account = accounts.find((a) => a.id === rv.account_id);
+      if (parseFloat(rv.amount) > Number(account?.balance || 0)) {
+        setSlipError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(account?.balance || 0)}`);
+        return;
+      }
+    }
     setSlipSaving((p) => ({ ...p, [slip.id]: true }));
     setSlipError('');
     try {
@@ -909,37 +926,64 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setAdjustError('รายการปรับยอดแก้ไขไม่ได้ หากยอดผิดให้ลบบัญชีแล้วสร้างใหม่');
   };
 
+  const getAvailableForOutflow = (accountId, currentTx = null) => {
+    const account = accounts.find((a) => a.id === accountId);
+    let available = Number(account?.balance || 0);
+    if (currentTx?.account_id === accountId && (currentTx.type === 'expense' || currentTx.type === 'transfer')) {
+      available += Number(currentTx.amount || 0);
+    }
+    return available;
+  };
+
+  const buildTxListParams = useCallback((overrides = {}) => {
+    const params = {
+      page: viewMode === 'calendar' ? 1 : currentPage,
+      limit: viewMode === 'calendar' ? 10000 : TX_PAGE_SIZE,
+      sort_by: sortBy,
+      sort_dir: sortDir,
+      ...overrides,
+    };
+    if (filterMonth === 'today') {
+      params.date_from = today;
+      params.date_to = today;
+    } else if (filterMonth === 'week') {
+      params.date_from = weekStartDate;
+      params.date_to = weekEndDate;
+    } else if (filterMonth === 'month') {
+      const [y, m] = selectedMonth.split('-');
+      const dateFrom = `${y}-${m}-01`;
+      const lastDay  = new Date(parseInt(y), parseInt(m), 0).getDate();
+      const dateTo   = `${y}-${m}-${pad2(lastDay)}`;
+      params.date_from = dateFrom;
+      params.date_to = dateTo;
+    } else if (filterMonth === 'year') {
+      params.date_from = `${thisYear}-01-01`;
+      params.date_to = `${thisYear}-12-31`;
+    }
+    if (filterType !== 'all') params.type       = filterType;
+    if (filterAcc  !== 'all') params.account_id = filterAcc;
+    if (search.trim()) params.search = search.trim();
+    return params;
+  }, [filterMonth, filterType, filterAcc, today, weekStartDate, weekEndDate, selectedMonth, thisYear, viewMode, currentPage, sortBy, sortDir, search]);
+
   const fetchTx = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { limit: 10000 };
-      if (filterMonth === 'today') {
-        params.date_from = today;
-        params.date_to = today;
-      } else if (filterMonth === 'week') {
-        params.date_from = weekStartDate;
-        params.date_to = weekEndDate;
-      } else if (filterMonth === 'month') {
-        const [y, m] = selectedMonth.split('-');
-        const dateFrom = `${y}-${m}-01`;
-        const lastDay  = new Date(parseInt(y), parseInt(m), 0).getDate();
-        const dateTo   = `${y}-${m}-${pad2(lastDay)}`;
-        params.date_from = dateFrom;
-        params.date_to = dateTo;
-      } else if (filterMonth === 'year') {
-        params.date_from = `${thisYear}-01-01`;
-        params.date_to = `${thisYear}-12-31`;
-      }
-      if (filterType !== 'all') params.type       = filterType;
-      if (filterAcc  !== 'all') params.account_id = filterAcc;
+      const params = buildTxListParams();
       const res = await txApi.list(params);
       setTxList(res?.data || []);
+      setTxMeta({
+        total: Number(res?.total || 0),
+        total_income: Number(res?.total_income || 0),
+        total_expense: Number(res?.total_expense || 0),
+      });
     } catch {
       setTxList([]);
+      setTxMeta({ total: 0, total_income: 0, total_expense: 0 });
     } finally {
       setLoading(false);
     }
-  }, [filterMonth, filterType, filterAcc, today, weekStartDate, weekEndDate, selectedMonth, thisYear]);
+  }, [buildTxListParams]);
 
   useEffect(() => { fetchTx(); }, [fetchTx]);
 
@@ -966,6 +1010,17 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     : txType === 'transfer'
       ? applyOrder('transfer', transferCats)
       : applyOrder('expense',  expCats);
+
+  const changeModalType = (nextType) => {
+    if (nextType === txType) return;
+    const cats = nextType === 'income' ? applyOrder('income', incCats) : applyOrder('expense', expCats);
+    setTxType(nextType);
+    setForm((prev) => ({
+      ...prev,
+      category_id: cats[0]?.id || '',
+    }));
+    setError('');
+  };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getAcc = (id) => accounts.find((a) => a.id === id);
@@ -1015,17 +1070,27 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
   // ── Save adjust balance ───────────────────────────────────────────────────
   const save = async () => {
-    if (!form.amount || parseFloat(form.amount) <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
+    const amount = parseFloat(form.amount);
+    if (!form.amount || amount <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
     if (txType === 'transfer' && form.from_account_id === form.to_account_id) {
       setError('บัญชีต้นทางและปลายทางต้องไม่ใช่บัญชีเดียวกัน');
       return;
+    }
+    const oldTx = editId ? txList.find((tx) => tx.id === editId) : null;
+    const outflowAccountId = txType === 'transfer' ? form.from_account_id : txType === 'expense' ? form.account_id : null;
+    if (outflowAccountId) {
+      const available = getAvailableForOutflow(outflowAccountId, oldTx);
+      if (amount > available) {
+        setError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(available)}`);
+        return;
+      }
     }
     setSaving(true);
     setError('');
     try {
       const body = {
         type:             txType,
-        amount:           parseFloat(form.amount),
+        amount,
         name:             form.name || null,
         note:             form.note || null,
         transaction_date: form.transaction_date,
@@ -1065,15 +1130,29 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   };
 
   // ── Export CSV ────────────────────────────────────────────────────────────
-  const exportCSV = () => {
+  const exportCSV = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const firstPage = await txApi.list(buildTxListParams({ page: 1, limit: 10000 }));
+      const total = Number(firstPage?.total || 0);
+      let exportList = firstPage?.data || [];
+
+      for (let page = 2; exportList.length < total; page += 1) {
+        const res = await txApi.list(buildTxListParams({ page, limit: 10000 }));
+        const data = res?.data || [];
+        if (data.length === 0) break;
+        exportList = [...exportList, ...data];
+      }
+
     const headers = ['วันที่', 'ประเภท', 'หมวดหมู่', 'บัญชี', 'หมายเหตุ', 'จำนวน (฿)'];
-    const rows = displayList.map((tx) => {
+    const rows = exportList.map((tx) => {
       const cat   = getCat(tx.category_id);
       const acc   = getAcc(tx.account_id);
       const toAcc = getAcc(tx.to_account_id);
       const sign  = tx.type === 'expense' ? '-' : tx.type === 'adjustment' ? '' : '+';
       return [
-        tx.transaction_date?.slice(0, 10) || '',
+        formatDisplayDate(tx.transaction_date, ''),
         TYPE_LABEL[tx.type] || tx.type,
         cat?.name || '',
         tx.type === 'transfer'
@@ -1096,34 +1175,19 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     a.download = `transactions_${filterMonth === 'month' ? selectedMonth : filterMonth}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message || 'Export CSV ไม่สำเร็จ');
+    } finally {
+      setExporting(false);
+    }
   };
 
-  // ── Search + sort (client-side) ───────────────────────────────────────────
-  const searchedList = search.trim() === '' ? txList : txList.filter((tx) => {
-    const q = search.trim().toLowerCase();
-    const nameMatch   = (tx.name  || '').toLowerCase().includes(q);
-    const noteMatch   = (tx.note  || '').toLowerCase().includes(q);
-    const amountMatch = String(tx.amount).includes(q);
-    return nameMatch || noteMatch || amountMatch;
-  });
-  const displayList = [...searchedList].sort((a, b) => {
-    const direction = sortDir === 'asc' ? 1 : -1;
-    const getValue = (tx) => {
-      if (sortBy === 'amount') return Number(tx.amount) || 0;
-      if (sortBy === 'type') return TYPE_LABEL[tx.type] || tx.type || '';
-      if (sortBy === 'account') return getAcc(tx.account_id)?.name || '';
-      if (sortBy === 'name') return tx.name || tx.note || '';
-      return tx.transaction_date || '';
-    };
-    const av = getValue(a);
-    const bv = getValue(b);
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * direction;
-    return String(av).localeCompare(String(bv), 'th') * direction;
-  });
-  const totalPages = Math.max(1, Math.ceil(displayList.length / TX_PAGE_SIZE));
+  const displayList = txList || [];
+  const totalRows = viewMode === 'calendar' ? displayList.length : Number(txMeta.total || 0);
+  const totalPages = Math.max(1, Math.ceil(totalRows / TX_PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const pageStart = (safePage - 1) * TX_PAGE_SIZE;
-  const paginatedList = displayList.slice(pageStart, pageStart + TX_PAGE_SIZE);
+  const paginatedList = displayList;
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1)
     .filter((page) => totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - safePage) <= 1);
 
@@ -1136,8 +1200,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   }, [currentPage, totalPages]);
 
   // ── Summary (from transactions) ───────────────────────────────────────────
-  const totalIncome  = (txList || []).filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const totalExpense = (txList || []).filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const totalIncome  = Number(txMeta.total_income || 0);
+  const totalExpense = Number(txMeta.total_expense || 0);
   const SortHeader = ({ label, sortKey, align = 'left' }) => {
     const active = sortBy === sortKey;
     return (
@@ -1220,10 +1284,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
           </button>
 
           {/* Export CSV */}
-          <button onClick={exportCSV}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors">
-            <Download size={13} color="#64748b" />
-            Export CSV
+          <button onClick={exportCSV} disabled={exporting}
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-wait">
+            {exporting ? <Loader2 size={13} color="#64748b" className="animate-spin" /> : <Download size={13} color="#64748b" />}
+            {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
         </div>
       </div>
@@ -1334,7 +1398,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
         {txList.length > 0 && (
           <span className="text-xs text-slate-400 whitespace-nowrap">
-            {search ? `${displayList.length} / ${txList.length}` : `${txList.length}`} รายการ
+            {totalRows} รายการ
           </span>
         )}
       </div>
@@ -1386,7 +1450,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   return (
                     <tr key={tx.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                        {tx.transaction_date?.slice(0, 10) || ''}
+                        {formatDisplayDate(tx.transaction_date, '')}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-700 font-medium">
                         <div className="flex items-center gap-1.5">
@@ -1445,10 +1509,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   })}
                 </tbody>
               </table>
-              {displayList.length > TX_PAGE_SIZE && (
+              {totalRows > TX_PAGE_SIZE && (
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50">
                   <p className="text-xs text-slate-500">
-                    แสดง {pageStart + 1}-{Math.min(pageStart + TX_PAGE_SIZE, displayList.length)} จาก {displayList.length} รายการ
+                    แสดง {pageStart + 1}-{Math.min(pageStart + displayList.length, totalRows)} จาก {totalRows} รายการ
                   </p>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -1494,6 +1558,30 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         >
           <div className="space-y-4">
             {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+            {editId && (txType === 'income' || txType === 'expense') && (
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">ประเภท</label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+                  {[
+                    { value: 'income', label: 'รายรับ', color: '#10b981' },
+                    { value: 'expense', label: 'รายจ่าย', color: '#ef4444' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => changeModalType(opt.value)}
+                      className="py-2 rounded-lg text-sm font-semibold transition-all"
+                      style={txType === opt.value
+                        ? { background: '#fff', color: opt.color, boxShadow: '0 1px 2px rgba(15,23,42,0.08)' }
+                        : { color: '#64748b' }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 1. วันที่ */}
             <div>
@@ -2119,7 +2207,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                                   )}
                                   {slip.transaction_date && (
                                     <div><span className="text-slate-400">วันที่: </span>
-                                    <span className="font-medium text-slate-700">{slip.transaction_date}</span></div>
+                                    <span className="font-medium text-slate-700">{formatDisplayDate(slip.transaction_date)}</span></div>
                                   )}
                                   {slip.sender && (
                                     <div><span className="text-slate-400">ผู้โอน: </span>

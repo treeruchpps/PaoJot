@@ -20,6 +20,8 @@ CREATE TABLE user_profiles (
     display_name   VARCHAR(50),
     avatar_url     TEXT,
     week_start_day SMALLINT NOT NULL DEFAULT 1,  -- 0=อาทิตย์, 1=จันทร์, 6=เสาร์
+    ai_summary_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ai_summary_consent_at TIMESTAMP WITH TIME ZONE,
     created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -47,12 +49,6 @@ CREATE TYPE goal_status AS ENUM (
     'in_progress',
     'completed',
     'cancelled'
-);
-
-CREATE TYPE budget_period AS ENUM (
-    'weekly',
-    'monthly',
-    'yearly'
 );
 
 -- ตาราง accounts
@@ -112,23 +108,24 @@ CREATE TABLE savings_goals (
     current_amount NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
     deadline       DATE,
     status         goal_status    NOT NULL DEFAULT 'in_progress',
-    note           TEXT,
     created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
 -- ตาราง budgets
--- ============================================================
+
 CREATE TABLE budgets (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id     UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     category_id UUID           REFERENCES categories(id) ON DELETE SET NULL,
-    name        VARCHAR(100)   NOT NULL,
     amount      NUMERIC(15, 2) NOT NULL CHECK (amount > 0),
-    period      budget_period  NOT NULL DEFAULT 'monthly',
+    start_date  DATE           NOT NULL,
+    end_date    DATE           NOT NULL,
+    is_recurring BOOLEAN       NOT NULL DEFAULT FALSE,
+    is_active   BOOLEAN        NOT NULL DEFAULT TRUE,
     created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CHECK (end_date >= start_date)
 );
 
 -- ============================================================
@@ -282,6 +279,7 @@ CREATE INDEX idx_transactions_account  ON transactions(account_id);
 CREATE INDEX idx_transactions_date     ON transactions(transaction_date);
 CREATE INDEX idx_savings_goals_user_id ON savings_goals(user_id);
 CREATE INDEX idx_savings_goals_status  ON savings_goals(status);
+CREATE UNIQUE INDEX idx_savings_goals_user_name_unique ON savings_goals(user_id, LOWER(name));
 CREATE INDEX idx_budgets_user_id             ON budgets(user_id);
 CREATE INDEX idx_budgets_category_id         ON budgets(category_id);
 CREATE INDEX idx_recurring_user_id           ON recurring_transactions(user_id);
@@ -388,6 +386,7 @@ INSERT INTO categories (id, user_id, name, type, icon, color) VALUES
     (uuid_generate_v4(), NULL, 'การแพทย์',             'expense', 'Shield',          '#ef4444'),
     (uuid_generate_v4(), NULL, 'การดูแลสุขภาพ',        'expense', 'Zap',             '#10b981'),
     (uuid_generate_v4(), NULL, 'การเงิน',              'expense', 'DollarSign',      '#6366f1'),
+    (uuid_generate_v4(), NULL, 'ชำระหนี้',             'expense', 'CreditCard',      '#2C6488'),
     (uuid_generate_v4(), NULL, 'ประกัน',               'expense', 'Landmark',        '#3b82f6'),
     (uuid_generate_v4(), NULL, 'อื่นๆ',                'expense', 'Tag',             '#94a3b8'),
     -- รายรับ (income)

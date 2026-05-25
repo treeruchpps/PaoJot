@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 import { AccountSelect } from '../components/common/FinanceSelects';
 import { savingsGoals as goalsApi } from '../services/api';
 import { fmt } from '../constants/data';
+import { formatDisplayDate } from '../utils/dateFormat';
 
 const STATUS_LABEL = { all: 'ทั้งหมด', in_progress: 'กำลังออม', completed: 'สำเร็จแล้ว', cancelled: 'ยกเลิก' };
 const STATUS_COLOR = { in_progress: '#2C6488', completed: '#10b981', cancelled: '#94a3b8' };
@@ -32,7 +33,6 @@ const EMPTY_FORM = {
   current_amount: '0',
   deadline: '',
   account_id: '',
-  note: '',
 };
 
 function goalMath(goal) {
@@ -93,7 +93,6 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
       current_amount: String(g.current_amount || 0),
       deadline: g.deadline?.slice(0, 10) || '',
       account_id: g.account_id || assetAccounts[0]?.id || '',
-      note: g.note || '',
     });
     setError('');
     setImageUploading(false);
@@ -118,7 +117,11 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
   };
 
   const save = async () => {
-    if (!form.name || !form.target_amount) { setError('กรุณากรอกชื่อและยอดเป้าหมาย'); return; }
+    const goalName = form.name.trim();
+    if (!goalName || !form.target_amount) { setError('กรุณากรอกชื่อและยอดเป้าหมาย'); return; }
+    const normalizedName = goalName.toLowerCase();
+    const duplicateGoal = goals.find((g) => g.id !== editId && (g.name || '').trim().toLowerCase() === normalizedName);
+    if (duplicateGoal) { setError('มีเป้าหมายชื่อนี้อยู่แล้ว'); return; }
     if (!form.account_id) { setError('กรุณาเลือกบัญชีเก็บออม เพื่อให้การฝากเงินเป็นการโอนที่ถูกต้อง'); return; }
     const targetAmount = parseFloat(form.target_amount);
     const currentAmount = parseFloat(form.current_amount) || 0;
@@ -128,12 +131,11 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
     try {
       const body = {
         account_id: form.account_id,
-        name: form.name,
+        name: goalName,
         image_url: form.image_url || null,
         target_amount: targetAmount,
         current_amount: currentAmount,
         deadline: form.deadline || null,
-        note: form.note || null,
       };
       if (editId) await goalsApi.update(editId, body);
       else await goalsApi.create(body);
@@ -167,7 +169,6 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
           current_amount: Number(g.current_amount),
           deadline: g.deadline?.slice(0, 10) || null,
           status: 'cancelled',
-          note: g.note || null,
         });
       }
       await fetchGoals();
@@ -193,12 +194,18 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
     if (!depositGoal.account_id) { setDepositError('กรุณาผูกบัญชีเก็บออมกับเป้าหมายก่อน'); return; }
     if (!depositForm.from_account_id) { setDepositError('กรุณาเลือกบัญชีต้นทาง'); return; }
     if (depositForm.from_account_id === depositGoal.account_id) { setDepositError('บัญชีต้นทางต้องไม่ใช่บัญชีเก็บออมของเป้าหมาย'); return; }
-    if (!depositForm.amount || parseFloat(depositForm.amount) <= 0) { setDepositError('กรุณาใส่จำนวนเงิน'); return; }
+    const amount = parseFloat(depositForm.amount);
+    if (!depositForm.amount || amount <= 0) { setDepositError('กรุณาใส่จำนวนเงิน'); return; }
+    const sourceAccount = accounts.find((a) => a.id === depositForm.from_account_id);
+    if (amount > Number(sourceAccount?.balance || 0)) {
+      setDepositError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(sourceAccount?.balance || 0)}`);
+      return;
+    }
     setDepositSaving(true); setDepositError('');
     try {
       const updated = await goalsApi.deposit(depositGoal.id, {
         from_account_id: depositForm.from_account_id,
-        amount: parseFloat(depositForm.amount),
+        amount,
         note: depositForm.note || null,
         date: depositForm.date || null,
       });
@@ -385,7 +392,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                       {g.deadline && (
                         <div className="flex items-center gap-1 text-slate-400 bg-slate-50 rounded-xl px-2.5 py-2">
                           <Calendar size={11} color="#94a3b8" />
-                          {g.deadline.slice(0, 10)}
+                          {formatDisplayDate(g.deadline)}
                         </div>
                       )}
                     </div>
@@ -433,12 +440,6 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                 <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อเป้าหมาย</label>
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="เช่น เที่ยวญี่ปุ่น, ซื้อรถ, เงินฉุกเฉิน"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">หมายเหตุ</label>
-                <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })}
-                  placeholder="บันทึกเพิ่มเติม..."
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
               </div>
             </section>

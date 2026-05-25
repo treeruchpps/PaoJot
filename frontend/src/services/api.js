@@ -124,6 +124,9 @@ export const transactions = {
     if (params.date_to)    qs.set('date_to',    params.date_to);
     if (params.page)       qs.set('page',       params.page);
     if (params.limit)      qs.set('limit',      params.limit);
+    if (params.search)     qs.set('search',     params.search);
+    if (params.sort_by)    qs.set('sort_by',    params.sort_by);
+    if (params.sort_dir)   qs.set('sort_dir',   params.sort_dir);
     const q = qs.toString();
     return request(`/transactions${q ? `?${q}` : ''}`);
   },

@@ -3,19 +3,16 @@ import Icon from '../components/common/Icon';
 import { Sun, Calendar, BarChart2, TrendingUp, TrendingDown, Wallet, ReceiptText, AlertCircle, Sparkles, RefreshCw, X } from 'lucide-react';
 import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi } from '../services/api';
 import { fmt } from '../constants/data';
+import { formatDisplayDate, formatDisplayDateRange } from '../utils/dateFormat';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const MONTH_LABELS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-const THAI_MONTHS  = [
-  'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
-  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม',
-];
 const PALETTE = ['#2C6488','#10b981','#f59e0b','#2C6488','#ef4444','#ec4899','#5F9A7A','#f97316'];
 
 const PERIOD_CONFIG = [
-  { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#f59e0b', bg: '#fffbeb', ring: '#fde68a' },
+  { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
   { id: 'week',  label: 'สัปดาห์นี้', icon: 'Calendar', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
-  { id: 'month', label: 'เดือนนี้',   icon: 'BarChart2', color: '#10b981', bg: '#f0fdf4', ring: '#a7f3d0' },
+  { id: 'month', label: 'เดือนนี้',   icon: 'BarChart2', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
   { id: 'year',  label: 'ปีนี้',      icon: 'TrendingUp', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
 ];
 
@@ -58,32 +55,9 @@ function getDateRange(period, weekStartDay) {
   }
 }
 
-// Thai-locale date string with Buddhist era (พ.ศ.)
-function thaiDay(dateStr) {
-  // dateStr = "YYYY-MM-DD"
-  const [, mo, d] = dateStr.split('-').map(Number);
-  return `${d} ${THAI_MONTHS[mo - 1]}`;
-}
-function thaiYear(dateStr) {
-  const y = parseInt(dateStr.split('-')[0]);
-  return String(y + 543);
-}
-
 function periodDateLabel(period, weekStartDay) {
   const { from, to } = getDateRange(period, weekStartDay);
-  if (period === 'today') {
-    return `${thaiDay(from)} ${thaiYear(from)}`;
-  }
-  if (period === 'year') {
-    return thaiYear(from);
-  }
-  // week / month: show range, append year only on "to" side
-  const fromY = thaiYear(from);
-  const toY   = thaiYear(to);
-  const sameY = fromY === toY;
-  return sameY
-    ? `${thaiDay(from)} – ${thaiDay(to)} ${toY}`
-    : `${thaiDay(from)} ${fromY} – ${thaiDay(to)} ${toY}`;
+  return period === 'today' ? formatDisplayDate(from) : formatDisplayDateRange(from, to);
 }
 
 // ─── Chart: Doughnut ─────────────────────────────────────────────────────────
@@ -189,7 +163,69 @@ function BarChart({ data }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function AnalyticsView({ accounts, categories }) {
+function AccountCashflowBars({ data, totalIncome, totalExpense }) {
+  if (data.length === 0) {
+    return (
+      <div className="py-10 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-slate-50 mx-auto mb-3 flex items-center justify-center">
+          <Wallet size={20} color="#cbd5e1" />
+        </div>
+        <p className="text-xs text-slate-400">ยังไม่มีรายรับหรือรายจ่ายในช่วงนี้</p>
+      </div>
+    );
+  }
+
+  const max = Math.max(...data.map((item) => Math.max(item.income, item.expense)), 1);
+
+  return (
+    <div className="space-y-4">
+      {data.map((item) => {
+        const incomeWidth = item.income > 0 ? Math.max((item.income / max) * 100, 6) : 0;
+        const expenseWidth = item.expense > 0 ? Math.max((item.expense / max) * 100, 6) : 0;
+        const incomePct = totalIncome > 0 ? (item.income / totalIncome) * 100 : 0;
+        const expensePct = totalExpense > 0 ? (item.expense / totalExpense) * 100 : 0;
+
+        return (
+          <div key={item.id} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                  <Wallet size={15} color="#2C6488" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-700 truncate">{item.name}</p>
+                  <p className="text-[11px] text-slate-400">{item.count} รายการ</p>
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-xs font-bold text-emerald-600">+฿{fmt(item.income)}</p>
+                <p className="text-xs font-bold text-red-500">-฿{fmt(item.expense)}</p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="w-9 text-[10px] text-emerald-600 font-semibold">รับ</span>
+                <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-400" style={{ width: `${incomeWidth}%` }} />
+                </div>
+                <span className="w-8 text-right text-[10px] text-slate-400">{incomePct.toFixed(0)}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-9 text-[10px] text-red-500 font-semibold">จ่าย</span>
+                <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-red-400" style={{ width: `${expenseWidth}%` }} />
+                </div>
+                <span className="w-8 text-right text-[10px] text-slate-400">{expensePct.toFixed(0)}%</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function AnalyticsView({ accounts, categories, onGoProfile }) {
   const [period,       setPeriod]       = useState('month');
   const [weekStartDay, setWeekStartDay] = useState(1); // 0=Sun 1=Mon 6=Sat
   const [periodStats,  setPeriodStats]  = useState({});   // { today:{inc,exp}, week:…, month:…, year:… }
@@ -301,16 +337,35 @@ export default function AnalyticsView({ accounts, categories }) {
   const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const selectedPeriodLabel = PERIOD_CONFIG.find((p) => p.id === period)?.label || '';
   const spendRate = income > 0 ? Math.min((expense / income) * 100, 999) : 0;
-  const topAccounts = [...accounts]
-    .filter((a) => a.type === 'asset')
-    .sort((a, b) => b.balance - a.balance)
-    .slice(0, 5);
+  const cashflowByAccount = {};
+  txList.filter((t) => t.type === 'income' || t.type === 'expense').forEach((t) => {
+    const key = t.account_id || '__other__';
+    if (!cashflowByAccount[key]) cashflowByAccount[key] = { income: 0, expense: 0, count: 0 };
+    if (t.type === 'income') cashflowByAccount[key].income += Number(t.amount || 0);
+    if (t.type === 'expense') cashflowByAccount[key].expense += Number(t.amount || 0);
+    cashflowByAccount[key].count += 1;
+  });
+  const accountCashflowData = Object.entries(cashflowByAccount)
+    .map(([id, item]) => {
+      const account = accounts.find((a) => a.id === id);
+      return {
+        id,
+        name: account?.name || 'ไม่ระบุบัญชี',
+        income: item.income,
+        expense: item.expense,
+        count: item.count,
+      };
+    })
+    .sort((a, b) => (b.income + b.expense) - (a.income + a.expense))
+    .slice(0, 6);
   const recentTx = [...txList]
     .sort((a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')))
     .slice(0, 5);
   const aiSummary = aiState?.summary;
   const hasAiSummary = !!aiSummary;
-  const showAiSummaryCard = hasAiSummary && showAiSummary;
+  const aiConsentEnabled = aiState?.ai_consent !== false;
+  const showAiConsentNotice = aiState?.ai_consent === false;
+  const showAiSummaryCard = aiConsentEnabled && hasAiSummary && showAiSummary;
   const overviewSpan = showAiSummaryCard ? 'lg:col-span-7' : 'lg:col-span-12';
 
   const getCatName = (id) => {
@@ -373,7 +428,24 @@ export default function AnalyticsView({ accounts, categories }) {
               <p className="text-lg font-bold text-[#2C6488]">{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
             </div>
           </div>
-          {!showAiSummaryCard && (
+          {showAiConsentNotice && (
+            <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white/70 border border-white px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">AI สรุปการเงินยังปิดอยู่</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  หากต้องการให้ระบบสรุปภาพรวมด้วย LLM ให้เปิดการยินยอมใช้ข้อมูลในหน้าโปรไฟล์ก่อน
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onGoProfile}
+                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-[#2C6488] text-white text-xs font-semibold"
+              >
+                ไปเปิดที่โปรไฟล์
+              </button>
+            </div>
+          )}
+          {!showAiSummaryCard && !showAiConsentNotice && (
             <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white/70 border border-white px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-slate-700">AI สรุปการเงิน</p>
@@ -717,7 +789,7 @@ export default function AnalyticsView({ accounts, categories }) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-700 truncate">{tx.name || tx.note || 'ไม่มีชื่อรายการ'}</p>
-                          <p className="text-xs text-slate-400">{tx.transaction_date?.slice(0, 10) || ''}</p>
+                          <p className="text-xs text-slate-400">{formatDisplayDate(tx.transaction_date, '')}</p>
                         </div>
                         <p className={`text-sm font-bold ${tx.type === 'expense' ? 'text-red-500' : 'text-emerald-600'}`}>
                           {tx.type === 'expense' ? '-' : '+'}฿{fmt(tx.amount)}
@@ -730,28 +802,16 @@ export default function AnalyticsView({ accounts, categories }) {
             </div>
 
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-slate-700">บัญชีหลัก</h3>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">รายรับรายจ่ายตามบัญชี</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {selectedPeriodLabel} · รับ ฿{fmt(income)} · จ่าย ฿{fmt(expense)}
+                  </p>
+                </div>
                 <Wallet size={16} color="#94a3b8" />
               </div>
-              {topAccounts.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">ยังไม่มีบัญชี</div>
-              ) : (
-                <div className="space-y-3">
-                  {topAccounts.map((a) => (
-                    <div key={a.id} className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                        <Wallet size={16} color="#2C6488" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{a.name}</p>
-                        <p className="text-xs text-slate-400">{a.kind || 'บัญชี'}</p>
-                      </div>
-                      <p className="text-sm font-bold text-[#2C6488]">฿{fmt(a.balance)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <AccountCashflowBars data={accountCashflowData} totalIncome={income} totalExpense={expense} />
             </div>
           </div>
 

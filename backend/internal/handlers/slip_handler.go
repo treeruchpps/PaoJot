@@ -336,9 +336,16 @@ func (h *SlipHandler) SaveResult(c *gin.Context) {
 		txDate = time.Now().Format("2006-01-02")
 	}
 	txName := nilStr(body.Name)
+	ctx := context.Background()
+	dbTx, err := h.db.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		return
+	}
+	defer dbTx.Rollback(ctx)
 
 	var txID string
-	err := h.db.QueryRow(context.Background(),
+	err = dbTx.QueryRow(ctx,
 		`INSERT INTO transactions
 		 (user_id, account_id, category_id, type, amount, name, note, transaction_date, image_path)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9)
@@ -353,30 +360,43 @@ func (h *SlipHandler) SaveResult(c *gin.Context) {
 
 	// อัปเดต balance บัญชี (income = เพิ่ม, expense = ลด)
 	if txType == "income" {
-		h.db.Exec(context.Background(),
-			`UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
-			body.Amount, body.AccountID,
-		)
+		err = creditAccount(ctx, dbTx, userID, body.AccountID, body.Amount)
 	} else {
-		h.db.Exec(context.Background(),
-			`UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
-			body.Amount, body.AccountID,
-		)
+		err = debitAccount(ctx, dbTx, userID, body.AccountID, body.Amount)
+	}
+	if err != nil {
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
+		return
 	}
 
 	// บันทึก ref_no เพื่อตรวจซ้ำครั้งต่อไป
 	if body.RefNo != "" {
-		h.db.Exec(context.Background(),
+		if _, err := dbTx.Exec(ctx,
 			`INSERT INTO slip_ref_log (user_id, ref_no, transaction_id)
 			 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 			userID, body.RefNo, txID,
-		)
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save slip reference"})
+			return
+		}
 	}
 
 	// อัปเดต slip_result ว่าถูก save แล้ว
-	h.db.Exec(context.Background(),
+	if _, err := dbTx.Exec(ctx,
 		`UPDATE slip_results SET status='saved', updated_at=NOW() WHERE id=$1`, resultID,
-	)
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update slip result"})
+		return
+	}
+
+	if err := dbTx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"transaction_id": txID})
 }

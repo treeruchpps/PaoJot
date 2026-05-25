@@ -77,7 +77,7 @@ export function AuthProvider({ children }) {
     if (text.includes('email or username already exists')) return 'อีเมลหรือชื่อผู้ใช้นี้ถูกใช้แล้ว';
     if (text.includes('required')) return 'กรุณากรอกข้อมูลให้ครบถ้วน';
     if (text.includes('email')) return 'รูปแบบอีเมลไม่ถูกต้อง';
-    if (text.includes('min')) return 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร';
+    if (text.includes('min')) return 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร';
     if (text.includes('failed to fetch')) return 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่อีกครั้ง';
     return message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
   };

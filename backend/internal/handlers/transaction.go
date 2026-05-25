@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"paomoney/internal/models"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -40,34 +42,73 @@ func (h *TransactionHandler) List(c *gin.Context) {
 	txType := c.Query("type")
 	dateFrom := c.Query("date_from")
 	dateTo := c.Query("date_to")
+	search := strings.TrimSpace(c.Query("search"))
+	sortBy := c.DefaultQuery("sort_by", "date")
+	sortDir := strings.ToLower(c.DefaultQuery("sort_dir", "desc"))
+	if sortDir != "asc" {
+		sortDir = "desc"
+	}
 
-	query := `SELECT id, user_id, account_id, to_account_id, category_id, type, amount, name, note, transaction_date, is_recurring, created_at, updated_at
-			  FROM transactions WHERE user_id = $1`
+	where := ` WHERE user_id = $1`
 	args := []interface{}{userID}
 	idx := 2
 
 	if accountID != "" {
-		query += " AND account_id = $" + strconv.Itoa(idx)
+		where += " AND account_id = $" + strconv.Itoa(idx)
 		args = append(args, accountID)
 		idx++
 	}
 	if txType != "" {
-		query += " AND type = $" + strconv.Itoa(idx)
+		where += " AND type = $" + strconv.Itoa(idx)
 		args = append(args, txType)
 		idx++
 	}
 	if dateFrom != "" {
-		query += " AND transaction_date >= $" + strconv.Itoa(idx)
+		where += " AND transaction_date >= $" + strconv.Itoa(idx)
 		args = append(args, dateFrom)
 		idx++
 	}
 	if dateTo != "" {
-		query += " AND transaction_date <= $" + strconv.Itoa(idx)
+		where += " AND transaction_date <= $" + strconv.Itoa(idx)
 		args = append(args, dateTo)
 		idx++
 	}
+	if search != "" {
+		where += " AND (COALESCE(name, '') ILIKE $" + strconv.Itoa(idx) +
+			" OR COALESCE(note, '') ILIKE $" + strconv.Itoa(idx) +
+			" OR amount::text ILIKE $" + strconv.Itoa(idx) + ")"
+		args = append(args, "%"+search+"%")
+		idx++
+	}
 
-	query += " ORDER BY transaction_date DESC, created_at DESC"
+	var total int
+	var totalIncome, totalExpense float64
+	statsQuery := `SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0)
+		FROM transactions` + where
+	if err := h.db.QueryRow(context.Background(), statsQuery, args...).Scan(&total, &totalIncome, &totalExpense); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch transaction stats"})
+		return
+	}
+
+	orderBy := "transaction_date DESC, created_at DESC"
+	switch sortBy {
+	case "amount":
+		orderBy = "amount " + sortDir + ", transaction_date DESC, created_at DESC"
+	case "name":
+		orderBy = "COALESCE(name, '') " + sortDir + ", transaction_date DESC, created_at DESC"
+	case "type":
+		orderBy = "type " + sortDir + ", transaction_date DESC, created_at DESC"
+	case "date":
+		orderBy = "transaction_date " + sortDir + ", created_at " + sortDir
+	default:
+		sortBy = "date"
+	}
+
+	query := `SELECT id, user_id, account_id, to_account_id, category_id, type, amount, name, note, transaction_date, is_recurring, created_at, updated_at
+			  FROM transactions` + where
+	query += " ORDER BY " + orderBy
 	query += " LIMIT $" + strconv.Itoa(idx) + " OFFSET $" + strconv.Itoa(idx+1)
 	args = append(args, limit, offset)
 
@@ -89,9 +130,14 @@ func (h *TransactionHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":  transactions,
-		"page":  page,
-		"limit": limit,
+		"data":          transactions,
+		"page":          page,
+		"limit":         limit,
+		"total":         total,
+		"total_income":  totalIncome,
+		"total_expense": totalExpense,
+		"sort_by":       sortBy,
+		"sort_dir":      sortDir,
 	})
 }
 
@@ -143,16 +189,10 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 	switch req.Type {
 	case models.TransactionTypeIncome:
 		// รายรับ: เพิ่ม balance
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-			req.Amount, req.AccountID, userID,
-		)
+		err = creditAccount(ctx, dbTx, userID, req.AccountID, req.Amount)
 	case models.TransactionTypeExpense:
 		// รายจ่าย: ลด balance
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			req.Amount, req.AccountID, userID,
-		)
+		err = debitAccount(ctx, dbTx, userID, req.AccountID, req.Amount)
 	case models.TransactionTypeTransfer:
 		// โอนเงิน: ลดจากต้นทางเสมอ
 		if req.ToAccountID == nil {
@@ -163,22 +203,20 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source and destination accounts must be different"})
 			return
 		}
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			req.Amount, req.AccountID, userID,
-		)
+		err = debitAccount(ctx, dbTx, userID, req.AccountID, req.Amount)
 		if err == nil {
-			_, err = dbTx.Exec(ctx,
-				`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-				req.Amount, *req.ToAccountID, userID,
-			)
+			err = creditAccount(ctx, dbTx, userID, *req.ToAccountID, req.Amount)
 		}
 	case models.TransactionTypeAdjustment:
 		// ปรับยอด: บันทึกเพื่อ audit trail เท่านั้น ไม่เปลี่ยน balance
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update account balance"})
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
 		return
 	}
 
@@ -261,33 +299,28 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 	// 3. Reverse balance เดิม (เหมือน delete)
 	switch old.Type {
 	case models.TransactionTypeIncome:
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			old.Amount, old.AccountID, userID,
-		)
+		err = debitAccount(ctx, dbTx, userID, old.AccountID, old.Amount)
 	case models.TransactionTypeExpense:
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-			old.Amount, old.AccountID, userID,
-		)
+		err = creditAccount(ctx, dbTx, userID, old.AccountID, old.Amount)
 	case models.TransactionTypeTransfer:
 		if old.ToAccountID != nil {
-			_, err = dbTx.Exec(ctx,
-				`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-				old.Amount, old.AccountID, userID,
-			)
+			err = creditAccount(ctx, dbTx, userID, old.AccountID, old.Amount)
 			if err == nil {
-				_, err = dbTx.Exec(ctx,
-					`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-					old.Amount, *old.ToAccountID, userID,
-				)
+				err = debitAccount(ctx, dbTx, userID, *old.ToAccountID, old.Amount)
+			}
+			if err == nil {
+				err = h.reverseSavingsGoalDeposit(ctx, dbTx, userID, *old.ToAccountID, old.Amount)
 			}
 		}
 	case models.TransactionTypeAdjustment:
 		// ไม่มี balance ที่ต้อง reverse
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reverse old balance"})
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
 		return
 	}
 
@@ -295,14 +328,17 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 	var t models.Transaction
 	err = dbTx.QueryRow(ctx,
 		`UPDATE transactions
-		 SET category_id      = COALESCE($1, category_id),
-		     amount           = COALESCE($2, amount),
-		     name             = COALESCE($3, name),
-		     note             = COALESCE($4, note),
-		     transaction_date = COALESCE($5, transaction_date)
-		 WHERE id = $6 AND user_id = $7
+		 SET account_id       = COALESCE($1, account_id),
+		     to_account_id    = CASE WHEN COALESCE($2, type) = 'transfer' THEN COALESCE($3, to_account_id) ELSE NULL END,
+		     category_id      = COALESCE($4, category_id),
+		     type             = COALESCE($2, type),
+		     amount           = COALESCE($5, amount),
+		     name             = COALESCE($6, name),
+		     note             = COALESCE($7, note),
+		     transaction_date = COALESCE($8, transaction_date)
+		 WHERE id = $9 AND user_id = $10
 		 RETURNING id, user_id, account_id, to_account_id, category_id, type, amount, name, note, transaction_date, is_recurring, created_at, updated_at`,
-		req.CategoryID, req.Amount, req.Name, req.Note, txDate, id, userID,
+		req.AccountID, req.Type, req.ToAccountID, req.CategoryID, req.Amount, req.Name, req.Note, txDate, id, userID,
 	).Scan(&t.ID, &t.UserID, &t.AccountID, &t.ToAccountID, &t.CategoryID,
 		&t.Type, &t.Amount, &t.Name, &t.Note, &t.TransactionDate, &t.IsRecurring, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
@@ -313,33 +349,28 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 	// 5. Apply balance ใหม่ (เหมือน create แต่ใช้ค่าจาก t ที่ updated แล้ว)
 	switch t.Type {
 	case models.TransactionTypeIncome:
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-			t.Amount, t.AccountID, userID,
-		)
+		err = creditAccount(ctx, dbTx, userID, t.AccountID, t.Amount)
 	case models.TransactionTypeExpense:
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			t.Amount, t.AccountID, userID,
-		)
+		err = debitAccount(ctx, dbTx, userID, t.AccountID, t.Amount)
 	case models.TransactionTypeTransfer:
 		if t.ToAccountID != nil {
-			_, err = dbTx.Exec(ctx,
-				`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-				t.Amount, t.AccountID, userID,
-			)
+			err = debitAccount(ctx, dbTx, userID, t.AccountID, t.Amount)
 			if err == nil {
-				_, err = dbTx.Exec(ctx,
-					`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-					t.Amount, *t.ToAccountID, userID,
-				)
+				err = creditAccount(ctx, dbTx, userID, *t.ToAccountID, t.Amount)
+			}
+			if err == nil {
+				err = h.applySavingsGoalDeposit(ctx, dbTx, userID, *t.ToAccountID, t.Amount)
 			}
 		}
 	case models.TransactionTypeAdjustment:
 		// ปรับยอด: ไม่เปลี่ยน balance
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to apply new balance"})
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
 		return
 	}
 
@@ -390,28 +421,19 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 	switch t.Type {
 	case models.TransactionTypeIncome:
 		// คืน balance (เคยบวก ก็ลบคืน)
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-			t.Amount, t.AccountID, userID,
-		)
+		err = debitAccount(ctx, dbTx, userID, t.AccountID, t.Amount)
 	case models.TransactionTypeExpense:
 		// คืน balance (เคยลบ ก็บวกคืน)
-		_, err = dbTx.Exec(ctx,
-			`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-			t.Amount, t.AccountID, userID,
-		)
+		err = creditAccount(ctx, dbTx, userID, t.AccountID, t.Amount)
 	case models.TransactionTypeTransfer:
 		if t.ToAccountID != nil {
 			// คืน balance ต้นทาง (เคยลบ ก็บวกคืน)
-			_, err = dbTx.Exec(ctx,
-				`UPDATE accounts SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
-				t.Amount, t.AccountID, userID,
-			)
+			err = creditAccount(ctx, dbTx, userID, t.AccountID, t.Amount)
 			if err == nil {
-				_, err = dbTx.Exec(ctx,
-					`UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
-					t.Amount, *t.ToAccountID, userID,
-				)
+				err = debitAccount(ctx, dbTx, userID, *t.ToAccountID, t.Amount)
+			}
+			if err == nil {
+				err = h.reverseSavingsGoalDeposit(ctx, dbTx, userID, *t.ToAccountID, t.Amount)
 			}
 		}
 	case models.TransactionTypeAdjustment:
@@ -419,7 +441,11 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reverse account balance"})
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
 		return
 	}
 
@@ -429,4 +455,38 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "transaction deleted"})
+}
+
+func (h *TransactionHandler) reverseSavingsGoalDeposit(ctx context.Context, dbTx pgx.Tx, userID, goalAccountID string, amount float64) error {
+	_, err := dbTx.Exec(ctx, `
+		UPDATE savings_goals
+		SET current_amount = GREATEST(current_amount - $3, 0),
+		    status = CASE
+		      WHEN status = 'cancelled' THEN status
+		      WHEN GREATEST(current_amount - $3, 0) >= target_amount THEN 'completed'::goal_status
+		      ELSE 'in_progress'::goal_status
+		    END
+		WHERE user_id = $1
+		  AND account_id = $2
+		  AND status <> 'cancelled'`,
+		userID, goalAccountID, amount,
+	)
+	return err
+}
+
+func (h *TransactionHandler) applySavingsGoalDeposit(ctx context.Context, dbTx pgx.Tx, userID, goalAccountID string, amount float64) error {
+	_, err := dbTx.Exec(ctx, `
+		UPDATE savings_goals
+		SET current_amount = current_amount + $3,
+		    status = CASE
+		      WHEN status = 'cancelled' THEN status
+		      WHEN current_amount + $3 >= target_amount THEN 'completed'::goal_status
+		      ELSE 'in_progress'::goal_status
+		    END
+		WHERE user_id = $1
+		  AND account_id = $2
+		  AND status <> 'cancelled'`,
+		userID, goalAccountID, amount,
+	)
+	return err
 }

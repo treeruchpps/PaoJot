@@ -155,7 +155,7 @@ function AppShell() {
         />
         <main className="flex-1 overflow-y-auto">
           {view === 'analytics'    && (
-            <AnalyticsView accounts={accounts} categories={categories} />
+            <AnalyticsView accounts={accounts} categories={categories} onGoProfile={() => setView('profile')} />
           )}
           {view === 'accounts'     && (
             <AccountsView

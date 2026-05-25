@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Eye, EyeOff } from 'lucide-react';
+import { Shield, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const WEEK_DAYS = [
@@ -25,6 +25,18 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
+  const passwordChecks = [
+    { label: 'อย่างน้อย 8 ตัวอักษร', pass: form.password.length >= 8 },
+    { label: 'มีตัวเลข', pass: /\d/.test(form.password) },
+    { label: 'มีตัวอักษร', pass: /[A-Za-zก-ฮ]/.test(form.password) },
+  ];
+  const passwordStrength = passwordChecks.filter((item) => item.pass).length;
+  const strengthMeta = [
+    { label: 'ยังไม่ปลอดภัย', color: '#ef4444', width: '25%' },
+    { label: 'พอใช้', color: '#f59e0b', width: '45%' },
+    { label: 'ดี', color: '#2C6488', width: '70%' },
+    { label: 'แข็งแรง', color: '#10b981', width: '100%' },
+  ][passwordStrength];
 
   const validate = (values) => {
     const next = {};
@@ -35,7 +47,7 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
     if (!email) next.email = 'กรุณากรอกอีเมล';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = 'รูปแบบอีเมลไม่ถูกต้อง';
     if (!values.password) next.password = 'กรุณากรอกรหัสผ่าน';
-    else if (values.password.length < 6) next.password = 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร';
+    else if (values.password.length < 8) next.password = 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร';
     if (!values.confirmPassword) next.confirmPassword = 'กรุณายืนยันรหัสผ่าน';
     else if (values.password !== values.confirmPassword) next.confirmPassword = 'รหัสผ่านไม่ตรงกัน';
     return next;
@@ -126,7 +138,7 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
                   name="password"
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="อย่างน้อย 6 ตัวอักษร"
+                  placeholder="อย่างน้อย 8 ตัวอักษร"
                   aria-invalid={!!fieldErrors.password}
                   className={inputClass(!!fieldErrors.password, true)}
                 />
@@ -162,6 +174,24 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
                 </button>
               </div>
               {fieldErrors.confirmPassword && <p className="mt-1.5 text-xs text-red-500">{fieldErrors.confirmPassword}</p>}
+            </div>
+
+            <div className="sm:col-span-2 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold text-slate-600">ความแข็งแรงรหัสผ่าน</p>
+                <p className="text-[11px] font-bold" style={{ color: strengthMeta.color }}>{strengthMeta.label}</p>
+              </div>
+              <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: strengthMeta.width, background: strengthMeta.color }} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                {passwordChecks.map((item) => (
+                  <div key={item.label} className="flex items-center gap-1.5 text-[11px]">
+                    <CheckCircle2 size={12} color={item.pass ? '#10b981' : '#cbd5e1'} />
+                    <span className={item.pass ? 'text-slate-600' : 'text-slate-400'}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="sm:col-span-2">

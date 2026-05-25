@@ -16,7 +16,6 @@ export default function LoginPage({ onSwitch, notice }) {
     if (!email) next.email = 'กรุณากรอกอีเมล';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = 'รูปแบบอีเมลไม่ถูกต้อง';
     if (!values.password) next.password = 'กรุณากรอกรหัสผ่าน';
-    else if (values.password.length < 6) next.password = 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร';
     return next;
   };
 
@@ -98,7 +97,7 @@ export default function LoginPage({ onSwitch, notice }) {
                   name="password"
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="รหัสผ่านอย่างน้อย 6 ตัว"
+                  placeholder="รหัสผ่าน"
                   aria-invalid={!!fieldErrors.password}
                   className={inputClass(!!fieldErrors.password, true, true)}
                 />

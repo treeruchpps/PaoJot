@@ -109,7 +109,6 @@ export default function AccountsView({ accounts, onRefresh }) {
 
   // Pool-add modal
   const [showPoolAdd, setShowPoolAdd]       = useState(false);
-  const [poolAddAmount, setPoolAddAmount]   = useState('');
   const [poolAddRows, setPoolAddRows]       = useState([newPoolRow()]);
   const [poolAddSaving, setPoolAddSaving]   = useState(false);
   const [poolAddError, setPoolAddError]     = useState('');
@@ -118,7 +117,6 @@ export default function AccountsView({ accounts, onRefresh }) {
   const [showDist, setShowDist]       = useState(false);
   const [poolAmount, setPoolAmount]   = useState('');
   const [distDate, setDistDate]       = useState(todayStr());
-  const [distNote, setDistNote]       = useState('');
   const [allocations, setAllocations] = useState([]);
   const [distSaving, setDistSaving]   = useState(false);
   const [distError, setDistError]     = useState('');
@@ -130,51 +128,36 @@ export default function AccountsView({ accounts, onRefresh }) {
 
   // ── Pool-add helpers ───────────────────────────────────────────────────────
   const openPoolAdd = () => {
-    setPoolAddAmount(''); setPoolAddRows([newPoolRow()]); setPoolAddError(''); setShowPoolAdd(true);
+    setPoolAddRows([newPoolRow()]); setPoolAddError(''); setShowPoolAdd(true);
   };
   const addPoolRow    = () => setPoolAddRows((r) => [...r, newPoolRow()]);
   const removePoolRow = (id) => setPoolAddRows((r) => r.filter((x) => x.id !== id));
   const setPoolRowField = (id, field, value) =>
     setPoolAddRows((r) => r.map((x) => x.id === id ? { ...x, [field]: value } : x));
 
-  const poolAmt       = parseFloat(poolAddAmount) || 0;
   const poolAllocated = poolAddRows.reduce((s, r) => s + (parseFloat(r.balance) || 0), 0);
-  const poolRemaining = poolAmt - poolAllocated;
-  const poolPct       = poolAmt > 0 ? Math.min((poolAllocated / poolAmt) * 100, 100) : 0;
-  const poolOver      = poolRemaining < -0.005;
-  const poolDone      = poolAmt > 0 && Math.abs(poolRemaining) < 0.005;
   const poolNamedRows = poolAddRows.filter((r) => r.name.trim()).length;
   const poolSaveLabel = poolAddSaving
     ? 'กำลังสร้าง...'
-    : poolAmt <= 0
-      ? 'ใส่ยอดรวมก่อน'
-      : poolOver
-        ? `ยอดเกิน ฿${fmt(Math.abs(poolRemaining))}`
-        : poolDone
-          ? `สร้าง ${poolNamedRows} บัญชี`
-          : `เหลือ ฿${fmt(Math.abs(poolRemaining))}`;
-
-  const fillPoolRemaining = (id) => {
-    if (poolRemaining <= 0) return;
-    const cur = parseFloat(poolAddRows.find((r) => r.id === id)?.balance) || 0;
-    setPoolRowField(id, 'balance', String(cur + poolRemaining));
-  };
+    : poolNamedRows === 0
+      ? 'ใส่ชื่อบัญชีก่อน'
+      : `สร้าง ${poolNamedRows} บัญชี`;
 
   const savePoolAdd = async () => {
-    if (poolAmt <= 0) { setPoolAddError('กรุณาใส่ยอดเงินกองก่อน'); return; }
-    const validRows = poolAddRows.filter((r) => r.name.trim() && parseFloat(r.balance) > 0);
-    if (validRows.length === 0) { setPoolAddError('กรุณาเพิ่มบัญชีอย่างน้อย 1 บัญชีและใส่ยอดเงิน'); return; }
-    if (poolOver) { setPoolAddError(`ยอดรวมเกินกองเงิน: เกิน ฿${fmt(Math.abs(poolRemaining))}`); return; }
-    const emptyName = poolAddRows.find((r) => parseFloat(r.balance) > 0 && !r.name.trim());
+    const negativeRow = poolAddRows.find((r) => r.balance !== '' && parseFloat(r.balance) < 0);
+    if (negativeRow) { setPoolAddError('ยอดเงินต้องไม่ติดลบ'); return; }
+    const validRows = poolAddRows.filter((r) => r.name.trim());
+    if (validRows.length === 0) { setPoolAddError('กรุณาเพิ่มบัญชีอย่างน้อย 1 บัญชีและใส่ชื่อบัญชี'); return; }
+    const emptyName = poolAddRows.find((r) => (parseFloat(r.balance) || 0) > 0 && !r.name.trim());
     if (emptyName) { setPoolAddError('กรุณาใส่ชื่อบัญชีให้ครบทุกแถว'); return; }
     setPoolAddSaving(true); setPoolAddError('');
     try {
       for (const row of validRows) {
-        const bal = parseFloat(row.balance);
+        const bal = parseFloat(row.balance) || 0;
         const created = await accountsApi.create({
           name: row.name.trim(), type: 'asset', kind: row.kind, balance: bal, currency: 'THB',
         });
-        if (created?.id) {
+        if (bal > 0 && created?.id) {
           await txApi.create({
             type: 'adjustment', amount: bal, account_id: created.id,
             transaction_date: todayStr(), note: 'ยอดเริ่มต้น',
@@ -239,7 +222,7 @@ export default function AccountsView({ accounts, onRefresh }) {
 
   // ── Distribute ─────────────────────────────────────────────────────────────
   const openDist = () => {
-    setPoolAmount(''); setDistDate(todayStr()); setDistNote(''); setDistError('');
+    setPoolAmount(''); setDistDate(todayStr()); setDistError('');
     setAllocations(assetAccounts.map((a) => ({ account_id: a.id, name: a.name, kind: a.kind, amount: '' })));
     setShowDist(true);
   };
@@ -260,7 +243,7 @@ export default function AccountsView({ accounts, onRefresh }) {
     try {
       await Promise.all(lines.map((a) => txApi.create({
         type: 'income', amount: parseFloat(a.amount), account_id: a.account_id,
-        transaction_date: distDate, note: distNote || 'กระจายเงินเข้ากระเป๋า',
+        transaction_date: distDate, note: 'กระจายเงินเข้ากระเป๋า',
       })));
       await onRefresh(); setShowDist(false);
     } catch (err) { setDistError(err.message); }
@@ -335,7 +318,7 @@ export default function AccountsView({ accounts, onRefresh }) {
           {assetAccounts.length > 0 && (
             <button onClick={openDist}
               className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-              <Share2 size={15} color="white" /> แบ่งเงินเข้าบัญชี
+              <Share2 size={15} color="white" /> จัดสรรเงินเข้าบัญชี
             </button>
           )}
         </div>
@@ -374,23 +357,11 @@ export default function AccountsView({ accounts, onRefresh }) {
 
             {/* Kind selector */}
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-2 block">ชนิดบัญชี</label>
-              <div className="grid grid-cols-2 gap-2">
-                {ASSET_KINDS.map((k) => (
-                  <button key={k.value} onClick={() => setForm({ ...form, kind: k.value })}
-                    className="flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition-all"
-                    style={{
-                      borderColor: form.kind === k.value ? k.color : '#e2e8f0',
-                      background:  form.kind === k.value ? k.color + '15' : '#f8fafc',
-                    }}>
-                    <KindIcon icon={k.icon} color={form.kind === k.value ? k.color : '#94a3b8'} />
-                    <span className="text-xs leading-tight text-center"
-                      style={{ color: form.kind === k.value ? k.color : '#64748b' }}>
-                      {k.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">ชนิดบัญชี</label>
+              <AssetKindDropdown
+                value={form.kind}
+                onChange={(kind) => setForm({ ...form, kind })}
+              />
             </div>
 
             {/* Name */}
@@ -440,33 +411,21 @@ export default function AccountsView({ accounts, onRefresh }) {
         <Modal title="เพิ่มบัญชี" size="lg" onClose={() => setShowPoolAdd(false)}>
           <div className="space-y-4">
             {poolAddError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{poolAddError}</p>}
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">ยอดเงินทั้งหมดที่มี (฿)</label>
-              <input type="number" min="0" value={poolAddAmount}
-                onChange={(e) => setPoolAddAmount(e.target.value)} placeholder=""
-                className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-2xl bg-slate-50 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-[#BFD8E4] focus:border-[#2C6488]" />
+            <div className="rounded-2xl border border-[#DCE8EE] bg-[#EAF3F7] px-4 py-3">
+              <p className="text-sm font-semibold text-[#25536F]">เพิ่มบัญชีได้ทีละบัญชีหรือหลายบัญชี</p>
+              <p className="text-xs text-[#6F9DB6] mt-1">
+                ใส่ชื่อบัญชีและยอดเริ่มต้นของบัญชีนั้นได้เลย หากไม่ใส่ยอด ระบบจะถือว่าเริ่มต้นที่ ฿0
+              </p>
             </div>
-            {poolAmt > 0 && (
-              <div className="rounded-2xl p-4 border border-slate-100 bg-white">
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div>
-                    <p className="text-[11px] text-slate-400">ยอดรวม</p>
-                    <p className="text-sm font-bold text-slate-700">฿{fmt(poolAmt)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-slate-400">จัดสรรแล้ว</p>
-                    <p className="text-sm font-bold text-slate-700">฿{fmt(poolAllocated)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[11px] text-slate-400">{poolOver ? 'ยอดเกิน' : 'คงเหลือ'}</p>
-                    <p className={`text-sm font-bold ${poolOver ? 'text-red-500' : poolDone ? 'text-emerald-600' : 'text-[#2C6488]'}`}>
-                      ฿{fmt(Math.abs(poolRemaining))}
-                    </p>
-                  </div>
+            {poolNamedRows > 0 && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl p-3 border border-slate-100 bg-white">
+                  <p className="text-[11px] text-slate-400">บัญชีที่จะสร้าง</p>
+                  <p className="text-lg font-bold text-[#2C6488]">{poolNamedRows} บัญชี</p>
                 </div>
-                <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-300 ${poolOver ? 'bg-red-400' : poolDone ? 'bg-emerald-400' : 'bg-[#2C6488]'}`}
-                    style={{ width: `${poolPct}%` }} />
+                <div className="rounded-2xl p-3 border border-slate-100 bg-white">
+                  <p className="text-[11px] text-slate-400">ยอดเริ่มต้นรวม</p>
+                  <p className="text-lg font-bold text-slate-700">฿{fmt(poolAllocated)}</p>
                 </div>
               </div>
             )}
@@ -519,12 +478,6 @@ export default function AccountsView({ accounts, onRefresh }) {
                               onChange={(e) => setPoolRowField(row.id, 'balance', e.target.value)}
                               placeholder="0"
                               className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-right bg-slate-50 text-slate-700 font-medium" />
-                            {poolAmt > 0 && poolRemaining > 0.005 && (
-                              <button onClick={() => fillPoolRemaining(row.id)} title="เติมยอดที่เหลือในกอง"
-                                className="px-2 h-9 rounded-lg bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[11px] font-semibold text-[#2C6488] flex-shrink-0 transition-colors">
-                                เติม
-                              </button>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -536,7 +489,7 @@ export default function AccountsView({ accounts, onRefresh }) {
             <div className="flex gap-3 pt-1">
               <button onClick={() => setShowPoolAdd(false)}
                 className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
-              <button onClick={savePoolAdd} disabled={poolAddSaving || poolAmt <= 0 || poolOver}
+              <button onClick={savePoolAdd} disabled={poolAddSaving || poolNamedRows === 0}
                 className="flex-1 btn-primary text-white py-2.5 rounded-xl text-sm font-medium disabled:opacity-60">
                 {poolSaveLabel}
               </button>
@@ -547,7 +500,7 @@ export default function AccountsView({ accounts, onRefresh }) {
 
       {/* Distribute modal */}
       {showDist && (
-        <Modal title="แบ่งเงินเข้าบัญชี" onClose={() => setShowDist(false)}>
+        <Modal title="จัดสรรเงินเข้าบัญชี" onClose={() => setShowDist(false)}>
           <div className="space-y-4">
             {distError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{distError}</p>}
             <div className="grid grid-cols-2 gap-3">
@@ -562,12 +515,6 @@ export default function AccountsView({ accounts, onRefresh }) {
                 <input type="date" value={distDate} onChange={(e) => setDistDate(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">หมายเหตุ</label>
-              <input value={distNote} onChange={(e) => setDistNote(e.target.value)}
-                placeholder="เช่น เงินเดือน เมษายน"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
             </div>
             {pool > 0 && (
               <div>
@@ -589,7 +536,7 @@ export default function AccountsView({ accounts, onRefresh }) {
               </div>
             )}
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-2 block">โยนเข้าบัญชี</label>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">จัดสรรเข้าบัญชี</label>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {allocations.map((alloc, idx) => {
                   const k = getKind(alloc.kind);
@@ -626,7 +573,7 @@ export default function AccountsView({ accounts, onRefresh }) {
                 className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
               <button onClick={saveDist} disabled={distSaving || !distValid}
                 className="flex-1 btn-primary text-white py-2.5 rounded-xl text-sm font-medium disabled:opacity-50">
-                {distSaving ? 'กำลังบันทึก...' : `โยน ฿${fmt(pool)} เข้ากระเป๋า`}
+                {distSaving ? 'กำลังบันทึก...' : `จัดสรร ฿${fmt(pool)} เข้ากระเป๋า`}
               </button>
             </div>
           </div>

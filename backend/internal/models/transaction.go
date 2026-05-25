@@ -39,11 +39,14 @@ type CreateTransactionRequest struct {
 }
 
 type UpdateTransactionRequest struct {
-	CategoryID      *string  `json:"category_id"`
-	Amount          *float64 `json:"amount"  binding:"omitempty,gt=0"`
-	Name            *string  `json:"name"`
-	Note            *string  `json:"note"`
-	TransactionDate *string  `json:"transaction_date"`
+	AccountID       *string          `json:"account_id"`
+	ToAccountID     *string          `json:"to_account_id"`
+	CategoryID      *string          `json:"category_id"`
+	Type            *TransactionType `json:"type" binding:"omitempty,oneof=income expense transfer"`
+	Amount          *float64         `json:"amount"  binding:"omitempty,gt=0"`
+	Name            *string          `json:"name"`
+	Note            *string          `json:"note"`
+	TransactionDate *string          `json:"transaction_date"`
 }
 
 type TransactionFilter struct {

@@ -1,0 +1,14 @@
+./account.go
+./ai_summary.go
+./auth.go
+./auth_google.go
+./balance.go
+./budget.go
+./category.go
+./notification.go
+./profile.go
+./receipt_handler.go
+./recurring.go
+./savings_goal.go
+./slip_handler.go
+./transaction.go
