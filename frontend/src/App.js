@@ -47,6 +47,20 @@ function AppShell() {
   const [notiList,      setNotiList]      = useState([]);
   const [avatarUrl,     setAvatarUrl]     = useState(null);
 
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem('theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
   // Bootstrap: check if user has accounts already
   const bootstrap = useCallback(async () => {
     setAppState('checking');
@@ -152,10 +166,12 @@ function AppShell() {
           notifications={notiList}
           onNotificationRefresh={refreshNotifications}
           onRefreshAccounts={refreshAccounts}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         />
         <main className="flex-1 overflow-y-auto">
           {view === 'analytics'    && (
-            <AnalyticsView accounts={accounts} categories={categories} onGoProfile={() => setView('profile')} />
+            <AnalyticsView accounts={accounts} categories={categories} onGoProfile={() => setView('profile')} isDarkMode={isDarkMode} />
           )}
           {view === 'accounts'     && (
             <AccountsView

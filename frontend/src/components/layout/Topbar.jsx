@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, Sun, Moon } from 'lucide-react';
 import NotificationPanel from './NotificationPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { profile as profileApi } from '../../services/api';
@@ -7,7 +7,7 @@ import { formatDisplayDate } from '../../utils/dateFormat';
 
 const accent = '#2C6488';
 
-export default function Topbar({ pageTitle, onProfile, notifications, onNotificationRefresh, onRefreshAccounts }) {
+export default function Topbar({ pageTitle, onProfile, notifications, onNotificationRefresh, onRefreshAccounts, isDarkMode, onToggleDarkMode }) {
   const { user } = useAuth();
   const initials  = (user?.username || '?').slice(0, 2).toUpperCase();
   const [showPanel, setShowPanel] = useState(false);
@@ -30,6 +30,15 @@ export default function Topbar({ pageTitle, onProfile, notifications, onNotifica
         <p className="text-xs text-slate-400 mt-0.5">{today}</p>
       </div>
       <div className="flex items-center gap-3">
+        {/* Theme Toggle Button */}
+        <button
+          onClick={onToggleDarkMode}
+          className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors"
+          title={isDarkMode ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"}
+        >
+          {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
         {/* Bell icon */}
         <div className="relative">
           <button

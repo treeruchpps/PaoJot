@@ -61,7 +61,7 @@ function periodDateLabel(period, weekStartDay) {
 }
 
 // ─── Chart: Doughnut ─────────────────────────────────────────────────────────
-function DonutChart({ data }) {
+function DonutChart({ data, isDarkMode }) {
   const canvasRef = useRef(null);
   const chartRef  = useRef(null);
 
@@ -79,7 +79,7 @@ function DonutChart({ data }) {
           data:            data.map((d) => d.value),
           backgroundColor: data.map((_, i) => PALETTE[i % PALETTE.length]),
           borderWidth: 2,
-          borderColor: '#ffffff',
+          borderColor: isDarkMode ? '#131926' : '#ffffff',
           hoverOffset: 4,
         }],
       },
@@ -95,13 +95,13 @@ function DonutChart({ data }) {
     });
 
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-  }, [data]);
+  }, [data, isDarkMode]);
 
   return <canvas ref={canvasRef} width={160} height={160} />;
 }
 
 // ─── Chart: Bar ───────────────────────────────────────────────────────────────
-function BarChart({ data }) {
+function BarChart({ data, isDarkMode }) {
   const canvasRef = useRef(null);
   const chartRef  = useRef(null);
 
@@ -145,7 +145,7 @@ function BarChart({ data }) {
             ticks: { font: { size: 11 }, color: '#94a3b8' },
           },
           y: {
-            grid:  { color: '#f1f5f9' },
+            grid:  { color: isDarkMode ? '#24304c' : '#f1f5f9' },
             ticks: {
               font:     { size: 11 },
               color:    '#94a3b8',
@@ -157,7 +157,7 @@ function BarChart({ data }) {
     });
 
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-  }, [data]);
+  }, [data, isDarkMode]);
 
   return <div className="h-48"><canvas ref={canvasRef} /></div>;
 }
@@ -225,7 +225,7 @@ function AccountCashflowBars({ data, totalIncome, totalExpense }) {
   );
 }
 
-export default function AnalyticsView({ accounts, categories, onGoProfile }) {
+export default function AnalyticsView({ accounts, categories, onGoProfile, isDarkMode }) {
   const [period,       setPeriod]       = useState('month');
   const [weekStartDay, setWeekStartDay] = useState(1); // 0=Sun 1=Mon 6=Sat
   const [periodStats,  setPeriodStats]  = useState({});   // { today:{inc,exp}, week:…, month:…, year:… }
@@ -405,31 +405,31 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
 
       {/* ── Overview ───────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-4 items-stretch">
-        <div className={`col-span-12 ${overviewSpan} rounded-2xl border border-[#DCE8EE] bg-[#EAF3F7] p-5 overflow-hidden h-full min-h-[280px] flex flex-col justify-between`}>
+        <div className={`col-span-12 ${overviewSpan} rounded-2xl border p-5 overflow-hidden h-full min-h-[280px] flex flex-col justify-between ${isDarkMode ? 'border-[#1e2638] bg-[#121b2d]' : 'border-[#DCE8EE] bg-[#EAF3F7]'}`}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold text-[#2C6488] mb-2">ภาพรวมการเงิน</p>
+              <p className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-[#4da2db]' : 'text-[#2C6488]'}`}>ภาพรวมการเงิน</p>
               <h2 className="text-sm text-slate-500 mb-1">ยอดเงินรวม</h2>
-              <p className="text-4xl font-bold" style={{ color: '#2C6488' }}>
+              <p className="text-4xl font-bold" style={{ color: isDarkMode ? '#4da2db' : '#2C6488' }}>
                 ฿{fmt(totalAssets)}
               </p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center border border-white">
-              <Wallet size={24} color="#2C6488" />
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${isDarkMode ? 'bg-[#1a2235]/80 border-[#24304c]' : 'bg-white/80 border-white'}`}>
+              <Wallet size={24} color={isDarkMode ? '#4da2db' : '#2C6488'} />
             </div>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-white/75 border border-white px-3 py-3">
+            <div className={`rounded-xl px-3 py-3 border ${isDarkMode ? 'bg-[#131926]/75 border-[#1e2638]' : 'bg-white/75 border-white'}`}>
               <p className="text-xs text-slate-500 mb-1">เงินทั้งหมด</p>
-              <p className="text-lg font-bold text-emerald-600">฿{fmt(totalAssets)}</p>
+              <p className={`text-lg font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>฿{fmt(totalAssets)}</p>
             </div>
-            <div className="rounded-xl bg-white/75 border border-white px-3 py-3">
+            <div className={`rounded-xl px-3 py-3 border ${isDarkMode ? 'bg-[#131926]/75 border-[#1e2638]' : 'bg-white/75 border-white'}`}>
               <p className="text-xs text-slate-500 mb-1">บัญชีทั้งหมด</p>
-              <p className="text-lg font-bold text-[#2C6488]">{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
+              <p className={`text-lg font-bold ${isDarkMode ? 'text-[#4da2db]' : 'text-[#2C6488]'}`}>{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
             </div>
           </div>
           {showAiConsentNotice && (
-            <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white/70 border border-white px-4 py-3">
+            <div className={`mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl px-4 py-3 border ${isDarkMode ? 'bg-[#131926]/70 border-[#1e2638]' : 'bg-white/70 border-white'}`}>
               <div>
                 <p className="text-sm font-semibold text-slate-700">AI สรุปการเงินยังปิดอยู่</p>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -446,7 +446,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
             </div>
           )}
           {!showAiSummaryCard && !showAiConsentNotice && (
-            <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white/70 border border-white px-4 py-3">
+            <div className={`mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl px-4 py-3 border ${isDarkMode ? 'bg-[#131926]/70 border-[#1e2638]' : 'bg-white/70 border-white'}`}>
               <div>
                 <p className="text-sm font-semibold text-slate-700">AI สรุปการเงิน</p>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -460,7 +460,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex rounded-xl bg-white border border-[#DCE8EE] p-1">
+                <div className={`flex rounded-xl border p-1 ${isDarkMode ? 'bg-[#1a2235] border-[#24304c]' : 'bg-white border-[#DCE8EE]'}`}>
                   {[
                     ['weekly', 'สัปดาห์'],
                     ['monthly', 'เดือน'],
@@ -479,7 +479,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
                   <button
                     type="button"
                     onClick={() => setShowAiSummary(true)}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white text-[#2C6488] border border-[#DCE8EE] text-xs font-semibold"
+                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${isDarkMode ? 'bg-[#1c2336] text-[#4da2db] border-[#24304c]' : 'bg-white text-[#2C6488] border-[#DCE8EE]'}`}
                   >
                     <Sparkles size={14} />
                     เปิดสรุป
@@ -644,24 +644,24 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
                   : 'hover:shadow-sm hover:scale-[1.01]'
               }`}
               style={{
-                background:   active ? pc.bg  : '#ffffff',
-                borderColor:  active ? pc.ring : '#f1f5f9',
+                background:   active ? (isDarkMode ? '#152438' : pc.bg)  : (isDarkMode ? '#131926' : '#ffffff'),
+                borderColor:  active ? (isDarkMode ? '#2c6488' : pc.ring) : (isDarkMode ? '#24304c' : '#f1f5f9'),
               }}
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-xl flex items-center justify-center"
-                    style={{ background: pc.bg }}>
-                    {pc.icon === 'Sun' && <Sun size={14} color={pc.color} />}
-                    {pc.icon === 'Calendar' && <Calendar size={14} color={pc.color} />}
-                    {pc.icon === 'BarChart2' && <BarChart2 size={14} color={pc.color} />}
-                    {pc.icon === 'TrendingUp' && <TrendingUp size={14} color={pc.color} />}
+                    style={{ background: isDarkMode ? '#1a2c44' : pc.bg }}>
+                    {pc.icon === 'Sun' && <Sun size={14} color={isDarkMode ? '#4da2db' : pc.color} />}
+                    {pc.icon === 'Calendar' && <Calendar size={14} color={isDarkMode ? '#4da2db' : pc.color} />}
+                    {pc.icon === 'BarChart2' && <BarChart2 size={14} color={isDarkMode ? '#4da2db' : pc.color} />}
+                    {pc.icon === 'TrendingUp' && <TrendingUp size={14} color={isDarkMode ? '#4da2db' : pc.color} />}
                   </div>
-                  <span className="text-sm font-semibold" style={{ color: pc.color }}>{pc.label}</span>
+                  <span className="text-sm font-semibold" style={{ color: isDarkMode ? '#4da2db' : pc.color }}>{pc.label}</span>
                 </div>
                 {active && (
-                  <div className="w-2 h-2 rounded-full" style={{ background: pc.color }} />
+                  <div className="w-2 h-2 rounded-full" style={{ background: isDarkMode ? '#4da2db' : pc.color }} />
                 )}
               </div>
 
@@ -714,7 +714,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
                 <div className="py-12 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>
               ) : (
                 <div className="flex items-start gap-4">
-                  <DonutChart data={donutData} />
+                  <DonutChart data={donutData} isDarkMode={isDarkMode} />
                   <div className="flex-1 space-y-2 mt-1">
                     {donutData.slice(0, 6).map((d, i) => (
                       <div key={i} className="flex items-center justify-between gap-2">
@@ -747,7 +747,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
                 </div>
               </div>
               <p className="text-xs text-slate-400 mb-3">6 เดือนย้อนหลัง</p>
-              <BarChart data={barData} />
+              <BarChart data={barData} isDarkMode={isDarkMode} />
               {momChange !== null && (
                 <div className="mt-3 flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2.5">
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
@@ -784,8 +784,8 @@ export default function AnalyticsView({ accounts, categories, onGoProfile }) {
                     return (
                       <div key={tx.id} className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{ background: tx.type === 'income' ? '#f0fdf4' : tx.type === 'expense' ? '#fff1f2' : '#EAF3F7' }}>
-                          <Icon name={cat?.icon || 'Tag'} size={16} color={tx.type === 'income' ? '#10b981' : tx.type === 'expense' ? '#ef4444' : '#2C6488'} />
+                          style={{ background: isDarkMode ? (tx.type === 'income' ? '#152920' : tx.type === 'expense' ? '#2a1b1d' : '#152438') : (tx.type === 'income' ? '#f0fdf4' : tx.type === 'expense' ? '#fff1f2' : '#EAF3F7') }}>
+                          <Icon name={cat?.icon || 'Tag'} size={16} color={tx.type === 'income' ? '#10b981' : tx.type === 'expense' ? '#ef4444' : (isDarkMode ? '#4da2db' : '#2C6488')} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-700 truncate">{tx.name || tx.note || 'ไม่มีชื่อรายการ'}</p>

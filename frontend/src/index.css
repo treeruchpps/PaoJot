@@ -39,3 +39,372 @@ input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
   display: none;
 }
+
+/* ==========================================
+   DARK MODE SYSTEM OVERRIDES (COMPREHENSIVE & LINTER COMPLIANT)
+   ========================================== */
+
+/* 1. Global Page Elements */
+.dark,
+.dark body {
+  background-color: #0b0f19 !important;
+  color: #f3f4f6 !important;
+}
+
+.dark #root {
+  background-color: #0b0f19 !important;
+}
+
+/* 2. Background Overrides (Classes) */
+.dark .bg-white {
+  background-color: #131926 !important;
+}
+
+.dark [class*="bg-[#F6FAFC]"] {
+  background-color: #0b0f19 !important;
+}
+
+.dark .bg-slate-50,
+.dark [class*="bg-slate-50"],
+.dark [class*="bg-gray-50"] {
+  background-color: #1c2336 !important;
+}
+
+.dark .bg-slate-100,
+.dark [class*="bg-slate-100"],
+.dark [class*="bg-gray-100"] {
+  background-color: #1e263c !important;
+}
+
+.dark .bg-slate-200,
+.dark [class*="bg-slate-200"],
+.dark [class*="bg-gray-200"] {
+  background-color: #24304c !important;
+}
+
+.dark .bg-slate-900 {
+  background-color: #080b12 !important;
+}
+
+.dark .bg-red-50 {
+  background-color: #2a1b1d !important;
+}
+
+.dark .bg-emerald-50 {
+  background-color: #152920 !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: #2e2315 !important;
+}
+
+.dark .bg-blue-50 {
+  background-color: #122130 !important;
+}
+
+.dark .bg-[#EAF3F7],
+.dark [class*="bg-[#EAF3F7]"] {
+  background-color: #152438 !important;
+}
+
+.dark [class*="bg-[#EAF3F7]/60"],
+.dark [class*="bg-[#EAF3F7]/30"] {
+  background-color: rgba(21, 36, 56, 0.6) !important;
+}
+
+.dark [class*="bg-white/70"],
+.dark [class*="bg-white/75"],
+.dark [class*="bg-white/80"] {
+  background-color: rgba(19, 25, 38, 0.8) !important;
+}
+
+/* Dynamic Inline Backgrounds Override */
+.dark [style*="background: #EAF3F7"],
+.dark [style*="background: rgb(234, 243, 247)"] {
+  background-color: #152438 !important;
+}
+
+.dark [style*="background: #f0fdf4"],
+.dark [style*="background: rgb(240, 253, 244)"] {
+  background-color: #12291d !important;
+}
+
+.dark [style*="background: #fff1f2"],
+.dark [style*="background: rgb(255, 241, 242)"] {
+  background-color: #2a1b1d !important;
+}
+
+.dark [style*="background: #fffbeb"],
+.dark [style*="background: rgb(255, 251, 235)"] {
+  background-color: #2e2315 !important;
+}
+
+.dark [style*="background: #f8fafc"],
+.dark [style*="background: rgb(248, 250, 252)"],
+.dark [style*="background: #f1f5f9"],
+.dark [style*="background: rgb(241, 245, 249)"] {
+  background-color: #1c2336 !important;
+}
+
+/* Gradients Overrides */
+/* Goals page header card gradient */
+.dark div[class*="from-[#EAF3F7]"][class*="to-[#EAF7E8]"] {
+  background-image: linear-gradient(to bottom right, #152438, #12291d) !important;
+}
+/* Login/Register page full background gradient */
+.dark div[class*="from-[#EAF3F7]"][class*="via-white"] {
+  background-image: linear-gradient(to bottom right, #0b0f19, #131926, #0e1e16) !important;
+}
+
+/* Hovers */
+.dark [class*="hover:bg-slate-50"]:hover {
+  background-color: #1c2539 !important;
+}
+
+.dark [class*="hover:bg-slate-100"]:hover {
+  background-color: #222d46 !important;
+}
+
+.dark [class*="hover:bg-slate-200"]:hover {
+  background-color: #2b3957 !important;
+}
+
+.dark [class*="hover:bg-[#EAF3F7]"]:hover,
+.dark [class*="hover:bg-[#DCE8EE]"]:hover {
+  background-color: #1c2b44 !important;
+}
+
+/* 3. Typography & Text */
+.dark .text-slate-900,
+.dark .text-gray-900,
+.dark .text-neutral-900 {
+  color: #f9fafb !important;
+}
+
+.dark .text-slate-800,
+.dark .text-gray-800,
+.dark .text-neutral-800 {
+  color: #f3f4f6 !important;
+}
+
+.dark .text-slate-700,
+.dark .text-gray-700,
+.dark .text-neutral-700 {
+  color: #e5e7eb !important;
+}
+
+.dark .text-slate-600,
+.dark .text-gray-600,
+.dark .text-neutral-600 {
+  color: #d1d5db !important;
+}
+
+.dark .text-slate-500,
+.dark .text-gray-500,
+.dark .text-neutral-500 {
+  color: #9ca3af !important;
+}
+
+.dark .text-slate-400,
+.dark .text-gray-400,
+.dark .text-neutral-400 {
+  color: #6b7280 !important;
+}
+
+.dark .text-[#2C6488],
+.dark [class*="text-[#2C6488]"] {
+  color: #4da2db !important;
+}
+
+.dark .text-indigo-600 {
+  color: #6366f1 !important;
+}
+
+.dark .text-indigo-700 {
+  color: #818cf8 !important;
+}
+
+/* Brighter alert text colors */
+.dark .text-amber-700,
+.dark [class*="text-amber-700"] {
+  color: #fbbf24 !important;
+}
+
+.dark .text-emerald-700,
+.dark [class*="text-emerald-700"] {
+  color: #34d399 !important;
+}
+
+.dark .text-red-700,
+.dark [class*="text-red-700"] {
+  color: #f87171 !important;
+}
+
+/* Info Box Label Colors */
+.dark .text-\[\#25536F\],
+.dark [class*="text-[#25536F]"],
+.dark [style*="color: #25536F"],
+.dark [style*="color: rgb(37, 83, 111)"] {
+  color: #4da2db !important;
+}
+
+.dark .text-\[\#6F9DB6\],
+.dark [class*="text-[#6F9DB6]"],
+.dark [style*="color: #6F9DB6"],
+.dark [style*="color: rgb(111, 157, 182)"] {
+  color: #8bb3cc !important;
+}
+
+/* Dynamic Inline Text Colors Override */
+.dark [style*="color: #2C6488"],
+.dark [style*="color: rgb(44, 100, 136)"] {
+  color: #4da2db !important;
+}
+
+.dark [style*="color: #10b981"],
+.dark [style*="color: rgb(16, 185, 129)"] {
+  color: #34d399 !important;
+}
+
+.dark [style*="color: #ef4444"],
+.dark [style*="color: rgb(239, 68, 68)"] {
+  color: #f87171 !important;
+}
+
+.dark span[style*="color: #374151"],
+.dark span[style*="color: rgb(55, 65, 81)"],
+.dark p[style*="color: #374151"],
+.dark p[style*="color: rgb(55, 65, 81)"] {
+  color: #e5e7eb !important;
+}
+
+/* 4. Borders & Dividers */
+.dark .border-slate-100,
+.dark .border-gray-100 {
+  border-color: #1e2638 !important;
+}
+
+.dark .border-slate-200,
+.dark .border-gray-200,
+.dark [class*="border-[#DCE8EE]"],
+.dark [class*="border-[#BFD8E4]"],
+.dark .border-slate-300 {
+  border-color: #24304c !important;
+}
+
+.dark [style*="border-color: #e2e8f0"],
+.dark [style*="border-color: rgb(226, 232, 240)"] {
+  border-color: #24304c !important;
+}
+
+.dark [style*="border-color: #2C6488"],
+.dark [style*="border-color: rgb(44, 100, 136)"] {
+  border-color: #4da2db !important;
+}
+
+.dark .divide-slate-100 > * + * {
+  border-color: #1e2638 !important;
+}
+
+.dark .divide-slate-200 > * + * {
+  border-color: #24304c !important;
+}
+
+/* 5. Inputs & Select Forms */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #1c2336 !important;
+  color: #f3f4f6 !important;
+  border-color: #24304c !important;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #2c6488 !important;
+  box-shadow: 0 0 0 2px rgba(44, 100, 136, 0.4) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280 !important;
+}
+
+.dark input[type="checkbox"] {
+  accent-color: #2c6488;
+}
+
+.dark select option {
+  background-color: #131926 !important;
+  color: #f3f4f6 !important;
+}
+
+/* Disable styles */
+.dark input:disabled,
+.dark select:disabled,
+.dark button:disabled {
+  opacity: 0.5;
+  background-color: #121824 !important;
+}
+
+/* 6. Rings */
+.dark [class*="ring-[#BFD8E4]"] {
+  --tw-ring-color: #2c6488 !important;
+}
+
+/* 7. Scrollbars */
+.dark ::-webkit-scrollbar-track {
+  background: #0b0f19;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #24304c;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #2d3c5f;
+}
+
+/* 8. Specific Component Overrides */
+.dark .sidebar-item.active {
+  background: linear-gradient(90deg, rgba(44, 100, 136, 0.25) 0%, rgba(44, 100, 136, 0.05) 100%) !important;
+  border-left: 3px solid #2C6488 !important;
+}
+
+.dark .modal-bg {
+  background: rgba(8, 10, 18, 0.65) !important;
+  backdrop-filter: blur(4px);
+}
+
+.dark .modal-box {
+  background-color: #131926 !important;
+  border: 1px solid #24304c !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark header {
+  border-color: #1e2638 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark aside {
+  border-color: #1e2638 !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+}
+
+.dark .w-11.h-11.rounded-2xl[style*="background: rgb(255, 241, 242)"],
+.dark .w-11.h-11.rounded-2xl[style*="background: #fff1f2"] {
+  background-color: #2a1b1d !important;
+}
+
+.dark .w-11.h-11.rounded-2xl[style*="background: rgb(255, 251, 235)"],
+.dark .w-11.h-11.rounded-2xl[style*="background: #fffbeb"] {
+  background-color: #2e2315 !important;
+}
+
+/* Progress bar fill overrides for goal cards */
+.dark .rounded-full[style*="background: #2C6488"],
+.dark .rounded-full[style*="background: rgb(44, 100, 136)"] {
+  background-color: #4da2db !important;
+}
+
+
