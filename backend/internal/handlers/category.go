@@ -20,11 +20,33 @@ func NewCategoryHandler(db *pgxpool.Pool) *CategoryHandler {
 
 func ensureDefaultCategories(ctx context.Context, db *pgxpool.Pool) {
 	_, _ = db.Exec(ctx, `
+		WITH defaults (name, type, icon, color) AS (
+			VALUES
+				('อาหาร', 'expense', 'UtensilsCrossed', '#f97316'),
+				('เดินทาง', 'expense', 'Car', '#3b82f6'),
+				('ของใช้', 'expense', 'Package', '#64748b'),
+				('ช้อปปิ้ง', 'expense', 'ShoppingBag', '#ec4899'),
+				('บันเทิง', 'expense', 'Gamepad2', '#8b5cf6'),
+				('ที่อยู่อาศัย', 'expense', 'Home', '#84cc16'),
+				('ชำระบิล', 'expense', 'ReceiptText', '#06b6d4'),
+				('สุขภาพ', 'expense', 'HeartPulse', '#10b981'),
+				('ครอบครัว', 'expense', 'Users', '#f59e0b'),
+				('สัตว์เลี้ยง', 'expense', 'PawPrint', '#5F9A7A'),
+				('ของขวัญ', 'expense', 'Gift', '#f59e0b'),
+				('การบริจาค', 'expense', 'HandHeart', '#ef4444'),
+				('การศึกษา', 'expense', 'GraduationCap', '#6366f1'),
+				('ท่องเที่ยว', 'expense', 'Plane', '#2C6488'),
+				('งาน', 'expense', 'BriefcaseBusiness', '#475569'),
+				('ลงทุน', 'expense', 'TrendingUp', '#5F9A7A'),
+				('ชำระหนี้', 'expense', 'CreditCard', '#2C6488'),
+				('อื่นๆ', 'expense', 'Tag', '#94a3b8')
+		)
 		INSERT INTO categories (user_id, name, type, icon, color)
-		SELECT NULL, 'ชำระหนี้', 'expense', 'CreditCard', '#2C6488'
+		SELECT NULL, d.name, d.type::transaction_type, d.icon, d.color
+		FROM defaults d
 		WHERE NOT EXISTS (
 			SELECT 1 FROM categories
-			WHERE user_id IS NULL AND type = 'expense' AND name = 'ชำระหนี้'
+			WHERE user_id IS NULL AND type = d.type::transaction_type AND name = d.name
 		)
 	`)
 }
@@ -43,7 +65,41 @@ func (h *CategoryHandler) List(c *gin.Context) {
 		query += " AND type = $2"
 		args = append(args, typeFilter)
 	}
-	query += " ORDER BY user_id NULLS FIRST, created_at ASC"
+	query += `
+		ORDER BY
+			type,
+			CASE
+				WHEN type = 'expense' AND user_id IS NULL AND name IN (
+					'อาหาร', 'เดินทาง', 'ของใช้', 'ช้อปปิ้ง', 'บันเทิง', 'ที่อยู่อาศัย',
+					'ชำระบิล', 'สุขภาพ', 'ครอบครัว', 'สัตว์เลี้ยง', 'ของขวัญ',
+					'การบริจาค', 'การศึกษา', 'ท่องเที่ยว', 'งาน', 'ลงทุน', 'ชำระหนี้'
+				) THEN 0
+				WHEN user_id IS NOT NULL THEN 1
+				WHEN user_id IS NULL AND name = 'อื่นๆ' THEN 3
+				ELSE 2
+			END,
+			CASE
+				WHEN type = 'expense' AND name = 'อาหาร' THEN 1
+				WHEN type = 'expense' AND name = 'เดินทาง' THEN 2
+				WHEN type = 'expense' AND name = 'ของใช้' THEN 3
+				WHEN type = 'expense' AND name = 'ช้อปปิ้ง' THEN 4
+				WHEN type = 'expense' AND name = 'บันเทิง' THEN 5
+				WHEN type = 'expense' AND name = 'ที่อยู่อาศัย' THEN 6
+				WHEN type = 'expense' AND name = 'ชำระบิล' THEN 7
+				WHEN type = 'expense' AND name = 'สุขภาพ' THEN 8
+				WHEN type = 'expense' AND name = 'ครอบครัว' THEN 9
+				WHEN type = 'expense' AND name = 'สัตว์เลี้ยง' THEN 10
+				WHEN type = 'expense' AND name = 'ของขวัญ' THEN 11
+				WHEN type = 'expense' AND name = 'การบริจาค' THEN 12
+				WHEN type = 'expense' AND name = 'การศึกษา' THEN 13
+				WHEN type = 'expense' AND name = 'ท่องเที่ยว' THEN 14
+				WHEN type = 'expense' AND name = 'งาน' THEN 15
+				WHEN type = 'expense' AND name = 'ลงทุน' THEN 16
+				WHEN type = 'expense' AND name = 'ชำระหนี้' THEN 17
+				WHEN type = 'expense' AND name = 'อื่นๆ' THEN 99
+				ELSE 50
+			END,
+			created_at ASC`
 
 	rows, err := h.db.Query(context.Background(), query, args...)
 	if err != nil {

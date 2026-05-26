@@ -11,12 +11,19 @@ type Config struct {
 	Server  ServerConfig
 	Google  GoogleConfig
 	Typhoon TyphoonConfig
+	Gemini  GeminiConfig
 }
 
 type TyphoonConfig struct {
 	APIKey       string
 	BaseURL      string
 	ExtractModel string
+}
+
+type GeminiConfig struct {
+	APIKey  string
+	BaseURL string
+	Model   string
 }
 
 type GoogleConfig struct {
@@ -74,6 +81,11 @@ func Load() *Config {
 			APIKey:       getEnv("TYPHOON_API_KEY", ""),
 			BaseURL:      getEnv("TYPHOON_BASE_URL", "https://api.opentyphoon.ai/v1"),
 			ExtractModel: getEnv("TYPHOON_EXTRACT_MODEL", "typhoon-v2.5-30b-a3b-instruct"),
+		},
+		Gemini: GeminiConfig{
+			APIKey:  getEnv("GEMINI_API_KEY", ""),
+			BaseURL: getEnv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"),
+			Model:   getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
 		},
 	}
 }

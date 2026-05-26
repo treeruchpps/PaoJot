@@ -153,7 +153,7 @@ export const savingsGoals = {
 // BUDGETS
 // ====================================================
 export const budgets = {
-  list:   ()         => request('/budgets'),
+  list:   (type)     => request(`/budgets${type && type !== 'all' ? `?type=${type}` : ''}`),
   create: (body)     => request('/budgets',     { method: 'POST',   body: JSON.stringify(body) }),
   get:    (id)       => request(`/budgets/${id}`),
   update: (id, body) => request(`/budgets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"paomoney/internal/models"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,18 @@ type NotificationHandler struct {
 }
 
 func NewNotificationHandler(db *pgxpool.Pool) *NotificationHandler {
-	return &NotificationHandler{db: db}
+	h := &NotificationHandler{db: db}
+	_ = h.ensureNotificationSchema(context.Background())
+	return h
+}
+
+func (h *NotificationHandler) ensureNotificationSchema(ctx context.Context) error {
+	_, err := h.db.Exec(ctx, `
+		ALTER TABLE notifications ADD COLUMN IF NOT EXISTS goal_id UUID REFERENCES savings_goals(id) ON DELETE CASCADE;
+		ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type VARCHAR(50) NOT NULL DEFAULT 'recurring';
+		CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(user_id, notification_type, created_at);
+	`)
+	return err
 }
 
 // GET /api/v1/notifications
@@ -25,7 +37,44 @@ func (h *NotificationHandler) List(c *gin.Context) {
 	ctx := context.Background()
 	today := time.Now().Truncate(24 * time.Hour)
 
-	// 1. ดึง recurring ที่ active และ next_due_date <= วันนี้
+	h.generateRecurringNotifications(ctx, userID, today)
+	h.generateBudgetNotifications(ctx, userID)
+	h.generateGoalNotifications(ctx, userID)
+	h.generateAISummaryNotifications(ctx, userID)
+	h.pruneNotifications(ctx, userID)
+
+	// คืน notification 5 รายการล่าสุดเป็น log แม้อ่านแล้วหรือจัดการแล้ว
+	nrows, err := h.db.Query(ctx,
+		`SELECT id, user_id, recurring_id, budget_id, goal_id, notification_type,
+		        title, message, is_read, action_taken, created_at
+		 FROM notifications
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT 5`,
+		userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch notifications"})
+		return
+	}
+	defer nrows.Close()
+
+	list := []models.Notification{}
+	for nrows.Next() {
+		var n models.Notification
+		if err := nrows.Scan(
+			&n.ID, &n.UserID, &n.RecurringID, &n.BudgetID, &n.GoalID, &n.Type,
+			&n.Title, &n.Message, &n.IsRead, &n.ActionTaken, &n.CreatedAt,
+		); err != nil {
+			continue
+		}
+		list = append(list, n)
+	}
+
+	c.JSON(http.StatusOK, list)
+}
+
+func (h *NotificationHandler) generateRecurringNotifications(ctx context.Context, userID string, today time.Time) {
 	rows, err := h.db.Query(ctx,
 		`SELECT id, user_id, account_id, to_account_id, category_id, type, amount,
 		        name, note, frequency, day_of_month, day_of_week, next_due_date, is_active
@@ -60,41 +109,168 @@ func (h *NotificationHandler) List(c *gin.Context) {
 				title := BuildNotificationTitle(r)
 				msg := FrequencyLabel(r.Frequency)
 				h.db.Exec(ctx, //nolint
-					`INSERT INTO notifications (user_id, recurring_id, title, message)
-					 VALUES ($1, $2, $3, $4)`,
+					`INSERT INTO notifications (user_id, recurring_id, notification_type, title, message)
+					 VALUES ($1, $2, 'recurring', $3, $4)`,
 					userID, r.ID, title, msg,
 				)
 			}
 		}
 	}
+}
 
-	// 3. คืน notification รายการทำซ้ำที่ยังไม่ action_taken (เรียงใหม่ก่อน)
-	nrows, err := h.db.Query(ctx,
-		`SELECT id, user_id, recurring_id, budget_id, title, message, is_read, action_taken, created_at
-		 FROM notifications
-		 WHERE user_id = $1 AND action_taken = FALSE AND recurring_id IS NOT NULL
-		 ORDER BY created_at DESC`,
-		userID,
-	)
+func (h *NotificationHandler) generateBudgetNotifications(ctx context.Context, userID string) {
+	h.db.Exec(ctx, `
+		DELETE FROM notifications
+		WHERE user_id = $1
+		  AND action_taken = FALSE
+		  AND is_read = FALSE
+		  AND notification_type IN ('budget_near_limit', 'budget_over')
+	`, userID) //nolint
+
+	rows, err := h.db.Query(ctx, `
+		SELECT b.id, COALESCE(c.name, 'งบประมาณ') AS category_name, b.amount,
+		       COALESCE(SUM(t.amount), 0) AS spent
+		FROM budgets b
+		LEFT JOIN categories c ON c.id = b.category_id
+		LEFT JOIN transactions t ON t.user_id = b.user_id
+			AND t.type = 'expense'
+			AND t.category_id = b.category_id
+			AND t.transaction_date >= b.start_date
+			AND t.transaction_date <= b.end_date
+		WHERE b.user_id = $1 AND b.is_active = TRUE AND b.end_date >= CURRENT_DATE
+		GROUP BY b.id, c.name, b.amount
+	`, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch notifications"})
 		return
 	}
-	defer nrows.Close()
+	defer rows.Close()
 
-	list := []models.Notification{}
-	for nrows.Next() {
-		var n models.Notification
-		if err := nrows.Scan(
-			&n.ID, &n.UserID, &n.RecurringID, &n.BudgetID, &n.Title, &n.Message,
-			&n.IsRead, &n.ActionTaken, &n.CreatedAt,
-		); err != nil {
+	for rows.Next() {
+		var id, name string
+		var amount, spent float64
+		if err := rows.Scan(&id, &name, &amount, &spent); err != nil || amount <= 0 {
 			continue
 		}
-		list = append(list, n)
+		notiType := ""
+		title := ""
+		message := ""
+		if spent >= amount {
+			notiType = "budget_over"
+			title = "งบประมาณใช้ครบแล้ว"
+			message = name
+		} else if spent/amount >= 0.8 {
+			notiType = "budget_near_limit"
+			title = "งบประมาณใกล้เต็ม"
+			message = name
+		}
+		if notiType == "" {
+			continue
+		}
+		h.insertOnceByRef(ctx, userID, notiType, "budget_id", id, title, message)
 	}
+}
 
-	c.JSON(http.StatusOK, list)
+func (h *NotificationHandler) generateGoalNotifications(ctx context.Context, userID string) {
+	rows, err := h.db.Query(ctx, `
+		SELECT id, name, target_amount - current_amount AS remaining, deadline
+		FROM savings_goals
+		WHERE user_id = $1
+		  AND status = 'in_progress'
+		  AND deadline IS NOT NULL
+		  AND deadline >= CURRENT_DATE
+		  AND deadline <= CURRENT_DATE + INTERVAL '7 days'
+		  AND current_amount < target_amount
+	`, userID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, name string
+		var remaining float64
+		var deadline time.Time
+		if err := rows.Scan(&id, &name, &remaining, &deadline); err != nil {
+			continue
+		}
+		msg := name + " · เหลืออีก ฿" + formatAmount(remaining) + " · ครบกำหนด " + budgetDateString(deadline)
+		h.insertOnceByRef(ctx, userID, "goal_due", "goal_id", id, "เป้าหมายการออมใกล้ครบกำหนด", msg)
+	}
+}
+
+func formatAmount(value float64) string {
+	return strconv.FormatFloat(value, 'f', 2, 64)
+}
+
+func (h *NotificationHandler) generateAISummaryNotifications(ctx context.Context, userID string) {
+	var enabled bool
+	var weekStart int
+	if err := h.db.QueryRow(ctx,
+		`SELECT ai_summary_enabled, week_start_day FROM user_profiles WHERE user_id = $1`,
+		userID,
+	).Scan(&enabled, &weekStart); err != nil || !enabled {
+		return
+	}
+	today := time.Now()
+	weekStartDate := today.AddDate(0, 0, -((int(today.Weekday()) - weekStart + 7) % 7))
+	weekEndDate := weekStartDate.AddDate(0, 0, 6)
+	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, today.Location())
+	monthEnd := monthStart.AddDate(0, 1, -1)
+	h.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", weekStartDate, weekEndDate, 11)
+	h.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", monthStart, monthEnd, 31)
+}
+
+func (h *NotificationHandler) insertAISummaryIfEligible(ctx context.Context, userID, notiType, title string, start, end time.Time, minCount int) {
+	var count int
+	if err := h.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM transactions
+		WHERE user_id = $1 AND type IN ('income', 'expense')
+		  AND transaction_date >= $2 AND transaction_date <= $3
+	`, userID, budgetDateString(start), budgetDateString(end)).Scan(&count); err != nil || count < minCount {
+		return
+	}
+	var exists bool
+	_ = h.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM notifications
+			WHERE user_id = $1 AND notification_type = $2 AND action_taken = FALSE
+		)
+	`, userID, notiType).Scan(&exists)
+	if exists {
+		return
+	}
+	msg := "มีข้อมูลเพียงพอสำหรับให้ AI ช่วยสรุปภาพรวม"
+	h.db.Exec(ctx, //nolint
+		`INSERT INTO notifications (user_id, notification_type, title, message)
+		 VALUES ($1, $2, $3, $4)`,
+		userID, notiType, title, msg,
+	)
+}
+
+func (h *NotificationHandler) insertOnceByRef(ctx context.Context, userID, notiType, refColumn, refID, title, message string) {
+	query := `SELECT EXISTS (
+		SELECT 1 FROM notifications
+		WHERE user_id = $1 AND notification_type = $2 AND ` + refColumn + ` = $3 AND action_taken = FALSE
+	)`
+	var exists bool
+	_ = h.db.QueryRow(ctx, query, userID, notiType, refID).Scan(&exists)
+	if exists {
+		return
+	}
+	insert := `INSERT INTO notifications (user_id, ` + refColumn + `, notification_type, title, message)
+		VALUES ($1, $2, $3, $4, $5)`
+	h.db.Exec(ctx, insert, userID, refID, notiType, title, message) //nolint
+}
+
+func (h *NotificationHandler) pruneNotifications(ctx context.Context, userID string) {
+	h.db.Exec(ctx, `DELETE FROM notifications
+		WHERE user_id = $1
+		  AND id NOT IN (
+		    SELECT id FROM notifications
+		    WHERE user_id = $1
+		    ORDER BY created_at DESC
+		    LIMIT 5
+		  )`, userID) //nolint
 }
 
 // POST /api/v1/notifications/:id/confirm
@@ -240,6 +416,6 @@ func (h *NotificationHandler) Skip(c *gin.Context) {
 func (h *NotificationHandler) ReadAll(c *gin.Context) {
 	userID := c.GetString("user_id")
 	h.db.Exec(context.Background(),
-		`UPDATE notifications SET is_read = TRUE WHERE user_id = $1 AND action_taken = FALSE`, userID)
+		`UPDATE notifications SET is_read = TRUE WHERE user_id = $1`, userID)
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }

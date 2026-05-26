@@ -24,6 +24,7 @@ func (h *BudgetHandler) ensureBudgetSchema(ctx context.Context) error {
 	_, err := h.db.Exec(ctx, `
 		ALTER TABLE budgets ADD COLUMN IF NOT EXISTS start_date DATE;
 		ALTER TABLE budgets ADD COLUMN IF NOT EXISTS end_date DATE;
+		ALTER TABLE budgets ADD COLUMN IF NOT EXISTS budget_type VARCHAR(20) NOT NULL DEFAULT 'month';
 		ALTER TABLE budgets ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN NOT NULL DEFAULT FALSE;
 		ALTER TABLE budgets ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
@@ -60,6 +61,8 @@ func (h *BudgetHandler) ensureBudgetSchema(ctx context.Context) error {
 
 		UPDATE budgets SET start_date = CURRENT_DATE WHERE start_date IS NULL;
 		UPDATE budgets SET end_date = CURRENT_DATE WHERE end_date IS NULL;
+		UPDATE budgets SET budget_type = 'custom'
+		WHERE budget_type IS NULL OR budget_type NOT IN ('week', 'month', 'year', 'custom');
 	`)
 	return err
 }
@@ -70,6 +73,28 @@ func parseBudgetDate(value string) (time.Time, error) {
 
 func budgetDateString(t time.Time) string {
 	return t.Format("2006-01-02")
+}
+
+func (h *BudgetHandler) budgetCategoryExists(ctx context.Context, userID, categoryID, budgetType string, excludeID *string) bool {
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM budgets
+			WHERE user_id = $1
+			  AND category_id = $2
+			  AND budget_type = $3
+			  AND is_active = TRUE`
+	args := []interface{}{userID, categoryID, budgetType}
+	if excludeID != nil {
+		query += " AND id <> $4"
+		args = append(args, *excludeID)
+	}
+	query += ")"
+
+	var exists bool
+	if err := h.db.QueryRow(ctx, query, args...).Scan(&exists); err != nil {
+		return false
+	}
+	return exists
 }
 
 func nextBudgetWindow(start, end time.Time, today time.Time) (time.Time, time.Time) {
@@ -115,11 +140,19 @@ func (h *BudgetHandler) refreshBudgetWindows(ctx context.Context, userID string)
 // GET /api/v1/budgets
 func (h *BudgetHandler) List(c *gin.Context) {
 	userID := c.GetString("user_id")
+	typeFilter := c.Query("type")
 	ctx := context.Background()
 	h.refreshBudgetWindows(ctx, userID)
 
+	args := []interface{}{userID}
+	typeCondition := ""
+	if typeFilter != "" && typeFilter != "all" {
+		typeCondition = " AND b.budget_type = $2"
+		args = append(args, typeFilter)
+	}
+
 	rows, err := h.db.Query(ctx,
-		`SELECT b.id, b.user_id, b.category_id, b.amount, b.start_date, b.end_date,
+		`SELECT b.id, b.user_id, b.category_id, b.amount, b.budget_type, b.start_date, b.end_date,
 		        b.is_recurring, b.is_active, b.created_at, b.updated_at,
 		        COALESCE((
 		          SELECT SUM(t.amount)
@@ -132,8 +165,11 @@ func (h *BudgetHandler) List(c *gin.Context) {
 		        ), 0) AS spent
 		 FROM budgets b
 		 WHERE b.user_id = $1 AND b.is_active = TRUE AND b.end_date >= CURRENT_DATE
-		 ORDER BY b.end_date ASC, b.created_at DESC`,
-		userID,
+		 `+typeCondition+`
+		 ORDER BY
+		   CASE b.budget_type WHEN 'week' THEN 1 WHEN 'month' THEN 2 WHEN 'year' THEN 3 ELSE 4 END,
+		   b.end_date ASC, b.created_at DESC`,
+		args...,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch budgets"})
@@ -145,7 +181,7 @@ func (h *BudgetHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var b models.Budget
 		var start, end time.Time
-		if err := rows.Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &start, &end,
+		if err := rows.Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &b.BudgetType, &start, &end,
 			&b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt, &b.Spent); err != nil {
 			continue
 		}
@@ -180,14 +216,22 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "end_date must be after start_date"})
 		return
 	}
+	if req.CategoryID == nil || *req.CategoryID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "category_id is required"})
+		return
+	}
+	if h.budgetCategoryExists(context.Background(), userID, *req.CategoryID, req.BudgetType, nil) {
+		c.JSON(http.StatusConflict, gin.H{"error": "หมวดหมู่นี้มีงบประมาณประเภทเดียวกันอยู่แล้ว"})
+		return
+	}
 
 	var b models.Budget
 	err = h.db.QueryRow(context.Background(),
-		`INSERT INTO budgets (user_id, category_id, amount, start_date, end_date, is_recurring)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 RETURNING id, user_id, category_id, amount, start_date, end_date, is_recurring, is_active, created_at, updated_at`,
-		userID, req.CategoryID, req.Amount, req.StartDate, req.EndDate, req.IsRecurring,
-	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
+		`INSERT INTO budgets (user_id, category_id, amount, budget_type, start_date, end_date, is_recurring)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 RETURNING id, user_id, category_id, amount, budget_type, start_date, end_date, is_recurring, is_active, created_at, updated_at`,
+		userID, req.CategoryID, req.Amount, req.BudgetType, req.StartDate, req.EndDate, req.IsRecurring,
+	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &b.BudgetType, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create budget"})
@@ -207,10 +251,10 @@ func (h *BudgetHandler) Get(c *gin.Context) {
 	var b models.Budget
 	var start, end time.Time
 	err := h.db.QueryRow(context.Background(),
-		`SELECT id, user_id, category_id, amount, start_date, end_date, is_recurring, is_active, created_at, updated_at
+		`SELECT id, user_id, category_id, amount, budget_type, start_date, end_date, is_recurring, is_active, created_at, updated_at
 		 FROM budgets WHERE id = $1 AND user_id = $2`,
 		id, userID,
-	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
+	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &b.BudgetType, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "budget not found"})
@@ -245,21 +289,49 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 		}
 	}
 
+	var currentCategoryID *string
+	var currentBudgetType string
+	err := h.db.QueryRow(context.Background(),
+		`SELECT category_id, budget_type FROM budgets WHERE id = $1 AND user_id = $2`,
+		id, userID,
+	).Scan(&currentCategoryID, &currentBudgetType)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "budget not found"})
+		return
+	}
+	nextCategoryID := req.CategoryID
+	if nextCategoryID == nil {
+		nextCategoryID = currentCategoryID
+	}
+	nextBudgetType := currentBudgetType
+	if req.BudgetType != nil {
+		nextBudgetType = *req.BudgetType
+	}
+	if nextCategoryID == nil || *nextCategoryID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "category_id is required"})
+		return
+	}
+	if h.budgetCategoryExists(context.Background(), userID, *nextCategoryID, nextBudgetType, &id) {
+		c.JSON(http.StatusConflict, gin.H{"error": "หมวดหมู่นี้มีงบประมาณประเภทเดียวกันอยู่แล้ว"})
+		return
+	}
+
 	var b models.Budget
 	var start, end time.Time
-	err := h.db.QueryRow(context.Background(),
+	err = h.db.QueryRow(context.Background(),
 		`UPDATE budgets
 		 SET category_id  = $1,
 		     amount       = COALESCE($2, amount),
-		     start_date   = COALESCE($3, start_date),
-		     end_date     = COALESCE($4, end_date),
-		     is_recurring = COALESCE($5, is_recurring),
-		     is_active    = COALESCE($6, is_active)
-		 WHERE id = $7 AND user_id = $8
-		   AND COALESCE($4, end_date) >= COALESCE($3, start_date)
-		 RETURNING id, user_id, category_id, amount, start_date, end_date, is_recurring, is_active, created_at, updated_at`,
-		req.CategoryID, req.Amount, req.StartDate, req.EndDate, req.IsRecurring, req.IsActive, id, userID,
-	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
+		     budget_type  = COALESCE($3, budget_type),
+		     start_date   = COALESCE($4, start_date),
+		     end_date     = COALESCE($5, end_date),
+		     is_recurring = COALESCE($6, is_recurring),
+		     is_active    = COALESCE($7, is_active)
+		 WHERE id = $8 AND user_id = $9
+		   AND COALESCE($5, end_date) >= COALESCE($4, start_date)
+		 RETURNING id, user_id, category_id, amount, budget_type, start_date, end_date, is_recurring, is_active, created_at, updated_at`,
+		req.CategoryID, req.Amount, req.BudgetType, req.StartDate, req.EndDate, req.IsRecurring, req.IsActive, id, userID,
+	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &b.BudgetType, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "budget not found"})

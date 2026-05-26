@@ -29,7 +29,6 @@ type CreateSavingsGoalRequest struct {
 	Name          string  `json:"name"           binding:"required,max=100"`
 	ImageURL      *string `json:"image_url"`
 	TargetAmount  float64 `json:"target_amount"  binding:"required,gt=0"`
-	CurrentAmount float64 `json:"current_amount" binding:"gte=0"`
 	Deadline      *string `json:"deadline"`
 }
 

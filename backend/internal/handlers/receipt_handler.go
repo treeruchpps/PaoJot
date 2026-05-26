@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"paomoney/internal/config"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"paomoney/internal/config"
 )
 
 type ReceiptItem struct {

@@ -3,9 +3,16 @@ import { Bell, Sun, Moon } from 'lucide-react';
 import NotificationPanel from './NotificationPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { profile as profileApi } from '../../services/api';
-import { formatDisplayDate } from '../../utils/dateFormat';
 
 const accent = '#2C6488';
+const fullMonthLabels = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
+
+const formatTopbarDate = (date) => (
+  `${date.getDate()} ${fullMonthLabels[date.getMonth()]} ${date.getFullYear()}`
+);
 
 export default function Topbar({ pageTitle, onProfile, notifications, onNotificationRefresh, onRefreshAccounts, isDarkMode, onToggleDarkMode }) {
   const { user } = useAuth();
@@ -21,7 +28,7 @@ export default function Topbar({ pageTitle, onProfile, notifications, onNotifica
 
   const unreadCount = (notifications || []).filter((n) => !n.is_read).length;
 
-  const today = formatDisplayDate(new Date());
+  const today = formatTopbarDate(new Date());
 
   return (
     <header className="flex-shrink-0 border-b px-6 py-4 flex items-center justify-between bg-white border-slate-100 shadow-sm">
@@ -42,7 +49,10 @@ export default function Topbar({ pageTitle, onProfile, notifications, onNotifica
         {/* Bell icon */}
         <div className="relative">
           <button
-            onClick={() => setShowPanel((v) => !v)}
+            onClick={async () => {
+              if (!showPanel) await onNotificationRefresh?.();
+              setShowPanel((v) => !v);
+            }}
             className="relative p-2.5 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors"
           >
             <Bell size={18} />

@@ -4,7 +4,7 @@ export const NAV = [
   { id: 'transactions', label: 'รายการธุรกรรม',       icon: 'ArrowLeftRight' },
   { id: 'budgets',      label: 'งบประมาณ',           icon: 'ChartPie' },
   { id: 'goals',        label: 'เป้าหมายการออม',        icon: 'Target' },
-  { id: 'recurring',    label: 'รายการทำซ้ำ',         icon: 'RefreshCw' },
+  { id: 'recurring',    label: 'รายการประจำ',         icon: 'RefreshCw' },
   { id: 'categories',   label: 'หมวดหมู่',            icon: 'Tag' },
 ];
 

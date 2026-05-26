@@ -41,6 +41,7 @@ function AppShell() {
   const [authNotice, setAuthNotice] = useState('');
   const [appState, setAppState]     = useState('checking'); // 'checking'|'setup'|'app'
   const [view, setView]             = useState('analytics');
+  const [initialAccountId, setInitialAccountId] = useState(null);
   const [collapsed, setCollapsed]   = useState(false);
   const [accounts,      setAccounts]      = useState([]);
   const [categories,    setCategories]    = useState([]);
@@ -171,12 +172,22 @@ function AppShell() {
         />
         <main className="flex-1 overflow-y-auto">
           {view === 'analytics'    && (
-            <AnalyticsView accounts={accounts} categories={categories} onGoProfile={() => setView('profile')} isDarkMode={isDarkMode} />
+            <AnalyticsView
+              accounts={accounts}
+              categories={categories}
+              onGoProfile={() => setView('profile')}
+              onGoAccounts={() => setView('accounts')}
+              isDarkMode={isDarkMode}
+            />
           )}
           {view === 'accounts'     && (
             <AccountsView
               accounts={accounts}
               onRefresh={refreshAccounts}
+              onGoTransactions={(accId) => {
+                setInitialAccountId(accId);
+                setView('transactions');
+              }}
             />
           )}
           {view === 'transactions' && (
@@ -184,7 +195,10 @@ function AppShell() {
               accounts={accounts}
               categories={categories}
               onRefreshAccounts={refreshAccounts}
+              onNotificationRefresh={refreshNotifications}
               onGoAccounts={() => setView('accounts')}
+              initialAccountId={initialAccountId}
+              onClearInitialAccountId={() => setInitialAccountId(null)}
             />
           )}
           {view === 'budgets'      && (

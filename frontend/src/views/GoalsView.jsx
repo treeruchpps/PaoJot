@@ -30,7 +30,6 @@ const EMPTY_FORM = {
   name: '',
   image_url: '',
   target_amount: '',
-  current_amount: '0',
   deadline: '',
   account_id: '',
 };
@@ -90,7 +89,6 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
       name: g.name || '',
       image_url: g.image_url || '',
       target_amount: String(g.target_amount || ''),
-      current_amount: String(g.current_amount || 0),
       deadline: g.deadline?.slice(0, 10) || '',
       account_id: g.account_id || assetAccounts[0]?.id || '',
     });
@@ -124,9 +122,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
     if (duplicateGoal) { setError('มีเป้าหมายชื่อนี้อยู่แล้ว'); return; }
     if (!form.account_id) { setError('กรุณาเลือกบัญชีเก็บออม เพื่อให้การฝากเงินเป็นการโอนที่ถูกต้อง'); return; }
     const targetAmount = parseFloat(form.target_amount);
-    const currentAmount = parseFloat(form.current_amount) || 0;
     if (targetAmount <= 0) { setError('เป้าหมายต้องมากกว่า 0'); return; }
-    if (currentAmount < 0) { setError('ยอดออมเริ่มต้นต้องไม่ติดลบ'); return; }
     setSaving(true); setError('');
     try {
       const body = {
@@ -134,7 +130,6 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
         name: goalName,
         image_url: form.image_url || null,
         target_amount: targetAmount,
-        current_amount: currentAmount,
         deadline: form.deadline || null,
       };
       if (editId) await goalsApi.update(editId, body);
@@ -454,17 +449,11 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">ออมเริ่มต้น (฿)</label>
-                  <input type="number" min="0" value={form.current_amount}
-                    onChange={(e) => setForm({ ...form, current_amount: e.target.value })}
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่เป้าหมาย</label>
+                  <input type="date" value={form.deadline}
+                    onChange={(e) => setForm({ ...form, deadline: e.target.value })}
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
                 </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่เป้าหมาย</label>
-                <input type="date" value={form.deadline}
-                  onChange={(e) => setForm({ ...form, deadline: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
               </div>
             </section>
 
@@ -483,7 +472,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
             </section>
 
             <section className="space-y-3 pt-2 border-t border-slate-100">
-              <p className="text-xs font-bold text-slate-500 uppercase">รูปลักษณ์</p>
+              <p className="text-xs font-bold text-slate-500 uppercase">รูปภาพ</p>
               <div className="h-32 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center">
                 {form.image_url ? (
                   <img src={form.image_url} alt="ตัวอย่างรูปเป้าหมาย" className="w-full h-full object-cover" />

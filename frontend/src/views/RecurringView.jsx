@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowUp, ArrowDown, ArrowLeftRight, Sun, CalendarDays, Calendar as CalendarIcon, Star, Clock, Pencil, Trash2, Plus, RefreshCw } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeftRight, Sun, CalendarDays, Calendar as CalendarIcon, Star, Clock, Edit, Trash2, Plus, RefreshCw } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { AccountSelect, CategorySelect } from '../components/common/FinanceSelects';
+import Icon from '../components/common/Icon';
 import { recurring as recurApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
+import { applySavedCategoryOrder } from '../utils/categoryOrder';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2C6488' };
@@ -14,6 +16,13 @@ const TYPE_ICON  = { income: 'ArrowUp', expense: 'ArrowDown', transfer: 'ArrowLe
 
 const FREQ_LABEL = { daily: 'ทุกวัน', weekly: 'ทุกสัปดาห์', monthly: 'ทุกเดือน', yearly: 'ทุกปี' };
 const FREQ_ICON  = { daily: 'Sun', weekly: 'CalendarDays', monthly: 'Calendar', yearly: 'Star' };
+const ACC_KIND_META = {
+  cash:         { icon: 'DollarSign', color: '#10b981' },
+  bank_account: { icon: 'Briefcase',  color: '#2C6488' },
+  savings:      { icon: 'Star',       color: '#f59e0b' },
+  e_wallet:     { icon: 'Smartphone', color: '#2C6488' },
+  investment:   { icon: 'TrendingUp', color: '#5F9A7A' },
+};
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -40,14 +49,15 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const expCats      = (categories || []).filter((c) => c.type === 'expense');
-  const incCats      = (categories || []).filter((c) => c.type === 'income');
-  const transferCats = (categories || []).filter((c) => c.type === 'transfer');
+  const expCats      = applySavedCategoryOrder('expense', (categories || []).filter((c) => c.type === 'expense'));
+  const incCats      = applySavedCategoryOrder('income', (categories || []).filter((c) => c.type === 'income'));
+  const transferCats = applySavedCategoryOrder('transfer', (categories || []).filter((c) => c.type === 'transfer'));
   const currentCats  = form.type === 'income' ? incCats
     : form.type === 'transfer' ? transferCats : expCats;
 
   const getAcc = (id) => accounts.find((a) => a.id === id);
   const getCat = (id) => (categories || []).find((c) => c.id === id);
+  const accountMeta = (kind) => ACC_KIND_META[kind] || { icon: 'DollarSign', color: '#94a3b8' };
 
   const fetchList = useCallback(async () => {
     setLoading(true);
@@ -70,6 +80,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   };
 
   const openEdit = (r) => {
+    const cats = r.type === 'income' ? incCats : r.type === 'transfer' ? transferCats : expCats;
     setEditId(r.id);
     setError('');
     setForm({
@@ -77,7 +88,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       amount:        String(r.amount),
       name:          r.name || '',
       note:          r.note || '',
-      category_id:   r.category_id || '',
+      category_id:   r.category_id || cats[0]?.id || '',
       account_id:    r.account_id,
       to_account_id: r.to_account_id || accounts[1]?.id || accounts[0]?.id || '',
       frequency:     r.frequency,
@@ -93,6 +104,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
 
   const save = async () => {
     if (!form.amount || parseFloat(form.amount) <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
+    if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
     if (!form.next_due_date) { setError('กรุณาเลือกวันครบกำหนดถัดไป'); return; }
     setSaving(true); setError('');
     try {
@@ -101,7 +113,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
         amount:        parseFloat(form.amount),
         name:          form.name || null,
         note:          form.note || null,
-        category_id:   form.category_id || null,
+        category_id:   form.category_id,
         account_id:    form.type === 'transfer' ? form.account_id : form.account_id,
         to_account_id: form.type === 'transfer' ? form.to_account_id : null,
         frequency:     form.frequency,
@@ -145,6 +157,8 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
     const toAcc = getAcc(r.to_account_id);
     const cat   = getCat(r.category_id);
     const overdue = r.next_due_date < today;
+    const accMeta = accountMeta(acc?.kind);
+    const toAccMeta = accountMeta(toAcc?.kind);
 
     return (
       <div className={`bg-white rounded-2xl p-5 shadow-sm border transition-all ${
@@ -167,13 +181,37 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                   {TYPE_LABEL[r.type]}
                 </span>
                 {cat && (
-                  <span className="text-xs text-slate-400">{cat.name}</span>
+                  <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
+                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ background: (cat.color || '#94a3b8') + '20' }}>
+                      <Icon name={cat.icon || 'Tag'} size={12} color={cat.color || '#94a3b8'} />
+                    </span>
+                    <span className="truncate">{cat.name}</span>
+                  </span>
                 )}
-                <span className="text-xs text-slate-400">
-                  {r.type === 'transfer'
-                    ? `${acc?.name || '?'} → ${toAcc?.name || '?'}`
-                    : acc?.name || '?'}
-                </span>
+                {r.type === 'transfer' ? (
+                  <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
+                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ background: accMeta.color + '20' }}>
+                      <Icon name={accMeta.icon} size={12} color={accMeta.color} />
+                    </span>
+                    <span className="truncate">{acc?.name || '?'}</span>
+                    <ArrowLeftRight size={11} color="#94a3b8" className="flex-shrink-0" />
+                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ background: toAccMeta.color + '20' }}>
+                      <Icon name={toAccMeta.icon} size={12} color={toAccMeta.color} />
+                    </span>
+                    <span className="truncate">{toAcc?.name || '?'}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
+                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ background: accMeta.color + '20' }}>
+                      <Icon name={accMeta.icon} size={12} color={accMeta.color} />
+                    </span>
+                    <span className="truncate">{acc?.name || '?'}</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -221,12 +259,14 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
               {r.is_active ? 'หยุดชั่วคราว' : 'เปิดใช้งาน'}
             </button>
             <button onClick={() => openEdit(r)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
-              <Pencil size={12} color="#64748b" />
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
+              title="แก้ไข">
+              <Edit size={12} className="text-slate-500" />
             </button>
             <button onClick={() => setDeleteTarget(r)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
-              <Trash2 size={12} color="#94a3b8" />
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-50 flex items-center justify-center transition-colors"
+              title="ลบ">
+              <Trash2 size={12} className="text-slate-400 hover:text-red-500" />
             </button>
           </div>
         </div>
@@ -240,7 +280,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-700">รายการทำซ้ำ</h2>
+          <h2 className="text-base font-semibold text-slate-700">รายการประจำ</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             รายการที่เกิดซ้ำอัตโนมัติ — กดยืนยันในแจ้งเตือนเมื่อครบกำหนด
           </p>
@@ -258,7 +298,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
         <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
           <RefreshCw size={40} color="#cbd5e1" />
           <div>
-            <p className="text-sm font-semibold text-slate-600">ยังไม่มีรายการทำซ้ำ</p>
+            <p className="text-sm font-semibold text-slate-600">ยังไม่มีรายการประจำ</p>
             <p className="text-xs text-slate-400 mt-1">เพิ่มรายการแรกเพื่อให้ระบบช่วยเตือนเมื่อถึงกำหนด</p>
           </div>
           <button onClick={openAdd}
@@ -448,8 +488,8 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       )}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="ลบรายการทำซ้ำ"
-        message={`ต้องการลบรายการทำซ้ำ "${deleteTarget?.name || 'ไม่มีชื่อรายการ'}" ใช่ไหม?`}
+        title="ลบรายการประจำ"
+        message={`ต้องการลบรายการประจำ "${deleteTarget?.name || 'ไม่มีชื่อรายการ'}" ใช่ไหม?`}
         confirmText="ลบรายการ"
         loading={deleting}
         onClose={() => setDeleteTarget(null)}

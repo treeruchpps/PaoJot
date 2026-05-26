@@ -119,6 +119,7 @@ CREATE TABLE budgets (
     user_id     UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     category_id UUID           REFERENCES categories(id) ON DELETE SET NULL,
     amount      NUMERIC(15, 2) NOT NULL CHECK (amount > 0),
+    budget_type VARCHAR(20)    NOT NULL DEFAULT 'month' CHECK (budget_type IN ('week', 'month', 'year', 'custom')),
     start_date  DATE           NOT NULL,
     end_date    DATE           NOT NULL,
     is_recurring BOOLEAN       NOT NULL DEFAULT FALSE,
@@ -152,14 +153,15 @@ CREATE TABLE recurring_transactions (
     updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
 -- ตาราง notifications
--- ============================================================
+
 CREATE TABLE notifications (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id        UUID             NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     recurring_id   UUID             REFERENCES recurring_transactions(id) ON DELETE CASCADE,
     budget_id      UUID             REFERENCES budgets(id) ON DELETE CASCADE,
+    goal_id        UUID             REFERENCES savings_goals(id) ON DELETE CASCADE,
+    notification_type VARCHAR(50)    NOT NULL DEFAULT 'recurring',
     title          VARCHAR(200)     NOT NULL,
     message        TEXT,
     is_read        BOOLEAN          NOT NULL DEFAULT FALSE,
@@ -282,10 +284,12 @@ CREATE INDEX idx_savings_goals_status  ON savings_goals(status);
 CREATE UNIQUE INDEX idx_savings_goals_user_name_unique ON savings_goals(user_id, LOWER(name));
 CREATE INDEX idx_budgets_user_id             ON budgets(user_id);
 CREATE INDEX idx_budgets_category_id         ON budgets(category_id);
+CREATE INDEX idx_budgets_user_type           ON budgets(user_id, budget_type);
 CREATE INDEX idx_recurring_user_id           ON recurring_transactions(user_id);
 CREATE INDEX idx_recurring_next_due          ON recurring_transactions(next_due_date);
 CREATE INDEX idx_notifications_user_id       ON notifications(user_id);
 CREATE INDEX idx_notifications_is_read       ON notifications(user_id, is_read);
+CREATE INDEX idx_notifications_type          ON notifications(user_id, notification_type, created_at);
 CREATE INDEX idx_receipt_jobs_user_id         ON receipt_jobs(user_id);
 CREATE INDEX idx_receipt_results_job_id       ON receipt_results(job_id);
 CREATE INDEX idx_slip_jobs_user_id           ON slip_jobs(user_id);
@@ -373,21 +377,23 @@ CREATE TRIGGER trg_create_user_profile
 -- ============================================================
 INSERT INTO categories (id, user_id, name, type, icon, color) VALUES
     -- รายจ่าย (expense) — เรียงตามลำดับที่กำหนด
-    (uuid_generate_v4(), NULL, 'อาหารและเครื่องดื่ม', 'expense', 'UtensilsCrossed', '#f97316'),
-    (uuid_generate_v4(), NULL, 'เครื่องแต่งกาย',      'expense', 'ShoppingBag',     '#ec4899'),
+    (uuid_generate_v4(), NULL, 'อาหาร',               'expense', 'UtensilsCrossed', '#f97316'),
+    (uuid_generate_v4(), NULL, 'เดินทาง',              'expense', 'Car',             '#3b82f6'),
+    (uuid_generate_v4(), NULL, 'ของใช้',               'expense', 'Package',         '#64748b'),
+    (uuid_generate_v4(), NULL, 'ช้อปปิ้ง',             'expense', 'ShoppingBag',     '#ec4899'),
+    (uuid_generate_v4(), NULL, 'บันเทิง',              'expense', 'Gamepad2',        '#8b5cf6'),
     (uuid_generate_v4(), NULL, 'ที่อยู่อาศัย',        'expense', 'Home',            '#84cc16'),
-    (uuid_generate_v4(), NULL, 'การเดินทาง',           'expense', 'Car',             '#3b82f6'),
-    (uuid_generate_v4(), NULL, 'การสื่อสาร',           'expense', 'Smartphone',      '#06b6d4'),
-    (uuid_generate_v4(), NULL, 'บันเทิง',              'expense', 'Tv',              '#8b5cf6'),
-    (uuid_generate_v4(), NULL, 'การศึกษา',             'expense', 'GraduationCap',   '#6366f1'),
+    (uuid_generate_v4(), NULL, 'ชำระบิล',              'expense', 'ReceiptText',     '#06b6d4'),
+    (uuid_generate_v4(), NULL, 'สุขภาพ',               'expense', 'HeartPulse',      '#10b981'),
+    (uuid_generate_v4(), NULL, 'ครอบครัว',             'expense', 'Users',           '#f59e0b'),
+    (uuid_generate_v4(), NULL, 'สัตว์เลี้ยง',          'expense', 'PawPrint',        '#5F9A7A'),
     (uuid_generate_v4(), NULL, 'ของขวัญ',              'expense', 'Gift',            '#f59e0b'),
-    (uuid_generate_v4(), NULL, 'การบริจาค',            'expense', 'Heart',           '#ef4444'),
-    (uuid_generate_v4(), NULL, 'ของใช้',               'expense', 'Monitor',         '#94a3b8'),
-    (uuid_generate_v4(), NULL, 'การแพทย์',             'expense', 'Shield',          '#ef4444'),
-    (uuid_generate_v4(), NULL, 'การดูแลสุขภาพ',        'expense', 'Zap',             '#10b981'),
-    (uuid_generate_v4(), NULL, 'การเงิน',              'expense', 'DollarSign',      '#6366f1'),
+    (uuid_generate_v4(), NULL, 'การบริจาค',            'expense', 'HandHeart',       '#ef4444'),
+    (uuid_generate_v4(), NULL, 'การศึกษา',             'expense', 'GraduationCap',   '#6366f1'),
+    (uuid_generate_v4(), NULL, 'ท่องเที่ยว',           'expense', 'Plane',           '#2C6488'),
+    (uuid_generate_v4(), NULL, 'งาน',                  'expense', 'BriefcaseBusiness','#475569'),
+    (uuid_generate_v4(), NULL, 'ลงทุน',                'expense', 'TrendingUp',      '#5F9A7A'),
     (uuid_generate_v4(), NULL, 'ชำระหนี้',             'expense', 'CreditCard',      '#2C6488'),
-    (uuid_generate_v4(), NULL, 'ประกัน',               'expense', 'Landmark',        '#3b82f6'),
     (uuid_generate_v4(), NULL, 'อื่นๆ',                'expense', 'Tag',             '#94a3b8'),
     -- รายรับ (income)
     (uuid_generate_v4(), NULL, 'เงินเดือน',            'income',  'Briefcase',       '#10b981'),

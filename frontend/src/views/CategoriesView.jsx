@@ -4,11 +4,11 @@ import { Plus, GripVertical, X } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { categories as categoriesApi } from '../services/api';
+import { CATEGORY_ORDER_KEY, applySavedCategoryOrder } from '../utils/categoryOrder';
 
-const ICON_OPTS  = ['UtensilsCrossed','Car','ShoppingBag','Tv','Heart','Zap','GraduationCap','Home','Briefcase','Laptop','Gift','Smartphone','Plane','Shield','Monitor','Tag','Star','DollarSign','CreditCard','PiggyBank','Landmark','ArrowLeftRight','Wallet','Banknote'];
+const ICON_OPTS  = ['UtensilsCrossed','Car','Package','ShoppingBag','Gamepad2','Home','ReceiptText','HeartPulse','Users','PawPrint','Gift','HandHeart','GraduationCap','Plane','BriefcaseBusiness','TrendingUp','CreditCard','Tv','Heart','Zap','Briefcase','Laptop','Smartphone','Shield','Monitor','Tag','Star','DollarSign','PiggyBank','Landmark','ArrowLeftRight','Wallet','Banknote'];
 const COLOR_OPTS = ['#2C6488','#10b981','#f59e0b','#2C6488','#ef4444','#ec4899','#5F9A7A','#06b6d4','#f97316','#84cc16'];
 const TAB_LABELS = { expense: 'รายจ่าย', income: 'รายรับ', transfer: 'โอนเงิน' };
-const ORDER_KEY  = 'pm_cat_order'; // localStorage key
 
 export default function CategoriesView({ onRefresh }) {
   const [tab, setTab]             = useState('expense');
@@ -30,7 +30,7 @@ export default function CategoriesView({ onRefresh }) {
   // Load order from localStorage
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(ORDER_KEY) || '{}');
+      const saved = JSON.parse(localStorage.getItem(CATEGORY_ORDER_KEY) || '{}');
       setOrderMap(saved);
     } catch {}
   }, []);
@@ -48,18 +48,15 @@ export default function CategoriesView({ onRefresh }) {
   const displayed = useMemo(() => {
     const filtered = catList.filter((c) => c.type === tab);
     const order = orderMap[tab];
-    if (!order || order.length === 0) return filtered;
-    const lookup = Object.fromEntries(filtered.map((c) => [c.id, c]));
-    const ordered   = order.filter((id) => lookup[id]).map((id) => lookup[id]);
-    const remainder = filtered.filter((c) => !order.includes(c.id));
-    return [...ordered, ...remainder];
+    if (!order || order.length === 0) return applySavedCategoryOrder(tab, filtered);
+    return applySavedCategoryOrder(tab, filtered);
   }, [catList, tab, orderMap]);
 
   const saveOrder = (newTab, newList) => {
     const ids = newList.map((c) => c.id);
     const updated = { ...orderMap, [newTab]: ids };
     setOrderMap(updated);
-    try { localStorage.setItem(ORDER_KEY, JSON.stringify(updated)); } catch {}
+    try { localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(updated)); } catch {}
   };
 
   // ── Drag handlers ─────────────────────────────────────────────────────────

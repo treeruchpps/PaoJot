@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { BellOff, RefreshCw } from 'lucide-react';
+import { BellOff, Bot, ChartPie, PiggyBank, RefreshCw } from 'lucide-react';
 import { notifications as notiApi } from '../../services/api';
 import { formatDisplayDateTime } from '../../utils/dateFormat';
 
@@ -37,6 +37,12 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
   };
 
   const unreadCount = list.filter((n) => !n.is_read).length;
+  const renderIcon = (type) => {
+    if (type?.startsWith('budget')) return <ChartPie size={15} color="#f59e0b" />;
+    if (type === 'goal_due') return <PiggyBank size={15} color="#10b981" />;
+    if (type?.startsWith('ai_')) return <Bot size={15} color="#2C6488" />;
+    return <RefreshCw size={15} color="#2C6488" />;
+  };
 
   return (
     <div
@@ -68,7 +74,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
           </div>
         ) : (
           list.map((n) => {
-            const isRecurring = !!n.recurring_id;
+            const isRecurring = (n.notification_type === 'recurring' || !!n.recurring_id) && !n.action_taken;
             const bgColor     = n.is_read ? 'bg-white' : 'bg-[#EAF3F7]/40';
 
             return (
@@ -77,7 +83,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
                 <div className="flex items-start gap-2 mb-3">
                   {/* type icon */}
                   <div className="flex-shrink-0 mt-0.5">
-                    <RefreshCw size={15} color="#2C6488" />
+                    {renderIcon(n.notification_type)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">

@@ -184,7 +184,7 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 			PeriodStart:  start.Format("2006-01-02"),
 			PeriodEnd:    end.Format("2006-01-02"),
 			WeekStartDay: weekStartDay,
-			Model:        h.cfg.Typhoon.ExtractModel,
+			Model:        h.cfg.Gemini.Model,
 			Eligible:     false,
 			Reason:       "กรุณาเปิดการยินยอมใช้ข้อมูลกับ AI ในหน้าโปรไฟล์ก่อน",
 			AIConsent:    false,
@@ -202,7 +202,7 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 		PeriodStart:    start.Format("2006-01-02"),
 		PeriodEnd:      end.Format("2006-01-02"),
 		WeekStartDay:   weekStartDay,
-		Model:          h.cfg.Typhoon.ExtractModel,
+		Model:          h.cfg.Gemini.Model,
 		DataHash:       dataHash,
 		Eligible:       eligible,
 		Reason:         reason,
@@ -220,6 +220,46 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 		resp.Summary = cached
 		resp.Cached = cachedHash == dataHash
 		resp.Stale = cachedHash != dataHash
+	} else {
+		// No summary exists for the current period yet
+		if eligible {
+			// AUTOMATIC GENERATION: If eligible and no summary exists, generate it automatically
+			summary, err := h.callGeminiSummary(input)
+			if err == nil {
+				if err := h.saveSummary(ctx, userID, input, dataHash, summary); err == nil {
+					resp.Summary = summary
+					resp.Cached = true
+					resp.Stale = false
+				}
+			}
+		}
+
+		// Fallback: If auto-generation wasn't run (ineligible) or failed, AND we are just viewing (GET request)
+		if resp.Summary == nil && !generate {
+			var raw []byte
+			var prevStart, prevEnd time.Time
+			var prevDataHash, prevModel string
+			err := h.db.QueryRow(ctx, `
+				SELECT summary_json, period_start, period_end, data_hash, model
+				FROM ai_summaries
+				WHERE user_id = $1 AND period_type = $2
+				ORDER BY period_end DESC
+				LIMIT 1
+			`, userID, periodType).Scan(&raw, &prevStart, &prevEnd, &prevDataHash, &prevModel)
+
+			if err == nil {
+				var summary aiSummaryResult
+				if err := json.Unmarshal(raw, &summary); err == nil {
+					resp.Summary = &summary
+					resp.PeriodStart = prevStart.Format("2006-01-02")
+					resp.PeriodEnd = prevEnd.Format("2006-01-02")
+					resp.Model = prevModel
+					resp.DataHash = prevDataHash
+					resp.Cached = true
+					resp.Stale = false
+				}
+			}
+		}
 	}
 
 	if !generate {
@@ -231,11 +271,11 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 		resp.Stale = false
 		return resp, nil
 	}
-	if resp.Summary != nil && resp.Cached {
+	if cached != nil && resp.Cached {
 		return resp, nil
 	}
 
-	summary, err := h.callTyphoonSummary(input)
+	summary, err := h.callGeminiSummary(input)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +534,7 @@ func (h *AISummaryHandler) largeExpenseExamples(ctx context.Context, userID stri
 	return items, rows.Err()
 }
 
-var aiSummaryPrompt = `คุณคือผู้ช่วยสรุปพฤติกรรมการเงินของแอป PaoJot
+var aiSummaryPrompt = `คุณคือผู้ช่วยสรุปพฤติกรรมการเงินของผู้ใช้
 
 หน้าที่:
 - สรุปข้อมูลรายสัปดาห์หรือรายเดือนจาก JSON ที่ backend คำนวณไว้แล้ว
@@ -518,25 +558,31 @@ var aiSummaryPrompt = `คุณคือผู้ช่วยสรุปพฤ
 - ไม่ตำหนิผู้ใช้
 - กระชับ เหมาะกับการแสดงใน Card Dashboard`
 
-func (h *AISummaryHandler) callTyphoonSummary(input *aiSummaryInput) (*aiSummaryResult, error) {
+type geminiChatReq struct {
+	Model       string       `json:"model"`
+	Messages    []llmChatMsg `json:"messages"`
+	Temperature float64      `json:"temperature"`
+	TopP        float64      `json:"top_p"`
+}
+
+func (h *AISummaryHandler) callGeminiSummary(input *aiSummaryInput) (*aiSummaryResult, error) {
 	inputJSON, _ := json.MarshalIndent(input, "", "  ")
-	payload := llmChatReq{
-		Model: h.cfg.Typhoon.ExtractModel,
+	payload := geminiChatReq{
+		Model: h.cfg.Gemini.Model,
 		Messages: []llmChatMsg{
 			{Role: "system", Content: aiSummaryPrompt},
 			{Role: "user", Content: "ช่วยสรุปข้อมูลการเงินนี้:\n\n" + string(inputJSON)},
 		},
-		MaxTokens:   900,
 		Temperature: 0.25,
 		TopP:        0.6,
 	}
 
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", h.cfg.Typhoon.BaseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", h.cfg.Gemini.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+h.cfg.Typhoon.APIKey)
+	req.Header.Set("Authorization", "Bearer "+h.cfg.Gemini.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 75 * time.Second}
@@ -548,7 +594,7 @@ func (h *AISummaryHandler) callTyphoonSummary(input *aiSummaryInput) (*aiSummary
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Typhoon LLM %d: %s", resp.StatusCode, string(b))
+		return nil, fmt.Errorf("Gemini LLM %d: %s", resp.StatusCode, string(b))
 	}
 
 	var llmResp llmChatResp
@@ -600,7 +646,7 @@ func (h *AISummaryHandler) saveSummary(ctx context.Context, userID string, input
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (user_id, period_type, period_start, period_end, week_start_day)
 		DO UPDATE SET model = EXCLUDED.model, data_hash = EXCLUDED.data_hash, summary_json = EXCLUDED.summary_json, updated_at = NOW()
-	`, randomID(), userID, input.PeriodType, input.PeriodStart, input.PeriodEnd, input.WeekStartDay, h.cfg.Typhoon.ExtractModel, dataHash, raw)
+	`, randomID(), userID, input.PeriodType, input.PeriodStart, input.PeriodEnd, input.WeekStartDay, h.cfg.Gemini.Model, dataHash, raw)
 	return err
 }
 
@@ -614,8 +660,8 @@ func summaryEligibility(input *aiSummaryInput) (bool, string) {
 		}
 		return true, ""
 	}
-	if input.TransactionCount <= 30 {
-		return false, "ต้องมีรายการรายรับ/รายจ่ายมากกว่า 30 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้"
+	if input.TransactionCount <= 10 {
+		return false, "ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้"
 	}
 	return true, ""
 }

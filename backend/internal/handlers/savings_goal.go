@@ -151,7 +151,7 @@ func (h *SavingsGoalHandler) Create(c *gin.Context) {
 		`INSERT INTO savings_goals (user_id, account_id, name, image_url, target_amount, current_amount, deadline)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, created_at, updated_at`,
-		userID, req.AccountID, req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, deadline,
+		userID, req.AccountID, req.Name, req.ImageURL, req.TargetAmount, 0, deadline,
 	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 		&g.CurrentAmount, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
 

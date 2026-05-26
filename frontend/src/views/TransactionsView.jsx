@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 import { transactions as txApi, slipJobs as slipJobsApi, receiptJobs as receiptJobsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
+import { applySavedCategoryOrder } from '../utils/categoryOrder';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน', adjustment: 'ปรับยอด' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2563eb', adjustment: '#f59e0b' };
@@ -73,7 +74,7 @@ function AccKindIcon({ kind, size = 15 }) {
 }
 
 // ─── Custom Select: หมวดหมู่ (category) ──────────────────────────────────────
-function CatSelect({ value, onChange, categories, placeholder = '— ไม่ระบุ —' }) {
+function CatSelect({ value, onChange, categories, placeholder = 'เลือกหมวดหมู่' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const selected = categories.find((c) => c.id === value);
@@ -104,14 +105,6 @@ function CatSelect({ value, onChange, categories, placeholder = '— ไม่�
       </button>
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-          {placeholder && (
-            <button type="button" onClick={() => { onChange(''); setOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-400 hover:bg-slate-50 transition-colors"
-              style={{ background: !value ? '#f8fafc' : undefined }}>
-              <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0" />
-              <span>{placeholder}</span>
-            </button>
-          )}
           {categories.map((c) => (
             <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"
@@ -366,7 +359,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
 }
 
 // ─── Main view ────────────────────────────────────────────────────────────────
-export default function TransactionsView({ accounts, categories, onRefreshAccounts, onGoAccounts }) {
+export default function TransactionsView({ accounts, categories, onRefreshAccounts, onNotificationRefresh, onGoAccounts, initialAccountId, onClearInitialAccountId }) {
   const today     = new Date().toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
   const thisYear  = today.slice(0, 4);
@@ -394,8 +387,15 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const [filterMonth,  setFilterMonth]  = useState('month');
   const [selectedMonth, setSelectedMonth] = useState(thisMonth);
   const [filterType,   setFilterType]   = useState('all');
-  const [filterAcc,    setFilterAcc]    = useState('all');
+  const [filterAcc,    setFilterAcc]    = useState(initialAccountId || 'all');
   const [search,       setSearch]       = useState('');
+
+  useEffect(() => {
+    if (initialAccountId) {
+      setFilterAcc(initialAccountId);
+      onClearInitialAccountId?.();
+    }
+  }, [initialAccountId, onClearInitialAccountId]);
   const [sortBy,       setSortBy]       = useState('date');
   const [sortDir,      setSortDir]      = useState('desc');
   const [currentPage,  setCurrentPage]  = useState(1);
@@ -519,7 +519,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         quantity:    it.quantity || 1,
         unit_price:  it.unit_price,
         note:        it.note || '',
-        category_id: (categories || []).filter((c) => c.type === 'expense')[0]?.id || '',
+        category_id: expCats[0]?.id || '',
         include:     true,
       })));
     setOcrStep('result');
@@ -618,6 +618,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const saveOcrReceipt = async () => {
     const selected = ocrItems.filter((it) => it.include && it.unit_price > 0);
     if (selected.length === 0) { setOcrError('เลือกรายการอย่างน้อย 1 อัน'); return; }
+    if (selected.some((it) => !it.category_id)) { setOcrError('กรุณาเลือกหมวดหมู่ให้ครบทุกรายการ'); return; }
     const total = selected.reduce((sum, it) => sum + (parseFloat(it.unit_price) * (parseFloat(it.quantity) || 1)), 0);
     const account = accounts.find((a) => a.id === ocrAccount);
     if (total > Number(account?.balance || 0)) {
@@ -632,7 +633,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
           amount:           parseFloat(it.unit_price) * (parseFloat(it.quantity) || 1),
           name:             it.name || null,
           note:             it.note || ocrNote || null,
-          category_id:      it.category_id || null,
+          category_id:      it.category_id,
           account_id:       ocrAccount,
           transaction_date: ocrDate,
         })
@@ -640,7 +641,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       if (receiptJob?.id && activeReceiptId) {
         await receiptJobsApi.save(receiptJob.id, activeReceiptId);
       }
-      await Promise.all([fetchTx(), onRefreshAccounts?.()]);
+      await Promise.all([fetchTx(), onRefreshAccounts?.(), onNotificationRefresh?.()]);
       if (receiptJob?.id) {
         const updatedJob = await receiptJobsApi.get(receiptJob.id);
         setReceiptJob(updatedJob);
@@ -718,7 +719,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         const next = { ...prev };
         (job.slips || []).forEach((r) => {
           if (r.status === 'done' && !next[r.id]) {
-            const expCat = (categories || []).find((c) => c.type === 'expense');
+              const expCat = expCats[0];
             next[r.id] = {
               tx_type: 'expense',
               account_id: accounts[0]?.id || '',
@@ -780,7 +781,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             const next = { ...prev };
             (job.slips || []).forEach((r) => {
               if (r.status === 'done' && !next[r.id]) {
-                const expCat = (categories || []).find((c) => c.type === 'expense');
+                const expCat = expCats[0];
                 const autoName = r.receiver
                   ? `${r.receiver}`
                   : r.sender
@@ -819,6 +820,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     if (!rv) return;
     if (!rv.amount || parseFloat(rv.amount) <= 0) { setSlipError('กรุณาใส่จำนวนเงิน'); return; }
     if (!rv.account_id) { setSlipError('กรุณาเลือกบัญชี'); return; }
+    if (!rv.category_id) { setSlipError('กรุณาเลือกหมวดหมู่'); return; }
     if ((rv.tx_type || 'expense') === 'expense') {
       const account = accounts.find((a) => a.id === rv.account_id);
       if (parseFloat(rv.amount) > Number(account?.balance || 0)) {
@@ -832,7 +834,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       await slipJobsApi.save(slipJobId, slip.id, {
         tx_type:          rv.tx_type || 'expense',
         account_id:       rv.account_id,
-        category_id:      rv.category_id || '',
+        category_id:      rv.category_id,
         amount:           parseFloat(rv.amount),
         name:             rv.name || '',
         transaction_date: rv.transaction_date || today,
@@ -841,8 +843,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         image_path:       slip.image_path || '',
       });
       setSlipSaved((p) => ({ ...p, [slip.id]: true }));
-      await onRefreshAccounts?.();
-      await fetchTx();
+      await Promise.all([onRefreshAccounts?.(), fetchTx(), onNotificationRefresh?.()]);
       await refreshOcrJobs();
     } catch (err) {
       setSlipError(err.message || 'บันทึกไม่สำเร็จ');
@@ -988,32 +989,19 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   useEffect(() => { fetchTx(); }, [fetchTx]);
 
   // ── Categories ───────────────────────────────────────────────────────────
-  const expCats      = (categories || []).filter((c) => c.type === 'expense');
-  const incCats      = (categories || []).filter((c) => c.type === 'income');
-  const transferCats = (categories || []).filter((c) => c.type === 'transfer');
-
-  // Apply localStorage drag order (pm_cat_order) to a category list
-  const applyOrder = (type, cats) => {
-    try {
-      const orderMap = JSON.parse(localStorage.getItem('pm_cat_order') || '{}');
-      const order = orderMap[type];
-      if (!order || order.length === 0) return cats;
-      const lookup   = Object.fromEntries(cats.map((c) => [c.id, c]));
-      const ordered  = order.filter((id) => lookup[id]).map((id) => lookup[id]);
-      const remainder = cats.filter((c) => !order.includes(c.id));
-      return [...ordered, ...remainder];
-    } catch { return cats; }
-  };
+  const expCats      = applySavedCategoryOrder('expense', (categories || []).filter((c) => c.type === 'expense'));
+  const incCats      = applySavedCategoryOrder('income', (categories || []).filter((c) => c.type === 'income'));
+  const transferCats = applySavedCategoryOrder('transfer', (categories || []).filter((c) => c.type === 'transfer'));
 
   const currentCats = txType === 'income'
-    ? applyOrder('income',   incCats)
+    ? incCats
     : txType === 'transfer'
-      ? applyOrder('transfer', transferCats)
-      : applyOrder('expense',  expCats);
+      ? transferCats
+      : expCats;
 
   const changeModalType = (nextType) => {
     if (nextType === txType) return;
-    const cats = nextType === 'income' ? applyOrder('income', incCats) : applyOrder('expense', expCats);
+    const cats = nextType === 'income' ? incCats : expCats;
     setTxType(nextType);
     setForm((prev) => ({
       ...prev,
@@ -1033,10 +1021,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setEditId(null);
     setError('');
     const cats = type === 'income'
-      ? applyOrder('income',   incCats)
+      ? incCats
       : type === 'transfer'
-        ? applyOrder('transfer', transferCats)
-        : applyOrder('expense',  expCats);
+        ? transferCats
+        : expCats;
     setForm({
       name: '', amount: '', note: '',
       category_id:      cats[0]?.id || '',
@@ -1052,6 +1040,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const openEdit = (tx) => {
     // Adjustment → เปิด modal ปรับยอดบัญชีตรงๆ เหมือนหน้าบัญชี/กระเป๋าเงิน
     if (tx.type === 'adjustment') return;
+    const cats = tx.type === 'income'
+      ? incCats
+      : tx.type === 'transfer'
+        ? transferCats
+        : expCats;
     setTxType(tx.type);
     setEditId(tx.id);
     setError('');
@@ -1059,7 +1052,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       name:             tx.name  || '',
       amount:           String(tx.amount),
       note:             tx.note  || '',
-      category_id:      tx.category_id      || '',
+      category_id:      tx.category_id      || cats[0]?.id || '',
       account_id:       tx.account_id       || accounts[0]?.id || '',
       from_account_id:  tx.account_id       || accounts[0]?.id || '',
       to_account_id:    tx.to_account_id    || accounts[1]?.id || accounts[0]?.id || '',
@@ -1072,6 +1065,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const save = async () => {
     const amount = parseFloat(form.amount);
     if (!form.amount || amount <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
+    if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
     if (txType === 'transfer' && form.from_account_id === form.to_account_id) {
       setError('บัญชีต้นทางและปลายทางต้องไม่ใช่บัญชีเดียวกัน');
       return;
@@ -1098,17 +1092,17 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       if (txType === 'transfer') {
         body.account_id    = form.from_account_id;
         body.to_account_id = form.to_account_id;
-        body.category_id   = form.category_id || null;
+        body.category_id   = form.category_id;
       } else {
         body.account_id  = form.account_id;
-        body.category_id = form.category_id || null;
+        body.category_id = form.category_id;
       }
       if (editId) {
         await txApi.update(editId, body);
       } else {
         await txApi.create(body);
       }
-      await Promise.all([fetchTx(), onRefreshAccounts?.()]);
+      await Promise.all([fetchTx(), onRefreshAccounts?.(), onNotificationRefresh?.()]);
       setEditId(null);
       setShowModal(false);
     } catch (err) {
@@ -1123,7 +1117,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setDeleting(true);
     try {
       await txApi.delete(deleteTarget.id);
-      await Promise.all([fetchTx(), onRefreshAccounts?.()]);
+      await Promise.all([fetchTx(), onRefreshAccounts?.(), onNotificationRefresh?.()]);
       setDeleteTarget(null);
     } catch (err) { alert(err.message); }
     finally { setDeleting(false); }
@@ -1936,8 +1930,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                           <CatSelect
                             value={it.category_id}
                             onChange={(v) => setOcrItems((prev) => prev.map((x, j) => j === i ? { ...x, category_id: v } : x))}
-                            categories={(categories || []).filter((c) => c.type === 'expense')}
-                            placeholder="— ไม่ระบุหมวดหมู่ —"
+                            categories={expCats}
                           />
                         </div>
                         {/* หมายเหตุรายการนี้ */}
@@ -1954,7 +1947,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   <button
                     onClick={() => setOcrItems((prev) => [...prev, {
                       name: '', quantity: 1, unit_price: '', note: '',
-                      category_id: (categories || []).filter((c) => c.type === 'expense')[0]?.id || '',
+                      category_id: expCats[0]?.id || '',
                       include: true,
                     }])}
                     className="mt-2 w-full py-2 rounded-xl border-2 border-dashed border-[#BFD8E4] text-[#2C6488] text-sm font-medium hover:border-[#6F9DB6] hover:bg-[#EAF3F7]/60 transition-colors flex items-center justify-center gap-1"
@@ -2178,7 +2171,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                                     key={opt.val}
                                     type="button"
                                     onClick={() => setSlipReview((p) => {
-                                      const catForType = (categories || []).find((c) => c.type === opt.val);
+                                      const catForType = opt.val === 'income' ? incCats[0] : expCats[0];
                                       return {
                                         ...p,
                                         [slip.id]: {
@@ -2273,7 +2266,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                                 <CatSelect
                                   value={rv.category_id}
                                   onChange={(v) => setSlipReview((p) => ({ ...p, [slip.id]: { ...p[slip.id], category_id: v } }))}
-                                  categories={(categories || []).filter((c) => c.type === rv.tx_type)}
+                                  categories={rv.tx_type === 'income' ? incCats : expCats}
                                 />
                               </div>
 

@@ -21,7 +21,7 @@ function AccKindIcon({ kind, size = 15 }) {
   return null;
 }
 
-export function CategorySelect({ value, onChange, categories = [], placeholder = '— ไม่ระบุ —' }) {
+export function CategorySelect({ value, onChange, categories = [], placeholder = 'เลือกหมวดหมู่' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const selected = categories.find((c) => c.id === value);
@@ -52,14 +52,6 @@ export function CategorySelect({ value, onChange, categories = [], placeholder =
       </button>
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-          {placeholder && (
-            <button type="button" onClick={() => { onChange(''); setOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-400 hover:bg-slate-50 transition-colors"
-              style={{ background: !value ? '#f8fafc' : undefined }}>
-              <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0" />
-              <span>{placeholder}</span>
-            </button>
-          )}
           {categories.map((c) => (
             <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"

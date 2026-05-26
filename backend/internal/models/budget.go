@@ -7,6 +7,7 @@ type Budget struct {
 	UserID      string    `json:"user_id"`
 	CategoryID  *string   `json:"category_id"`
 	Amount      float64   `json:"amount"`
+	BudgetType  string    `json:"budget_type"`
 	StartDate   string    `json:"start_date"`
 	EndDate     string    `json:"end_date"`
 	IsRecurring bool      `json:"is_recurring"`
@@ -19,6 +20,7 @@ type Budget struct {
 type CreateBudgetRequest struct {
 	CategoryID  *string `json:"category_id"`
 	Amount      float64 `json:"amount"       binding:"required,gt=0"`
+	BudgetType  string  `json:"budget_type"  binding:"required,oneof=week month year custom"`
 	StartDate   string  `json:"start_date"   binding:"required"`
 	EndDate     string  `json:"end_date"     binding:"required"`
 	IsRecurring bool    `json:"is_recurring"`
@@ -27,6 +29,7 @@ type CreateBudgetRequest struct {
 type UpdateBudgetRequest struct {
 	CategoryID  *string  `json:"category_id"`
 	Amount      *float64 `json:"amount"       binding:"omitempty,gt=0"`
+	BudgetType  *string  `json:"budget_type"  binding:"omitempty,oneof=week month year custom"`
 	StartDate   *string  `json:"start_date"`
 	EndDate     *string  `json:"end_date"`
 	IsRecurring *bool    `json:"is_recurring"`

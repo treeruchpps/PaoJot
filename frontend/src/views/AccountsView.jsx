@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown } from 'lucide-react';
+import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown, ReceiptText } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { accounts as accountsApi, transactions as txApi } from '../services/api';
@@ -99,7 +99,7 @@ function AssetKindDropdown({ value, onChange }) {
 }
 
 // ─── Main View ────────────────────────────────────────────────────────────────
-export default function AccountsView({ accounts, onRefresh }) {
+export default function AccountsView({ accounts, onRefresh, onGoTransactions }) {
   // Add / Edit account modal
   const [showModal, setShowModal]             = useState(false);
   const [editId, setEditId]                   = useState(null);
@@ -254,36 +254,73 @@ export default function AccountsView({ accounts, onRefresh }) {
     setAlloc(idx, String((parseFloat(allocations[idx].amount) || 0) + remaining));
   };
 
-  // ── Account Card ───────────────────────────────────────────────────────────
+  const handleDistributeEqually = () => {
+    const amt = parseFloat(poolAmount) || 0;
+    if (amt <= 0 || assetAccounts.length === 0) return;
+    const equalAmt = (amt / assetAccounts.length).toFixed(2);
+    setAllocations(
+      allocations.map((a) => ({
+        ...a,
+        amount: String(equalAmt),
+      }))
+    );
+  };
+
+  const handleClearAllocations = () => {
+    setAllocations(
+      allocations.map((a) => ({
+        ...a,
+        amount: '',
+      }))
+    );
+  };
+
   const AccountCard = ({ acc }) => {
     const k = getKind(acc.kind);
+    
     return (
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 card-hover">
-        <div className="flex items-start justify-between mb-4">
+      <div
+        className="relative rounded-2xl p-5 shadow-sm border border-slate-100 card-hover hover:-translate-y-1.5 hover:shadow-md transition-all duration-300 overflow-hidden group"
+        style={{ backgroundColor: '#ffffff' }}
+      >
+        <div className="flex items-start justify-between mb-4 relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: k.color + '18' }}>
-              <KindIcon icon={k.icon} color={k.color} size={22} />
+            {/* Logo/Chip */}
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: k.color + '18' }}>
+              <KindIcon icon={k.icon} color={k.color} size={20} />
             </div>
             <div>
-              <p className="font-semibold text-slate-800">{acc.name}</p>
+              <p className="font-bold text-slate-800 tracking-tight">{acc.name}</p>
               <p className="text-xs text-slate-400 mt-0.5">{k.label}</p>
             </div>
           </div>
           <div className="flex gap-1">
+            <button onClick={() => onGoTransactions?.(acc.id)}
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
+              title="ดูรายการธุรกรรม">
+              <ReceiptText size={12} className="text-slate-500" />
+            </button>
             <button onClick={() => openEdit(acc)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#DCE8EE] flex items-center justify-center transition-colors">
-              <Edit size={12} color="#64748b" />
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
+              title="แก้ไข">
+              <Edit size={12} className="text-slate-500" />
             </button>
             <button onClick={() => setDeleteTarget(acc)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
-              <Trash2 size={12} color="#94a3b8" />
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-50 flex items-center justify-center transition-colors"
+              title="ลบ">
+              <Trash2 size={12} className="text-slate-400 hover:text-red-500" />
             </button>
           </div>
         </div>
-        <p className="text-2xl font-bold text-emerald-600">
-          ฿{fmt(acc.balance)}
-        </p>
-        <p className="text-xs text-slate-400 mt-0.5">{acc.currency}</p>
+
+        <div className="mt-6 relative z-10">
+          <p className="text-2xl font-extrabold tracking-tight text-emerald-600">
+            ฿{fmt(acc.balance)}
+          </p>
+          <div className="flex items-center justify-between mt-1 border-t border-slate-200/40 pt-2">
+            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">{acc.currency}</span>
+          </div>
+        </div>
       </div>
     );
   };
@@ -369,7 +406,7 @@ export default function AccountsView({ accounts, onRefresh }) {
               <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อบัญชี</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder=""
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
             </div>
 
             {/* Balance */}
@@ -388,7 +425,7 @@ export default function AccountsView({ accounts, onRefresh }) {
                 </label>
                 <input type="number" min="0" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })}
                   placeholder="0.00"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
               </div>
             )}
 
@@ -508,12 +545,12 @@ export default function AccountsView({ accounts, onRefresh }) {
                 <label className="text-xs font-medium text-slate-500 mb-1 block">ยอดเงิน (฿)</label>
                 <input type="number" min="0" value={poolAmount} onChange={(e) => setPoolAmount(e.target.value)}
                   placeholder="0.00"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 font-bold text-lg" />
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 font-bold text-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่</label>
                 <input type="date" value={distDate} onChange={(e) => setDistDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
               </div>
             </div>
             {pool > 0 && (
@@ -536,7 +573,21 @@ export default function AccountsView({ accounts, onRefresh }) {
               </div>
             )}
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-2 block">จัดสรรเข้าบัญชี</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-slate-500">จัดสรรเข้าบัญชี</label>
+                {pool > 0 && (
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={handleDistributeEqually}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-[#EAF3F7] text-[#2C6488] hover:bg-[#DCE8EE] transition-colors">
+                      แบ่งเท่ากัน
+                    </button>
+                    <button type="button" onClick={handleClearAllocations}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
+                      ล้างข้อมูล
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {allocations.map((alloc, idx) => {
                   const k = getKind(alloc.kind);
@@ -555,7 +606,7 @@ export default function AccountsView({ accounts, onRefresh }) {
                         <span className="text-sm text-slate-400">฿</span>
                         <input type="number" min="0" value={alloc.amount}
                           onChange={(e) => setAlloc(idx, e.target.value)} placeholder="0"
-                          className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right bg-white text-slate-700 font-medium" />
+                          className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
                         {pool > 0 && remaining > 0 && (
                           <button onClick={() => fillRemaining(idx)} title="เติมยอดที่เหลือ"
                             className="w-6 h-6 rounded-lg bg-[#EAF3F7] hover:bg-[#DCE8EE] flex items-center justify-center transition-colors flex-shrink-0">

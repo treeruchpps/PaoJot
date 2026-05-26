@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 import { budgets as budgetsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
+import { applySavedCategoryOrder } from '../utils/categoryOrder';
 
 const getColor = (pct) => pct <= 50 ? '#10b981' : pct <= 80 ? '#f59e0b' : '#ef4444';
 const getBg = (pct) => pct <= 50 ? '#f0fdf4' : pct <= 80 ? '#fffbeb' : '#fff1f2';
@@ -54,8 +55,21 @@ const EMPTY_FORM = {
   category_id: '',
   amount: '',
   range_preset: 'month',
+  budget_type: 'month',
   ...getPresetRange('month'),
   is_recurring: false,
+};
+const BUDGET_TABS = [
+  { value: 'all', label: 'ทั้งหมด' },
+  { value: 'week', label: 'รายสัปดาห์' },
+  { value: 'month', label: 'รายเดือน' },
+  { value: 'year', label: 'รายปี' },
+];
+const BUDGET_TYPE_LABEL = {
+  week: 'รายสัปดาห์',
+  month: 'รายเดือน',
+  year: 'รายปี',
+  custom: 'กำหนดเอง',
 };
 
 export default function BudgetsView({ categories }) {
@@ -69,9 +83,10 @@ export default function BudgetsView({ categories }) {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState('all');
 
   const expenseCategories = useMemo(
-    () => (categories || []).filter((c) => c.type === 'expense'),
+    () => applySavedCategoryOrder('expense', (categories || []).filter((c) => c.type === 'expense')),
     [categories],
   );
 
@@ -90,7 +105,7 @@ export default function BudgetsView({ categories }) {
   useEffect(() => { fetchAll(); }, []);
 
   const getCat = (id) => expenseCategories.find((c) => c.id === id);
-  const getCatName = (id) => getCat(id)?.name || 'รวมทุกหมวด';
+  const getCatName = (id) => getCat(id)?.name || 'ไม่พบหมวดหมู่';
   const getStatus = (spent, limit) => {
     if (spent > limit) return { label: 'เกินงบ', color: '#dc2626', bg: '#fef2f2', icon: AlertCircle };
     if (spent === limit && limit > 0) return { label: 'ใช้ครบงบแล้ว', color: '#f59e0b', bg: '#fffbeb', icon: AlertCircle };
@@ -101,7 +116,14 @@ export default function BudgetsView({ categories }) {
 
   const openCreate = () => {
     setEditId(null);
-    setForm({ ...EMPTY_FORM, range_preset: 'month', ...getPresetRange('month') });
+    const defaultType = activeTab === 'all' ? 'month' : activeTab;
+    setForm({
+      ...EMPTY_FORM,
+      category_id: expenseCategories[0]?.id || '',
+      range_preset: defaultType,
+      budget_type: defaultType,
+      ...getPresetRange(defaultType),
+    });
     setError('');
     setShowModal(true);
   };
@@ -109,9 +131,10 @@ export default function BudgetsView({ categories }) {
   const openEdit = (budget) => {
     setEditId(budget.id);
     setForm({
-      category_id: budget.category_id || '',
+      category_id: budget.category_id || expenseCategories[0]?.id || '',
       amount: String(budget.amount),
-      range_preset: 'custom',
+      range_preset: budget.budget_type || 'custom',
+      budget_type: budget.budget_type || 'custom',
       start_date: budget.start_date || todayStr(),
       end_date: budget.end_date || addDays(todayStr(), 29),
       is_recurring: !!budget.is_recurring,
@@ -122,15 +145,23 @@ export default function BudgetsView({ categories }) {
 
   const save = async () => {
     const amount = parseFloat(form.amount);
+    if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
     if (!amount || amount <= 0) { setError('วงเงินต้องมากกว่า 0'); return; }
     if (!form.start_date || !form.end_date) { setError('กรุณาเลือกวันเริ่มต้นและวันสิ้นสุด'); return; }
     if (new Date(form.end_date) < new Date(form.start_date)) { setError('วันสิ้นสุดต้องไม่น้อยกว่าวันเริ่มต้น'); return; }
+    const duplicate = budgetList.find((b) =>
+      b.id !== editId &&
+      b.category_id === form.category_id &&
+      (b.budget_type || 'custom') === form.budget_type
+    );
+    if (duplicate) { setError(`หมวดหมู่นี้มีงบประมาณ${BUDGET_TYPE_LABEL[form.budget_type] || ''}อยู่แล้ว`); return; }
 
     setSaving(true); setError('');
     try {
       const body = {
-        category_id: form.category_id || null,
+        category_id: form.category_id,
         amount,
+        budget_type: form.budget_type,
         start_date: form.start_date,
         end_date: form.end_date,
         is_recurring: form.is_recurring,
@@ -145,10 +176,10 @@ export default function BudgetsView({ categories }) {
 
   const setRangePreset = (preset) => {
     if (preset === 'custom') {
-      setForm({ ...form, range_preset: preset });
+      setForm({ ...form, range_preset: preset, budget_type: 'custom' });
       return;
     }
-    setForm({ ...form, range_preset: preset, ...getPresetRange(preset) });
+    setForm({ ...form, range_preset: preset, budget_type: preset, ...getPresetRange(preset) });
   };
 
   const remove = async () => {
@@ -162,14 +193,17 @@ export default function BudgetsView({ categories }) {
     finally { setDeleting(false); }
   };
 
-  const totalLimit = budgetList.reduce((s, b) => s + b.amount, 0);
-  const totalSpent = budgetList.reduce((s, b) => s + (b.spent || 0), 0);
+  const visibleBudgets = activeTab === 'all'
+    ? budgetList
+    : budgetList.filter((b) => (b.budget_type || 'custom') === activeTab);
+  const totalLimit = visibleBudgets.reduce((s, b) => s + b.amount, 0);
+  const totalSpent = visibleBudgets.reduce((s, b) => s + (b.spent || 0), 0);
   const totalPct = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0;
   const totalRemaining = Math.max(0, totalLimit - totalSpent);
 
   return (
     <div className="p-6 space-y-5">
-      {!loading && budgetList.length > 0 && (
+      {!loading && visibleBudgets.length > 0 && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
@@ -210,14 +244,38 @@ export default function BudgetsView({ categories }) {
         </button>
       </div>
 
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {BUDGET_TABS.map((tab) => {
+          const active = activeTab === tab.value;
+          const count = tab.value === 'all'
+            ? budgetList.length
+            : budgetList.filter((b) => (b.budget_type || 'custom') === tab.value).length;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setActiveTab(tab.value)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap ${
+                active ? 'bg-[#2C6488] text-white border-[#2C6488]' : 'bg-white text-slate-500 border-slate-100 hover:border-[#BFD8E4]'
+              }`}
+            >
+              {tab.label}
+              <span className={`ml-2 text-xs ${active ? 'text-white/80' : 'text-slate-400'}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลด...</div>
-      ) : budgetList.length === 0 ? (
+      ) : visibleBudgets.length === 0 ? (
         <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
           <ChartPie size={40} color="#cbd5e1" />
           <div>
-            <p className="text-sm font-semibold text-slate-600">ยังไม่มีงบประมาณ</p>
-            <p className="text-xs text-slate-400 mt-1">สร้างงบแรกโดยเลือกหมวดหมู่ วงเงิน และช่วงวันที่ที่ต้องการคุมค่าใช้จ่าย</p>
+            <p className="text-sm font-semibold text-slate-600">
+              {budgetList.length === 0 ? 'ยังไม่มีงบประมาณ' : `ยังไม่มีงบประมาณ${BUDGET_TYPE_LABEL[activeTab] || ''}`}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">สร้างงบโดยเลือกหมวดหมู่ วงเงิน และช่วงวันที่ที่ต้องการคุมค่าใช้จ่าย</p>
           </div>
           <button onClick={openCreate}
             className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
@@ -226,7 +284,7 @@ export default function BudgetsView({ categories }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {budgetList.map((budget) => {
+          {visibleBudgets.map((budget) => {
             const spent = budget.spent || 0;
             const pct = budget.amount > 0 ? Math.min(100, Math.round((spent / budget.amount) * 100)) : 0;
             const color = getColor(pct);
@@ -248,7 +306,9 @@ export default function BudgetsView({ categories }) {
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-sm text-slate-700 truncate">{getCatName(budget.category_id)}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{formatDisplayDateRange(budget.start_date, budget.end_date)}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {BUDGET_TYPE_LABEL[budget.budget_type || 'custom']} · {formatDisplayDateRange(budget.start_date, budget.end_date)}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
@@ -317,14 +377,6 @@ export default function BudgetsView({ categories }) {
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1 block">หมวดหมู่</label>
               <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                <button type="button" onClick={() => setForm({ ...form, category_id: '' })}
-                  className="flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-colors"
-                  style={{ borderColor: form.category_id === '' ? '#2C6488' : '#e2e8f0', background: form.category_id === '' ? '#EAF3F7' : '#f8fafc' }}>
-                  <span className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center">
-                    <Wallet size={15} color="#64748b" />
-                  </span>
-                  <span className="font-medium text-slate-700">รวมทุกหมวด</span>
-                </button>
                 {expenseCategories.map((cat) => (
                   <button key={cat.id} type="button" onClick={() => setForm({ ...form, category_id: cat.id })}
                     className="flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-colors"
