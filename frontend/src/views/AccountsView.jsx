@@ -349,13 +349,13 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         <h2 className="text-base font-semibold text-slate-700">บัญชีทั้งหมด</h2>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={openPoolAdd}
-            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-            <Plus size={15} color="white" /> เพิ่มบัญชี
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+            <Plus size={13} color="#2C6488" /> เพิ่มบัญชี
           </button>
           {assetAccounts.length > 0 && (
             <button onClick={openDist}
-              className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-              <Share2 size={15} color="white" /> จัดสรรเงินเข้าบัญชี
+              className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+              <Share2 size={13} color="#2C6488" /> จัดสรรเงินเข้าบัญชี
             </button>
           )}
         </div>
@@ -378,8 +378,8 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             <p className="text-xs text-slate-400 mt-1">สร้างบัญชีแรกเพื่อเริ่มบันทึกรายรับ รายจ่าย และโอนเงิน</p>
           </div>
           <button onClick={openPoolAdd}
-            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-            <Plus size={15} color="white" /> สร้างบัญชีแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+            <Plus size={13} color="#2C6488" /> สร้างบัญชีแรก
           </button>
         </div>
       )}
@@ -633,7 +633,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
       <ConfirmDialog
         open={!!deleteTarget}
         title="ลบบัญชี"
-        message={`ต้องการลบบัญชี "${deleteTarget?.name || ''}" ใช่ไหม? รายการธุรกรรมและรายการประจำที่เกี่ยวข้องกับบัญชีนี้จะถูกลบไปด้วย`}
+        message={`ต้องการลบบัญชี "${deleteTarget?.name || ''}" ใช่ไหม? รายการธุรกรรม รายการประจำ และเป้าหมายการออมที่เชื่อมกับบัญชีนี้จะถูกลบไปด้วย`}
         confirmText="ลบบัญชี"
         loading={deleting}
         onClose={() => setDeleteTarget(null)}

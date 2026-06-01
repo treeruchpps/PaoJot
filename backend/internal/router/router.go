@@ -90,6 +90,7 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		protected.GET("/savings-goals/:id", goalH.Get)
 		protected.PUT("/savings-goals/:id", goalH.Update)
 		protected.DELETE("/savings-goals/:id", goalH.Delete)
+		protected.POST("/savings-goals/:id/initial-balance", goalH.AddInitialBalance)
 		protected.POST("/savings-goals/:id/deposit", goalH.Deposit)
 
 		// Budgets

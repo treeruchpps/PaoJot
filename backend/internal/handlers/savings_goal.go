@@ -20,7 +20,16 @@ type SavingsGoalHandler struct {
 }
 
 func NewSavingsGoalHandler(db *pgxpool.Pool) *SavingsGoalHandler {
-	return &SavingsGoalHandler{db: db}
+	h := &SavingsGoalHandler{db: db}
+	h.ensureSchema()
+	return h
+}
+
+func (h *SavingsGoalHandler) ensureSchema() {
+	_, _ = h.db.Exec(context.Background(), `
+		ALTER TABLE savings_goals
+		ADD COLUMN IF NOT EXISTS start_date DATE NOT NULL DEFAULT CURRENT_DATE;
+	`)
 }
 
 // POST /api/v1/savings-goals/images
@@ -85,7 +94,7 @@ func (h *SavingsGoalHandler) List(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	rows, err := h.db.Query(context.Background(),
-		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, created_at, updated_at
+		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at
 		 FROM savings_goals WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
@@ -99,7 +108,7 @@ func (h *SavingsGoalHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var g models.SavingsGoal
 		if err := rows.Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
-			&g.CurrentAmount, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			&g.CurrentAmount, &g.StartDate, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			continue
 		}
 		goals = append(goals, g)
@@ -136,24 +145,37 @@ func (h *SavingsGoalHandler) Create(c *gin.Context) {
 		return
 	}
 
+	startDate := time.Now()
+	if req.StartDate != nil && strings.TrimSpace(*req.StartDate) != "" {
+		parsed, err := time.Parse("2006-01-02", *req.StartDate)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start_date format, use YYYY-MM-DD"})
+			return
+		}
+		startDate = parsed
+	}
+
 	var deadline *time.Time
-	if req.Deadline != nil {
+	if req.Deadline != nil && strings.TrimSpace(*req.Deadline) != "" {
 		parsed, err := time.Parse("2006-01-02", *req.Deadline)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deadline format, use YYYY-MM-DD"})
 			return
 		}
+		if parsed.Before(startDate) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น"})
+			return
+		}
 		deadline = &parsed
 	}
-
 	var g models.SavingsGoal
 	err = h.db.QueryRow(context.Background(),
-		`INSERT INTO savings_goals (user_id, account_id, name, image_url, target_amount, current_amount, deadline)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, created_at, updated_at`,
-		userID, req.AccountID, req.Name, req.ImageURL, req.TargetAmount, 0, deadline,
+		`INSERT INTO savings_goals (user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
+		userID, req.AccountID, req.Name, req.ImageURL, req.TargetAmount, 0, startDate, deadline, models.GoalStatusInProgress,
 	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
-		&g.CurrentAmount, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+		&g.CurrentAmount, &g.StartDate, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create savings goal"})
@@ -170,11 +192,11 @@ func (h *SavingsGoalHandler) Get(c *gin.Context) {
 
 	var g models.SavingsGoal
 	err := h.db.QueryRow(context.Background(),
-		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, created_at, updated_at
+		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at
 		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
 		id, userID,
 	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
-		&g.CurrentAmount, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+		&g.CurrentAmount, &g.StartDate, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
@@ -216,14 +238,61 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 		req.Name = &name
 	}
 
-	var deadline *time.Time
-	if req.Deadline != nil {
-		parsed, err := time.Parse("2006-01-02", *req.Deadline)
+	var existing models.SavingsGoal
+	if err := h.db.QueryRow(context.Background(),
+		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at
+		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
+		id, userID,
+	).Scan(&existing.ID, &existing.UserID, &existing.AccountID, &existing.Name, &existing.ImageURL, &existing.TargetAmount,
+		&existing.CurrentAmount, &existing.StartDate, &existing.Deadline, &existing.Status, &existing.CreatedAt, &existing.UpdatedAt); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
+		return
+	}
+
+	startDate := existing.StartDate
+	if req.StartDate != nil && strings.TrimSpace(*req.StartDate) != "" {
+		parsed, err := time.Parse("2006-01-02", *req.StartDate)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deadline format, use YYYY-MM-DD"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start_date format, use YYYY-MM-DD"})
 			return
 		}
-		deadline = &parsed
+		startDate = parsed
+	}
+
+	var deadline *time.Time
+	if req.Deadline != nil {
+		if strings.TrimSpace(*req.Deadline) != "" {
+			parsed, err := time.Parse("2006-01-02", *req.Deadline)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deadline format, use YYYY-MM-DD"})
+				return
+			}
+			deadline = &parsed
+		}
+	} else {
+		deadline = existing.Deadline
+	}
+	if deadline != nil && deadline.Before(startDate) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น"})
+		return
+	}
+
+	nextTarget := existing.TargetAmount
+	if req.TargetAmount != nil {
+		nextTarget = *req.TargetAmount
+	}
+	nextCurrent := existing.CurrentAmount
+	if req.CurrentAmount != nil {
+		nextCurrent = *req.CurrentAmount
+	}
+	nextStatus := existing.Status
+	if req.Status != nil {
+		nextStatus = *req.Status
+	} else if existing.Status != models.GoalStatusCancelled {
+		nextStatus = models.GoalStatusInProgress
+		if nextCurrent >= nextTarget {
+			nextStatus = models.GoalStatusCompleted
+		}
 	}
 
 	var g models.SavingsGoal
@@ -234,13 +303,14 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 		     image_url      = $3,
 		     target_amount  = COALESCE($4, target_amount),
 		     current_amount = COALESCE($5, current_amount),
-		     deadline       = COALESCE($6, deadline),
-		     status         = COALESCE($7, status)
-		 WHERE id = $8 AND user_id = $9
-		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, created_at, updated_at`,
-		req.AccountID, req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, deadline, req.Status, id, userID,
+		     start_date     = $6,
+		     deadline       = $7,
+		     status         = $8
+		 WHERE id = $9 AND user_id = $10
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
+		req.AccountID, req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, startDate, deadline, nextStatus, id, userID,
 	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
-		&g.CurrentAmount, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+		&g.CurrentAmount, &g.StartDate, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
@@ -280,6 +350,102 @@ func (h *SavingsGoalHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "savings goal deleted"})
+}
+
+// POST /api/v1/savings-goals/:id/initial-balance
+// นับเงินที่มีอยู่แล้วในบัญชีเก็บออมเข้าเป้าหมาย โดยไม่สร้าง transaction และไม่เปลี่ยนยอดบัญชี
+func (h *SavingsGoalHandler) AddInitialBalance(c *gin.Context) {
+	userID := c.GetString("user_id")
+	goalID := c.Param("id")
+
+	var req struct {
+		Amount float64 `json:"amount" binding:"required,gt=0"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := context.Background()
+
+	var g models.SavingsGoal
+	if err := h.db.QueryRow(ctx,
+		`SELECT id, user_id, account_id, name, target_amount, current_amount, status
+		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
+		goalID, userID,
+	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount, &g.CurrentAmount, &g.Status); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
+		return
+	}
+	if g.Status != models.GoalStatusInProgress {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "เพิ่มยอดเริ่มต้นได้เฉพาะเป้าหมายที่กำลังออม"})
+		return
+	}
+	if g.AccountID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาผูกบัญชีเก็บออมก่อนเพิ่มยอดเริ่มต้น"})
+		return
+	}
+
+	remaining := g.TargetAmount - g.CurrentAmount
+	if remaining <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "เป้าหมายนี้ครบแล้ว"})
+		return
+	}
+	if req.Amount > remaining {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนเงินต้องไม่เกินยอดที่เหลือของเป้าหมาย"})
+		return
+	}
+
+	var balance float64
+	if err := h.db.QueryRow(ctx,
+		`SELECT balance FROM accounts WHERE id=$1 AND user_id=$2 AND type='asset'`,
+		*g.AccountID, userID,
+	).Scan(&balance); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบบัญชีเก็บออม"})
+		return
+	}
+
+	var allocated float64
+	if err := h.db.QueryRow(ctx,
+		`SELECT COALESCE(SUM(current_amount), 0)
+		 FROM savings_goals
+		 WHERE user_id=$1 AND account_id=$2 AND status <> 'cancelled'`,
+		userID, *g.AccountID,
+	).Scan(&allocated); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ตรวจสอบยอดเงินของบัญชีไม่สำเร็จ"})
+		return
+	}
+
+	available := balance - allocated
+	if available <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "บัญชีนี้ไม่มีเงินเหลือให้นับเข้าเป้าหมาย"})
+		return
+	}
+	if req.Amount > available {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนเงินเกินยอดที่ยังนับเข้าเป้าหมายได้"})
+		return
+	}
+
+	newAmount := g.CurrentAmount + req.Amount
+	newStatus := models.GoalStatusInProgress
+	if newAmount >= g.TargetAmount {
+		newStatus = models.GoalStatusCompleted
+	}
+
+	var updated models.SavingsGoal
+	if err := h.db.QueryRow(ctx,
+		`UPDATE savings_goals
+		 SET current_amount = $1, status = $2
+		 WHERE id = $3 AND user_id = $4
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
+		newAmount, newStatus, goalID, userID,
+	).Scan(&updated.ID, &updated.UserID, &updated.AccountID, &updated.Name, &updated.ImageURL, &updated.TargetAmount,
+		&updated.CurrentAmount, &updated.StartDate, &updated.Deadline, &updated.Status, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update goal"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
 }
 
 // POST /api/v1/savings-goals/:id/deposit
@@ -388,10 +554,10 @@ func (h *SavingsGoalHandler) Deposit(c *gin.Context) {
 		`UPDATE savings_goals
 		 SET current_amount = $1, status = $2
 		 WHERE id = $3 AND user_id = $4
-		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, deadline, status, created_at, updated_at`,
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
 		newAmount, newStatus, goalID, userID,
 	).Scan(&updated.ID, &updated.UserID, &updated.AccountID, &updated.Name, &updated.ImageURL, &updated.TargetAmount,
-		&updated.CurrentAmount, &updated.Deadline, &updated.Status, &updated.CreatedAt, &updated.UpdatedAt)
+		&updated.CurrentAmount, &updated.StartDate, &updated.Deadline, &updated.Status, &updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update goal"})
 		return

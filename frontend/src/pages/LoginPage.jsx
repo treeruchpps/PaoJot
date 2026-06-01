@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, EyeOff, ShieldUser, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { API_ORIGIN } from '../services/api';
 
-export default function LoginPage({ onSwitch, notice }) {
+export default function LoginPage({ onSwitch, notice, onNoticeClear }) {
   const { login, submitting, error, clearError } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [fieldErrors, setFieldErrors] = useState({});
@@ -21,6 +21,7 @@ export default function LoginPage({ onSwitch, notice }) {
 
   const handleChange = (e) => {
     clearError();
+    onNoticeClear?.();
     const next = { ...form, [e.target.name]: e.target.value };
     setForm(next);
     if (submitted) setFieldErrors(validate(next));
@@ -28,12 +29,19 @@ export default function LoginPage({ onSwitch, notice }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    onNoticeClear?.();
     setSubmitted(true);
     const nextErrors = validate(form);
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     await login(form.email.trim().toLowerCase(), form.password);
   };
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => onNoticeClear?.(), 5000);
+    return () => clearTimeout(timer);
+  }, [notice, onNoticeClear]);
 
   const inputClass = (hasError, withIcon = false, withRightIcon = false) =>
     `w-full ${withIcon ? 'pl-9' : 'pl-4'} ${withRightIcon ? 'pr-10' : 'pr-4'} py-3 rounded-xl border bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 transition-all ${

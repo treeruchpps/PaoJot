@@ -199,10 +199,10 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 	}
 
 	if _, err := dbTx.Exec(ctx,
-		`UPDATE savings_goals SET account_id = NULL WHERE user_id = $1 AND account_id = $2`,
+		`DELETE FROM savings_goals WHERE user_id = $1 AND account_id = $2`,
 		userID, id,
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to detach savings goals"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete linked savings goals"})
 		return
 	}
 

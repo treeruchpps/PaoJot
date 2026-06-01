@@ -121,7 +121,11 @@ function AppShell() {
   // ── Not authenticated: show login / register ──
   if (!isAuthenticated) {
     if (authPage === 'login') {
-      return <LoginPage notice={authNotice} onSwitch={() => { clearError(); setAuthNotice(''); setAuthPage('register'); }} />;
+      return <LoginPage
+        notice={authNotice}
+        onNoticeClear={() => setAuthNotice('')}
+        onSwitch={() => { clearError(); setAuthNotice(''); setAuthPage('register'); }}
+      />;
     }
     return <RegisterPage
       onSwitch={() => { clearError(); setAuthPage('login'); }}

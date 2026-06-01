@@ -146,8 +146,8 @@ export default function CategoriesView({ onRefresh }) {
           ))}
         </div>
         <button onClick={openModal}
-          className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-          <Plus size={15} color="white" /> เพิ่มหมวดหมู่
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+          <Plus size={13} color="#2C6488" /> เพิ่มหมวดหมู่
         </button>
       </div>
 

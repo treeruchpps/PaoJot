@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Icon from '../components/common/Icon';
 import {
-  Plus, Edit, Trash2, Wallet, Calendar, CheckCircle, PiggyBank, Target,
+  Plus, Edit, Trash2, Calendar, CheckCircle, PiggyBank,
   ImageIcon, Trophy, AlertCircle, ArrowRightLeft, Upload, X
 } from 'lucide-react';
 import Modal from '../components/common/Modal';
@@ -15,21 +15,31 @@ const STATUS_LABEL = { all: 'ทั้งหมด', in_progress: 'กำลั�
 const STATUS_COLOR = { in_progress: '#2C6488', completed: '#10b981', cancelled: '#94a3b8' };
 const STATUS_BG = { in_progress: '#EAF3F7', completed: '#ecfdf5', cancelled: '#f1f5f9' };
 const STATUS_FILTERS = ['all', 'in_progress', 'completed', 'cancelled'];
-
-function getMonthsLeft(deadline) {
-  if (!deadline) return 1;
-  const d = new Date(deadline);
-  const n = new Date();
-  const diff = (d.getFullYear() - n.getFullYear()) * 12 + (d.getMonth() - n.getMonth());
-  return Math.max(diff, 1);
-}
+const ACCOUNT_KIND_META = {
+  cash: { icon: 'DollarSign', color: '#10b981' },
+  bank_account: { icon: 'Briefcase', color: '#2C6488' },
+  savings: { icon: 'Star', color: '#f59e0b' },
+  e_wallet: { icon: 'Smartphone', color: '#2C6488' },
+  investment: { icon: 'TrendingUp', color: '#5F9A7A' },
+};
 
 const today = new Date().toISOString().slice(0, 10);
+
+function getPlanMonths(startDate, endDate) {
+  if (!endDate) return 1;
+  const start = startDate ? new Date(startDate) : new Date();
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
+  const diff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  return Math.max(diff + 1, 1);
+}
 
 const EMPTY_FORM = {
   name: '',
   image_url: '',
   target_amount: '',
+  current_amount: '0',
+  start_date: today,
   deadline: '',
   account_id: '',
 };
@@ -39,8 +49,13 @@ function goalMath(goal) {
   const current = Number(goal.current_amount) || 0;
   const remaining = Math.max(0, target - current);
   const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-  const monthlyNeeded = Math.ceil(remaining / getMonthsLeft(goal.deadline));
+  const monthlyNeeded = Math.ceil(remaining / getPlanMonths(goal.start_date, goal.deadline));
   return { target, current, remaining, pct, monthlyNeeded };
+}
+
+function AccountKindIcon({ kind, size = 12 }) {
+  const meta = ACCOUNT_KIND_META[kind] || { icon: 'DollarSign', color: '#94a3b8' };
+  return <Icon name={meta.icon} size={size} color={meta.color} />;
 }
 
 export default function GoalsView({ accounts, onRefreshAccounts }) {
@@ -61,10 +76,30 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
   const [depositSaving, setDepositSaving] = useState(false);
   const [depositError, setDepositError] = useState('');
   const [justCompleted, setJustCompleted] = useState(false);
+  const [initialGoal, setInitialGoal] = useState(null);
+  const [initialAmount, setInitialAmount] = useState('');
+  const [initialSaving, setInitialSaving] = useState(false);
+  const [initialError, setInitialError] = useState('');
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
   const assetAccounts = accounts.filter((a) => a.type === 'asset');
+  const selectedGoalAccount = assetAccounts.find((a) => a.id === form.account_id);
+  const allocatedByAccount = (accountId) =>
+    goals
+      .filter((g) => g.account_id === accountId && g.status !== 'cancelled')
+      .reduce((sum, g) => sum + Number(g.current_amount || 0), 0);
+  const initialAvailableForGoal = (goal) => {
+    const account = accounts.find((a) => a.id === goal?.account_id);
+    if (!account) return 0;
+    return Math.max(0, Number(account.balance || 0) - allocatedByAccount(goal.account_id));
+  };
+  const formTargetAmount = Number(form.target_amount) || 0;
+  const plannedMonthly = (() => {
+    const current = Number(form.current_amount) || 0;
+    const remaining = Math.max(0, formTargetAmount - current);
+    return Math.ceil(remaining / getPlanMonths(form.start_date, form.deadline));
+  })();
 
   const fetchGoals = async () => {
     setLoading(true);
@@ -77,7 +112,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
 
   const openCreate = () => {
     setEditId(null);
-    setForm({ ...EMPTY_FORM, account_id: assetAccounts[0]?.id || '' });
+    setForm({ ...EMPTY_FORM, start_date: today, current_amount: '0', account_id: assetAccounts[0]?.id || '' });
     setError('');
     setImageUploading(false);
     setShowModal(true);
@@ -89,6 +124,8 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
       name: g.name || '',
       image_url: g.image_url || '',
       target_amount: String(g.target_amount || ''),
+      current_amount: String(g.current_amount || 0),
+      start_date: g.start_date?.slice(0, 10) || today,
       deadline: g.deadline?.slice(0, 10) || '',
       account_id: g.account_id || assetAccounts[0]?.id || '',
     });
@@ -114,15 +151,28 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
     }
   };
 
+  const setGoalAccount = (accountId) => {
+    setForm({ ...form, account_id: accountId });
+  };
+
+  const setGoalTargetAmount = (value) => {
+    setForm({ ...form, target_amount: value });
+  };
+
   const save = async () => {
     const goalName = form.name.trim();
     if (!goalName || !form.target_amount) { setError('กรุณากรอกชื่อและยอดเป้าหมาย'); return; }
     const normalizedName = goalName.toLowerCase();
     const duplicateGoal = goals.find((g) => g.id !== editId && (g.name || '').trim().toLowerCase() === normalizedName);
     if (duplicateGoal) { setError('มีเป้าหมายชื่อนี้อยู่แล้ว'); return; }
-    if (!form.account_id) { setError('กรุณาเลือกบัญชีเก็บออม เพื่อให้การฝากเงินเป็นการโอนที่ถูกต้อง'); return; }
+    if (!form.account_id) { setError('กรุณาเลือกบัญชีเก็บออม เพื่อให้การออมเงินเป็นการโอนที่ถูกต้อง'); return; }
     const targetAmount = parseFloat(form.target_amount);
     if (targetAmount <= 0) { setError('เป้าหมายต้องมากกว่า 0'); return; }
+    if (!form.start_date) { setError('กรุณาเลือกวันที่เริ่มต้น'); return; }
+    if (form.deadline && new Date(form.deadline) < new Date(form.start_date)) {
+      setError('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น');
+      return;
+    }
     setSaving(true); setError('');
     try {
       const body = {
@@ -130,6 +180,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
         name: goalName,
         image_url: form.image_url || null,
         target_amount: targetAmount,
+        start_date: form.start_date || today,
         deadline: form.deadline || null,
       };
       if (editId) await goalsApi.update(editId, body);
@@ -211,6 +262,33 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
     finally { setDepositSaving(false); }
   };
 
+  const openInitialBalance = (g) => {
+    setInitialGoal(g);
+    const available = initialAvailableForGoal(g);
+    const remaining = Math.max(0, Number(g.target_amount || 0) - Number(g.current_amount || 0));
+    const suggested = Math.min(available, remaining);
+    setInitialAmount(suggested > 0 ? String(suggested) : '');
+    setInitialError('');
+  };
+
+  const saveInitialBalance = async () => {
+    if (!initialGoal) return;
+    const amount = parseFloat(initialAmount);
+    const available = initialAvailableForGoal(initialGoal);
+    const remaining = Math.max(0, Number(initialGoal.target_amount || 0) - Number(initialGoal.current_amount || 0));
+    const maxAmount = Math.min(available, remaining);
+    if (!initialAmount || amount <= 0) { setInitialError('กรุณาใส่จำนวนเงิน'); return; }
+    if (amount > maxAmount) { setInitialError(`ใส่ได้สูงสุด ฿${fmt(maxAmount)}`); return; }
+    setInitialSaving(true); setInitialError('');
+    try {
+      const updated = await goalsApi.addInitialBalance(initialGoal.id, { amount });
+      await fetchGoals();
+      if (updated.status === 'completed') setJustCompleted(true);
+      setInitialGoal(null);
+    } catch (err) { setInitialError(err.message); }
+    finally { setInitialSaving(false); }
+  };
+
   const inProgressGoals = goals.filter((g) => g.status === 'in_progress');
   const totalTarget = inProgressGoals.reduce((s, g) => s + Number(g.target_amount || 0), 0);
   const totalCurrent = inProgressGoals.reduce((s, g) => s + Number(g.current_amount || 0), 0);
@@ -222,24 +300,25 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
   return (
     <div className="p-6 space-y-5">
       {!loading && goals.length > 0 && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-              <p className="text-xs text-slate-400">เป้าหมายทั้งหมด</p>
-              <p className="text-2xl font-bold text-slate-800 mt-1">{goals.length}</p>
-              <p className="text-xs text-slate-400 mt-0.5">สำเร็จแล้ว {completed} เป้าหมาย</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-2xl p-4 border" style={{ background: '#EAF3F7', borderColor: '#2C648840' }}>
+            <p className="text-xs text-slate-500 mb-1">เป้าหมายทั้งหมด</p>
+            <p className="text-xl font-bold text-[#2C6488]">{goals.length}</p>
+            <p className="text-xs text-slate-500 mt-1">สำเร็จแล้ว {completed} เป้าหมาย</p>
+          </div>
+          <div className="rounded-2xl p-4 border" style={{ background: '#f0fdf4', borderColor: '#10b98140' }}>
+            <p className="text-xs text-slate-500 mb-1">ออมแล้วรวม</p>
+            <p className="text-xl font-bold text-emerald-600">฿{fmt(totalCurrent)}</p>
+            <p className="text-xs text-slate-500 mt-1">จากเป้าหมายที่กำลังออม</p>
+          </div>
+          <div className="rounded-2xl p-4 bg-white border border-slate-100 shadow-sm">
+            <p className="text-xs text-slate-500 mb-1">ต้องออมเพิ่ม</p>
+            <div className="flex items-end justify-between gap-3">
+              <p className="text-xl font-bold text-[#2C6488]">฿{fmt(totalRemaining)}</p>
+              <p className="text-sm font-bold text-[#2C6488]">{overviewPct.toFixed(0)}%</p>
             </div>
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-              <p className="text-xs text-slate-400">ยอดที่ต้องออมเพิ่มรวม</p>
-              <p className="text-xl font-bold text-[#2C6488] mt-1">฿{fmt(totalRemaining)}</p>
-              <p className="text-xs text-slate-400 mt-0.5">จากเป้าหมายที่กำลังออม</p>
-            </div>
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-              <p className="text-xs text-slate-400">เปอร์เซ็นต์ภาพรวม</p>
-              <p className="text-2xl font-bold text-slate-800 mt-1">{overviewPct.toFixed(0)}%</p>
-              <div className="w-full bg-slate-100 rounded-full h-2 mt-2 overflow-hidden">
-                <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${overviewPct}%` }} />
-              </div>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+              <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${overviewPct}%` }} />
             </div>
           </div>
         </div>
@@ -248,11 +327,11 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-base font-semibold text-slate-700">เป้าหมายการออม</h2>
-          <p className="text-xs text-slate-400 mt-0.5">ติดตามความคืบหน้าและโอนเงินเข้าเป้าหมาย</p>
+          <p className="text-xs text-slate-400 mt-0.5">ติดตามความคืบหน้าและออมเงินเข้าเป้าหมาย</p>
         </div>
         <button onClick={openCreate}
-          className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center justify-center gap-2 font-medium">
-          <Plus size={15} color="white" /> เพิ่มเป้าหมาย
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center justify-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+          <Plus size={13} color="#2C6488" /> เพิ่มเป้าหมาย
         </button>
       </div>
 
@@ -277,14 +356,14 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลด...</div>
       ) : goals.length === 0 ? (
         <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
-          <Target size={40} color="#cbd5e1" />
+          <PiggyBank size={40} color="#cbd5e1" />
           <div>
             <p className="text-sm font-semibold text-slate-600">ยังไม่มีเป้าหมายการออม</p>
             <p className="text-xs text-slate-400 mt-1">สร้างเป้าหมายแรกเพื่อเริ่มเห็นความคืบหน้าชัดๆ</p>
           </div>
           <button onClick={openCreate}
-            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-            <Plus size={15} color="white" /> สร้างเป้าหมายแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+            <Plus size={13} color="#2C6488" /> สร้างเป้าหมายแรก
           </button>
         </div>
       ) : filteredGoals.length === 0 ? (
@@ -292,9 +371,9 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
           ไม่มีเป้าหมายในสถานะนี้
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
           {filteredGoals.map((g) => {
-            const { target, current, remaining, pct, monthlyNeeded } = goalMath(g);
+            const { target, current, pct, monthlyNeeded } = goalMath(g);
             const acc = accounts.find((a) => a.id === g.account_id);
             const isDone = g.status === 'completed';
             const isCancelled = g.status === 'cancelled';
@@ -304,13 +383,13 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
               <div key={g.id}
                 className={`bg-white rounded-2xl shadow-sm border card-hover overflow-hidden ${isDone ? 'border-emerald-200' : 'border-slate-100'}`}>
                 {g.image_url ? (
-                  <div className="h-32 bg-slate-100 overflow-hidden">
-                    <img src={g.image_url} alt={g.name} className="w-full h-full object-cover" />
+                  <div className="aspect-[16/10] bg-slate-100 overflow-hidden">
+                    <img src={g.image_url} alt={g.name} className="w-full h-full object-cover object-center" />
                   </div>
                 ) : (
-                  <div className="h-32 bg-gradient-to-br from-[#EAF3F7] to-[#EAF7E8] flex items-center justify-center">
+                  <div className="aspect-[16/10] bg-gradient-to-br from-[#EAF3F7] to-[#EAF7E8] flex items-center justify-center">
                     <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center shadow-sm">
-                      <Icon name="Target" size={24} color="#2C6488" />
+                      <Icon name="PiggyBank" size={24} color="#2C6488" />
                     </div>
                   </div>
                 )}
@@ -347,24 +426,38 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                     </div>
                   </div>
 
-                  <div className="w-full bg-slate-100 rounded-full h-3 mb-3 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${pct}%`, background: isDone ? '#10b981' : '#2C6488' }} />
+                  <div className="mb-4">
+                    <div className="flex items-end justify-between gap-3 mb-2">
+                      <div>
+                        <p className="text-xs text-slate-400">จำนวนเงินออมของเป้าหมาย</p>
+                        <p className="text-sm font-bold text-slate-700">฿{fmt(current)} / ฿{fmt(target)}</p>
+                      </div>
+                      <p className="text-lg font-bold text-[#2C6488]">{pct.toFixed(0)}%</p>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pct}%`, background: isDone ? '#10b981' : '#2C6488' }} />
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="bg-slate-50 rounded-xl px-3 py-2">
-                      <p className="text-[11px] text-slate-400">ออมแล้ว</p>
-                      <p className="text-sm font-bold text-slate-700 mt-0.5">฿{fmt(current)}</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-xl px-3 py-2">
-                      <p className="text-[11px] text-slate-400">เป้าหมาย</p>
-                      <p className="text-sm font-bold text-slate-700 mt-0.5">฿{fmt(target)}</p>
-                    </div>
-                    <div className="bg-[#EAF3F7] rounded-xl px-3 py-2 border border-[#DCE8EE]">
-                      <p className="text-[11px] text-[#6F9DB6]">คงเหลือ</p>
-                      <p className="text-sm font-bold text-[#25536F] mt-0.5">฿{fmt(remaining)}</p>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500 mb-4">
+                    {acc ? (
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <AccountKindIcon kind={acc.kind} size={13} />
+                        <span className="truncate">{acc.name}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-amber-600 min-w-0">
+                        <AlertCircle size={12} color="#d97706" />
+                        <span className="truncate">ยังไม่ผูกบัญชีเก็บออม</span>
+                      </div>
+                    )}
+                    {g.deadline && (
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Calendar size={12} color="#94a3b8" />
+                        <span className="truncate">สิ้นสุด {formatDisplayDate(g.deadline)}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-2 text-xs">
@@ -372,10 +465,13 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                       <span className="text-slate-400">ต้องออมต่อเดือน</span>
                       <span className="font-semibold text-slate-700">฿{fmt(monthlyNeeded)}</span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="hidden flex-wrap items-center gap-2">
                       {acc ? (
                         <div className="flex items-center gap-1 text-slate-500 bg-slate-50 rounded-xl px-2.5 py-2">
-                          <Wallet size={11} color="#2C6488" />
+                          <span className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ background: (ACCOUNT_KIND_META[acc.kind]?.color || '#94a3b8') + '20' }}>
+                            <AccountKindIcon kind={acc.kind} size={11} />
+                          </span>
                           {acc.name} · ฿{fmt(acc.balance)}
                         </div>
                       ) : (
@@ -404,13 +500,21 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                       <p className="text-xs text-slate-500 font-medium">ยกเลิกเป้าหมายแล้ว</p>
                     </div>
                   ) : (
-                    <button onClick={() => openDeposit(g)} disabled={!g.account_id || assetAccounts.filter((a) => a.id !== g.account_id).length === 0}
-                      className="w-full mt-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#2C6488] transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
-                      <span className="flex items-center justify-center gap-2">
-                        <PiggyBank size={15} color="white" />
-                        {g.account_id ? 'ฝากเงินเข้าเป้าหมาย' : 'ผูกบัญชีก่อนฝากเงิน'}
-                      </span>
-                    </button>
+                    <div className="mt-4 grid grid-cols-1 gap-2">
+                      <button onClick={() => openDeposit(g)} disabled={!g.account_id || assetAccounts.filter((a) => a.id !== g.account_id).length === 0}
+                        className="w-full py-2 rounded-xl text-sm font-semibold text-white bg-[#2C6488] transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span className="flex items-center justify-center gap-2">
+                          <PiggyBank size={15} color="white" />
+                          {g.account_id ? 'ออมเงินเข้าเป้าหมาย' : 'ผูกบัญชีก่อนออมเงิน'}
+                        </span>
+                      </button>
+                      {g.account_id && initialAvailableForGoal(g) > 0 && (
+                        <button onClick={() => openInitialBalance(g)}
+                          className="w-full py-2 rounded-xl text-sm font-semibold border border-[#DCE8EE] bg-[#EAF3F7] text-[#2C6488] hover:bg-[#DCE8EE] transition-colors">
+                          เพิ่มยอดเริ่มต้น
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -437,45 +541,68 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                   placeholder="เช่น เที่ยวญี่ปุ่น, ซื้อรถ, เงินฉุกเฉิน"
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
               </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">บัญชีเก็บออม</label>
+                <AccountSelect
+                  value={form.account_id}
+                  onChange={setGoalAccount}
+                  accounts={assetAccounts}
+                  placeholder="เลือกบัญชีเก็บออม"
+                />
+                {selectedGoalAccount && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    เงินออมของเป้าหมายจะเริ่มจาก ฿0 และเพิ่มเมื่อกดออมเงินเข้าเป้าหมาย
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <section className="space-y-4 pt-2 border-t border-slate-100">
+              <p className="text-xs font-bold text-slate-500 uppercase">จำนวนเงิน</p>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">จำนวนเงินเป้าหมาย</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">฿</span>
+                  <input type="number" min="0" value={form.target_amount}
+                    onChange={(e) => setGoalTargetAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full border border-slate-200 rounded-xl pl-8 pr-3 py-2.5 text-sm bg-slate-50 text-slate-700 font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">กรอกยอดเงินที่ต้องการออมให้ถึงเป้าหมาย</p>
+              </div>
+
             </section>
 
             <section className="space-y-3 pt-2 border-t border-slate-100">
               <p className="text-xs font-bold text-slate-500 uppercase">แผนออม</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">เป้าหมาย (฿)</label>
-                  <input type="number" min="0" value={form.target_amount}
-                    onChange={(e) => setForm({ ...form, target_amount: e.target.value })}
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่เริ่มต้น</label>
+                  <input type="date" value={form.start_date}
+                    onChange={(e) => setForm({ ...form, start_date: e.target.value })}
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่เป้าหมาย</label>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่สิ้นสุด</label>
                   <input type="date" value={form.deadline}
                     onChange={(e) => setForm({ ...form, deadline: e.target.value })}
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
                 </div>
               </div>
-            </section>
-
-            <section className="space-y-3 pt-2 border-t border-slate-100">
-              <p className="text-xs font-bold text-slate-500 uppercase">บัญชีเก็บออม</p>
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">บัญชีที่จะรับเงินเข้าเป้าหมาย</label>
-                <AccountSelect
-                  value={form.account_id}
-                  onChange={(v) => setForm({ ...form, account_id: v })}
-                  accounts={assetAccounts}
-                  placeholder="เลือกบัญชีเก็บออม"
-                />
-                <p className="text-xs text-slate-400 mt-1">เวลาฝากเงิน ระบบจะบันทึกเป็นการโอนเข้าบัญชีนี้</p>
+              <div className="rounded-2xl border border-[#DCE8EE] bg-[#EAF3F7] px-3 py-2.5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-[#6F9DB6]">ควรออมประมาณต่อเดือน</p>
+                  <p className="text-xs text-slate-500 mt-0.5">คำนวณจากยอดคงเหลือและช่วงวันที่ที่เลือก</p>
+                </div>
+                <p className="text-lg font-bold text-[#2C6488] whitespace-nowrap">฿{fmt(plannedMonthly)}</p>
               </div>
             </section>
 
             <section className="space-y-3 pt-2 border-t border-slate-100">
               <p className="text-xs font-bold text-slate-500 uppercase">รูปภาพ</p>
-              <div className="h-32 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center">
+              <div className="aspect-[16/9] rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center">
                 {form.image_url ? (
-                  <img src={form.image_url} alt="ตัวอย่างรูปเป้าหมาย" className="w-full h-full object-cover" />
+                  <img src={form.image_url} alt="ตัวอย่างรูปเป้าหมาย" className="w-full h-full object-cover object-center" />
                 ) : (
                   <div className="text-center text-slate-400">
                     <ImageIcon size={24} color="#94a3b8" className="mx-auto mb-1" />
@@ -519,7 +646,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
       )}
 
       {depositGoal && (
-        <Modal title={`โอนเงินเข้าเป้าหมาย — ${depositGoal.name}`} onClose={() => setDepositGoal(null)}>
+        <Modal title={`ออมเงินเข้าเป้าหมาย — ${depositGoal.name}`} onClose={() => setDepositGoal(null)}>
           <div className="space-y-4">
             {justCompleted ? (
               <div className="py-6 flex flex-col items-center gap-3 text-center">
@@ -558,12 +685,12 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
 
                 {!depositGoal.account_id ? (
                   <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-amber-700">
-                    เป้าหมายนี้ยังไม่ผูกบัญชีเก็บออม กรุณาแก้ไขเป้าหมายและเลือกบัญชีก่อนฝากเงิน
+                    เป้าหมายนี้ยังไม่ผูกบัญชีเก็บออม กรุณาแก้ไขเป้าหมายและเลือกบัญชีก่อนออมเงิน
                   </div>
                 ) : (
                   <div className="bg-[#EAF3F7] border border-[#DCE8EE] rounded-xl p-3 text-sm text-[#25536F] flex items-center gap-2">
                     <ArrowRightLeft size={16} color="#2C6488" />
-                    การฝากเงินนี้จะถูกบันทึกเป็นรายการโอนเงินเข้าเป้าหมาย
+                    การออมเงินนี้จะถูกบันทึกเป็นรายการออมเงินเข้าเป้าหมาย
                   </div>
                 )}
 
@@ -612,7 +739,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                   <button onClick={doDeposit} disabled={depositSaving || !depositGoal.account_id}
                     className="flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 bg-[#2C6488]">
                     <PiggyBank size={15} color="white" />
-                    {depositSaving ? 'กำลังบันทึก...' : 'โอนเข้าเป้าหมาย'}
+                    {depositSaving ? 'กำลังบันทึก...' : 'ออมเงินเข้าเป้าหมาย'}
                   </button>
                 </div>
               </>
@@ -620,11 +747,81 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
           </div>
         </Modal>
       )}
+      {initialGoal && (
+        <Modal title={`เพิ่มยอดเริ่มต้น — ${initialGoal.name}`} onClose={() => setInitialGoal(null)}>
+          <div className="space-y-4">
+            {(() => {
+              const acc = accounts.find((a) => a.id === initialGoal.account_id);
+              const allocated = initialGoal.account_id ? allocatedByAccount(initialGoal.account_id) : 0;
+              const available = initialAvailableForGoal(initialGoal);
+              const remaining = Math.max(0, Number(initialGoal.target_amount || 0) - Number(initialGoal.current_amount || 0));
+              const maxAmount = Math.min(available, remaining);
+              return (
+                <>
+                  <div className="rounded-2xl border border-[#DCE8EE] bg-[#EAF3F7] p-3 text-sm text-[#25536F]">
+                    ใช้สำหรับนับเงินที่มีอยู่แล้วในบัญชีเก็บออมเข้าเป้าหมาย โดยไม่สร้างรายการโอนและไม่เปลี่ยนยอดบัญชี
+                  </div>
+
+                  {initialError && (
+                    <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{initialError}</p>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2">
+                      <p className="text-slate-400">บัญชีเก็บออม</p>
+                      <p className="font-bold text-slate-700 mt-0.5 truncate">{acc?.name || '-'}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2">
+                      <p className="text-slate-400">ยอดเงินในบัญชี</p>
+                      <p className="font-bold text-slate-700 mt-0.5">฿{fmt(acc?.balance || 0)}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2">
+                      <p className="text-slate-400">นับเข้าเป้าหมายแล้ว</p>
+                      <p className="font-bold text-slate-700 mt-0.5">฿{fmt(allocated)}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500">จำนวนเงินที่จะเพิ่มเป็นยอดเริ่มต้น</label>
+                        <p className="text-[11px] text-slate-400 mt-0.5">ใส่ได้สูงสุด ฿{fmt(maxAmount)}</p>
+                      </div>
+                      <input type="number" min="0" max={maxAmount} value={initialAmount}
+                        onChange={(e) => setInitialAmount(e.target.value)}
+                        className="w-36 border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white text-slate-700 text-right font-bold" />
+                    </div>
+                    <input type="range" min="0" max={maxAmount} step="100"
+                      value={Math.min(Number(initialAmount) || 0, maxAmount)}
+                      onChange={(e) => setInitialAmount(e.target.value)}
+                      className="w-full accent-[#2C6488]" />
+                    <div className="flex justify-between text-[11px] text-slate-400 mt-1">
+                      <span>฿0</span>
+                      <span>฿{fmt(maxAmount)}</span>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setInitialGoal(null)}
+                className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium">
+                ยกเลิก
+              </button>
+              <button onClick={saveInitialBalance} disabled={initialSaving}
+                className="flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 bg-[#2C6488]">
+                {initialSaving ? 'กำลังบันทึก...' : 'บันทึกยอดเริ่มต้น'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <ConfirmDialog
         open={!!confirmAction}
         title={confirmAction?.type === 'cancel' ? 'ยกเลิกเป้าหมาย' : 'ลบเป้าหมาย'}
         message={confirmAction?.type === 'cancel'
-          ? `ต้องการยกเลิกเป้าหมาย "${confirmAction?.goal?.name || ''}" ใช่ไหม? เป้าหมายจะยังอยู่ในประวัติแต่ฝากเงินต่อไม่ได้`
+          ? `ต้องการยกเลิกเป้าหมาย "${confirmAction?.goal?.name || ''}" ใช่ไหม? เป้าหมายจะยังอยู่ในประวัติแต่ออมเงินต่อไม่ได้`
           : `ต้องการลบเป้าหมาย "${confirmAction?.goal?.name || ''}" ใช่ไหม?`}
         confirmText={confirmAction?.type === 'cancel' ? 'ยกเลิกเป้าหมาย' : 'ลบเป้าหมาย'}
         tone={confirmAction?.type === 'cancel' ? 'warning' : 'danger'}

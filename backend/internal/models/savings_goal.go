@@ -18,6 +18,7 @@ type SavingsGoal struct {
 	ImageURL      *string    `json:"image_url"`
 	TargetAmount  float64    `json:"target_amount"`
 	CurrentAmount float64    `json:"current_amount"`
+	StartDate     time.Time  `json:"start_date"`
 	Deadline      *time.Time `json:"deadline"`
 	Status        GoalStatus `json:"status"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -25,11 +26,12 @@ type SavingsGoal struct {
 }
 
 type CreateSavingsGoalRequest struct {
-	AccountID     *string `json:"account_id"`
-	Name          string  `json:"name"           binding:"required,max=100"`
-	ImageURL      *string `json:"image_url"`
-	TargetAmount  float64 `json:"target_amount"  binding:"required,gt=0"`
-	Deadline      *string `json:"deadline"`
+	AccountID    *string `json:"account_id"`
+	Name         string  `json:"name"           binding:"required,max=100"`
+	ImageURL     *string `json:"image_url"`
+	TargetAmount float64 `json:"target_amount"  binding:"required,gt=0"`
+	StartDate    *string `json:"start_date"`
+	Deadline     *string `json:"deadline"`
 }
 
 type UpdateSavingsGoalRequest struct {
@@ -38,6 +40,7 @@ type UpdateSavingsGoalRequest struct {
 	ImageURL      *string     `json:"image_url"`
 	TargetAmount  *float64    `json:"target_amount"  binding:"omitempty,gt=0"`
 	CurrentAmount *float64    `json:"current_amount" binding:"omitempty,gte=0"`
+	StartDate     *string     `json:"start_date"`
 	Deadline      *string     `json:"deadline"`
 	Status        *GoalStatus `json:"status"`
 }

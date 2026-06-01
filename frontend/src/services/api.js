@@ -146,6 +146,7 @@ export const savingsGoals = {
   get:     (id)       => request(`/savings-goals/${id}`),
   update:  (id, body) => request(`/savings-goals/${id}`,        { method: 'PUT',    body: JSON.stringify(body) }),
   delete:  (id)       => request(`/savings-goals/${id}`,        { method: 'DELETE' }),
+  addInitialBalance: (id, body) => request(`/savings-goals/${id}/initial-balance`, { method: 'POST', body: JSON.stringify(body) }),
   deposit: (id, body) => request(`/savings-goals/${id}/deposit`,{ method: 'POST',   body: JSON.stringify(body) }),
 };
 

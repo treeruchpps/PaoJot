@@ -239,12 +239,12 @@ export default function BudgetsView({ categories }) {
           <p className="text-xs text-slate-400 mt-0.5">กำหนดวงเงินตามช่วงวันที่ที่ต้องการ</p>
         </div>
         <button onClick={openCreate}
-          className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-          <Plus size={15} color="white" /> เพิ่มงบประมาณ
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+          <Plus size={13} color="#2C6488" /> เพิ่มงบประมาณ
         </button>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex flex-wrap gap-2">
         {BUDGET_TABS.map((tab) => {
           const active = activeTab === tab.value;
           const count = tab.value === 'all'
@@ -255,12 +255,11 @@ export default function BudgetsView({ categories }) {
               key={tab.value}
               type="button"
               onClick={() => setActiveTab(tab.value)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap ${
-                active ? 'bg-[#2C6488] text-white border-[#2C6488]' : 'bg-white text-slate-500 border-slate-100 hover:border-[#BFD8E4]'
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                active ? 'bg-[#2C6488] text-white border-[#2C6488]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#BFD8E4]'
               }`}
             >
-              {tab.label}
-              <span className={`ml-2 text-xs ${active ? 'text-white/80' : 'text-slate-400'}`}>{count}</span>
+              {tab.label} <span className={active ? 'text-[#EAF3F7]' : 'text-slate-400'}>{count}</span>
             </button>
           );
         })}
@@ -278,8 +277,8 @@ export default function BudgetsView({ categories }) {
             <p className="text-xs text-slate-400 mt-1">สร้างงบโดยเลือกหมวดหมู่ วงเงิน และช่วงวันที่ที่ต้องการคุมค่าใช้จ่าย</p>
           </div>
           <button onClick={openCreate}
-            className="btn-primary text-white text-sm px-4 py-2 rounded-xl flex items-center gap-2 font-medium">
-            <Plus size={15} color="white" /> สร้างงบประมาณแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
+            <Plus size={13} color="#2C6488" /> สร้างงบประมาณแรก
           </button>
         </div>
       ) : (
