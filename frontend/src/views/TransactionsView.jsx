@@ -15,7 +15,7 @@ const TYPE_ICON  = { income: 'ArrowUp', expense: 'ArrowDown', transfer: 'ArrowLe
 const DAY_TH     = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const TX_PAGE_SIZE = 10;
 
-const FINAL_OCR_STATUSES = ['saved', 'skipped', 'rejected', 'cancelled', 'error'];
+const FINAL_OCR_STATUSES = ['saved', 'skipped', 'cancelled'];
 const isOcrResultHandled = (result) => FINAL_OCR_STATUSES.includes(result?.status);
 const isOcrJobHandled = (job, key) => {
   const results = job?.[key] || [];
@@ -23,8 +23,14 @@ const isOcrJobHandled = (job, key) => {
   return results.length > 0 && results.every(isOcrResultHandled);
 };
 const RECEIPT_BLOCKED_STATUSES = ['rejected', 'error'];
+const OCR_ACTIONABLE_STATUSES = ['queued', 'ocr', 'parsing', 'done'];
 const receiptBlockedResults = (job) => (job?.receipts || []).filter((r) => RECEIPT_BLOCKED_STATUSES.includes(r.status));
 const receiptWasCancelled = (job) => job?.status === 'cancelled' || (job?.receipts || []).some((r) => r.status === 'cancelled');
+const hasOnlyBlockedOcrResults = (job, key) => {
+  const results = job?.[key] || [];
+  return results.some((r) => RECEIPT_BLOCKED_STATUSES.includes(r.status)) &&
+    !results.some((r) => OCR_ACTIONABLE_STATUSES.includes(r.status));
+};
 const receiptBlockedMessage = (job) => {
   const blocked = receiptBlockedResults(job);
   if (blocked.length === 0) return '';
@@ -35,7 +41,7 @@ const receiptResultStatusMeta = (result) => {
     case 'done':
       return { label: 'พร้อมตรวจ', tone: 'emerald', icon: 'check' };
     case 'rejected':
-      return { label: 'ไม่ใช่ใบเสร็จ', tone: 'red', icon: 'x' };
+      return { label: 'Reject', tone: 'red', icon: 'x' };
     case 'error':
       return { label: 'ผิดพลาด', tone: 'red', icon: 'x' };
     case 'cancelled':
@@ -45,7 +51,7 @@ const receiptResultStatusMeta = (result) => {
     case 'saved':
       return { label: 'บันทึกแล้ว', tone: 'emerald', icon: 'check' };
     case 'ocr':
-      return { label: 'กำลัง OCR', tone: 'brand', icon: 'loader' };
+      return { label: 'กำลังอ่าน', tone: 'brand', icon: 'loader' };
     case 'parsing':
       return { label: 'แปลผล', tone: 'brand', icon: 'loader' };
     default:
@@ -430,10 +436,14 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const [ocrData,       setOcrData]      = useState(null);
   const [ocrPreview,    setOcrPreview]   = useState('');
   // receipt
-  const [ocrItems,      setOcrItems]     = useState([]);  // [{ name, quantity, unit_price, note, category_id, include }]
+  const [ocrItems,      setOcrItems]     = useState([]);  // [{ name, amount, note, category_id, include }]
   const [ocrAccount,    setOcrAccount]   = useState('');
   const [ocrDate,       setOcrDate]      = useState(today);
   const [ocrNote,       setOcrNote]      = useState('');
+  const [ocrVatAmount,  setOcrVatAmount] = useState('');
+  const [ocrVatMode,    setOcrVatMode]   = useState('include'); // include | exclude
+  const [ocrDiscountAmount, setOcrDiscountAmount] = useState('');
+  const [ocrDiscountMode,   setOcrDiscountMode]   = useState('prorate'); // prorate | ignore
   const [ocrSaving,     setOcrSaving]    = useState(false);
   const [ocrZoomImg,    setOcrZoomImg]   = useState(null);  // URL | null
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -443,20 +453,26 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const receiptPollRef = useRef(null);
   const [receiptJob, setReceiptJob] = useState(null);
   const [activeReceiptId, setActiveReceiptId] = useState(null);
+  const activeReceiptIdRef = useRef(null);
   const [receiptJobsList, setReceiptJobsList] = useState([]);
   const [slipJobsList, setSlipJobsList] = useState([]);
   const [ocrCancelling, setOcrCancelling] = useState({});
   const [ocrSkipping, setOcrSkipping] = useState({});
   const ocrJobsPollRef = useRef(null);
 
+  const setActiveReceipt = (id) => {
+    activeReceiptIdRef.current = id;
+    setActiveReceiptId(id);
+  };
+
   const ocrStatusText = (job, key) => {
     const results = job?.[key] || [];
     if (job?.status === 'cancelled') return 'ยกเลิกแล้ว';
     if (results.some((r) => r.status === 'rejected')) return key === 'receipts' ? 'ไม่ใช่ใบเสร็จ' : 'ไม่ใช่สลิป';
-    if (results.some((r) => r.status === 'error')) return 'OCR ล้มเหลว';
-    if (results.some((r) => r.status === 'done')) return 'OCR เสร็จแล้ว รอตรวจ';
-    if (job?.status === 'done') return 'OCR เสร็จแล้ว';
-    return 'กำลัง OCR';
+    if (results.some((r) => r.status === 'error')) return key === 'receipts' ? 'อ่านใบเสร็จไม่สำเร็จ' : 'อ่านสลิปไม่สำเร็จ';
+    if (results.some((r) => r.status === 'done')) return key === 'receipts' ? 'อ่านเสร็จแล้ว รอตรวจ' : 'สแกนเสร็จแล้ว รอตรวจ';
+    if (job?.status === 'done') return key === 'receipts' ? 'อ่านเสร็จแล้ว' : 'สแกนเสร็จแล้ว';
+    return key === 'receipts' ? 'กำลังอ่านใบเสร็จ' : 'กำลังสแกนสลิป';
   };
   const ocrStatusColor = (job, key) => {
     const results = job?.[key] || [];
@@ -468,26 +484,49 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
   const openOcrModal = (type) => {
     if (!hasAccounts) return;
+    const pendingReceipt = receiptJobsList[0];
+    const pendingSlip = slipJobsList[0];
+    if (pendingReceipt || pendingSlip) {
+      setOcrError('มีรายการที่สแกนยังไม่ได้จัดการ กรุณาตรวจสอบหรือยกเลิกก่อนเริ่มสแกนใหม่');
+      if (pendingReceipt) openReceiptJob(pendingReceipt.id);
+      else openSlipJob(pendingSlip.id);
+      return;
+    }
     setOcrModal(type); setOcrStep('upload'); setOcrFiles([]); setOcrPreviews([]);
-    setOcrPreview(''); setOcrError(''); setOcrData(null); setReceiptJob(null); setActiveReceiptId(null);
-    setOcrNote('');
+    setOcrPreview(''); setOcrError(''); setOcrData(null); setReceiptJob(null); setActiveReceipt(null);
+    setOcrNote(''); setOcrVatAmount(''); setOcrVatMode('include'); setOcrDiscountAmount(''); setOcrDiscountMode('prorate');
   };
 
-  const closeOcr = () => {
+  const clearBlockedReceiptResults = async (job = receiptJob) => {
+    if (!job?.id || !hasOnlyBlockedOcrResults(job, 'receipts')) return;
+    await Promise.all((job.receipts || [])
+      .filter((result) => RECEIPT_BLOCKED_STATUSES.includes(result.status))
+      .map((result) => receiptJobsApi.skip(job.id, result.id).catch(() => null)));
+    await refreshOcrJobs();
+  };
+
+  const closeOcr = async () => {
     if (receiptPollRef.current) clearInterval(receiptPollRef.current);
+    await clearBlockedReceiptResults();
     setOcrModal(null); setOcrStep('upload');
     setOcrFiles([]); setOcrPreviews([]);
-    setReceiptJob(null); setActiveReceiptId(null);
+    setReceiptJob(null); setActiveReceipt(null);
     setOcrData(null); setOcrPreview(''); setOcrError('');
     setOcrItems([]); setOcrLoading(false); setOcrZoomImg(null);
+    setOcrVatAmount(''); setOcrVatMode('include'); setOcrDiscountAmount(''); setOcrDiscountMode('prorate');
   };
 
   const handleOcrFileSelect = (fileList) => {
     const fileArr = Array.isArray(fileList) ? fileList : Array.from(fileList?.length ? fileList : [fileList]).filter(Boolean);
-    const selected = fileArr.slice(0, 5);
-    if (selected.length === 0) return;
-    setOcrFiles(selected);
-    setOcrError('');
+    if (fileArr.length === 0) return;
+    const slots = Math.max(0, 5 - ocrFiles.length);
+    if (slots === 0) {
+      setOcrError('เพิ่มรูปได้สูงสุด 5 รูปต่อครั้ง');
+      return;
+    }
+    const selected = fileArr.slice(0, slots);
+    setOcrFiles((prev) => [...prev, ...selected]);
+    setOcrError(fileArr.length > slots ? 'เพิ่มได้สูงสุด 5 รูปต่อครั้ง ระบบเพิ่มให้เท่าที่เหลือแล้ว' : '');
     const previews = new Array(selected.length).fill('');
     let loaded = 0;
     selected.forEach((file, i) => {
@@ -496,33 +535,120 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         previews[i] = e.target.result;
         loaded++;
         if (loaded === selected.length) {
-          setOcrPreviews([...previews]);
-          setOcrPreview(previews[0] || '');
+          setOcrPreviews((prev) => {
+            const next = [...prev, ...previews];
+            setOcrPreview(next[0] || '');
+            return next;
+          });
         }
       };
       reader.readAsDataURL(file);
     });
   };
 
+  const removeOcrFile = (index) => {
+    setOcrFiles((prev) => prev.filter((_, i) => i !== index));
+    setOcrPreviews((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      setOcrPreview(next[0] || '');
+      return next;
+    });
+    setOcrError('');
+  };
+
+  const receiptBaseItems = (items = ocrItems) =>
+    items
+      .filter((it) => it.include && Number(it.amount) > 0)
+      .map((it) => ({ ...it, baseAmount: Number(it.amount) || 0 }));
+
+  const receiptAdjustmentAmounts = () => ({
+    vat: ocrVatMode === 'exclude' ? Math.max(0, Number(ocrVatAmount) || 0) : 0,
+    discount: ocrDiscountMode === 'prorate' ? Math.max(0, Number(ocrDiscountAmount) || 0) : 0,
+  });
+
+  const receiptFinalItems = (items = ocrItems) => {
+    const selected = receiptBaseItems(items);
+    const baseTotal = selected.reduce((sum, it) => sum + it.baseAmount, 0);
+    const { vat, discount } = receiptAdjustmentAmounts();
+    if (baseTotal <= 0) return selected.map((it) => ({ ...it, finalAmount: 0 }));
+    return selected.map((it) => {
+      const ratio = it.baseAmount / baseTotal;
+      const finalAmount = Math.max(0, it.baseAmount + (vat * ratio) - (discount * ratio));
+      return { ...it, finalAmount: Number(finalAmount.toFixed(2)) };
+    });
+  };
+
+  const receiptTotals = () => {
+    const selected = receiptBaseItems();
+    const baseTotal = selected.reduce((sum, it) => sum + it.baseAmount, 0);
+    const { vat, discount } = receiptAdjustmentAmounts();
+    const finalTotal = Math.max(0, baseTotal + vat - discount);
+    return { baseTotal, vat, discount, finalTotal };
+  };
+
+  const receiptItemAdjustmentPreview = (item) => {
+    const baseAmount = Number(item?.amount) || 0;
+    if (!item?.include || baseAmount <= 0) {
+      return { vat: 0, discount: 0, finalAmount: baseAmount };
+    }
+    const selected = receiptBaseItems();
+    const baseTotal = selected.reduce((sum, it) => sum + it.baseAmount, 0);
+    if (baseTotal <= 0) {
+      return { vat: 0, discount: 0, finalAmount: baseAmount };
+    }
+    const { vat, discount } = receiptAdjustmentAmounts();
+    const ratio = baseAmount / baseTotal;
+    const itemVAT = vat * ratio;
+    const itemDiscount = discount * ratio;
+    const finalAmount = Math.max(0, baseAmount + itemVAT - itemDiscount);
+    return {
+      vat: Number(itemVAT.toFixed(2)),
+      discount: Number(itemDiscount.toFixed(2)),
+      finalAmount: Number(finalAmount.toFixed(2)),
+    };
+  };
+
   const applyReceiptResult = (result, preview = '') => {
     if (!result?.data) return;
     const d = result.data || {};
-    setActiveReceiptId(result.id);
+    setActiveReceipt(result.id);
     setOcrData(d);
     setOcrPreview(preview || (result.image_path ? `http://localhost:8080${result.image_path}` : ''));
     setOcrDate(d.date || today);
     setOcrAccount(accounts[0]?.id || '');
+    setOcrVatAmount(d.vat?.amount > 0 ? String(d.vat.amount) : '');
+    setOcrVatMode(d.vat?.mode === 'exclude' ? 'exclude' : 'include');
+    setOcrDiscountAmount(d.discount?.amount > 0 ? String(d.discount.amount) : '');
+    setOcrDiscountMode(d.discount?.mode === 'ignore' ? 'ignore' : 'prorate');
     setOcrItems((d.items || [])
-      .filter((it) => (it.unit_price || 0) > 0)
+      .filter((it) => (it.amount || it.unit_price || 0) > 0)
       .map((it) => ({
         name:        it.name || '',
-        quantity:    it.quantity || 1,
-        unit_price:  it.unit_price,
+        amount:      it.amount || ((Number(it.unit_price) || 0) * (Number(it.quantity) || 1)),
         note:        it.note || '',
         category_id: expCats[0]?.id || '',
         include:     true,
       })));
     setOcrStep('result');
+  };
+
+  const waitForNextReceiptResult = (job) => {
+    setReceiptJob(job);
+    setActiveReceipt(null);
+    setOcrData(null);
+    setOcrPreview('');
+    setOcrItems([]);
+    setOcrError('');
+    setOcrStep('processing');
+  };
+
+  const openReadyReceiptIfIdle = (job, previews = ocrPreviews) => {
+    if (activeReceiptIdRef.current) return false;
+    const doneResult = (job?.receipts || []).find((r) => r.status === 'done');
+    if (!doneResult) return false;
+    const idx = (job.receipts || []).findIndex((r) => r.id === doneResult.id);
+    applyReceiptResult(doneResult, previews[idx] || '');
+    return true;
   };
 
   const showReceiptJobOutcome = (job, previews = ocrPreviews) => {
@@ -542,7 +668,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     }
 
     if (job.status === 'done') {
-      setOcrError('OCR เสร็จแล้ว แต่ไม่พบรายการใบเสร็จที่พร้อมบันทึก');
+      setOcrError('อ่านใบเสร็จเสร็จแล้ว แต่ไม่พบรายการที่พร้อมบันทึก');
       setOcrStep('processing');
     }
   };
@@ -561,12 +687,15 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
           try {
             const job = await receiptJobsApi.get(jobId);
             setReceiptJob(job);
+            openReadyReceiptIfIdle(job);
             if (job.status === 'done') {
               clearInterval(receiptPollRef.current);
-              showReceiptJobOutcome(job);
+              if (!activeReceiptIdRef.current) {
+                showReceiptJobOutcome(job);
+              }
             } else if (job.status === 'error') {
               clearInterval(receiptPollRef.current);
-              setOcrError(job.error_msg || 'OCR ล้มเหลว');
+              setOcrError(job.error_msg || 'อ่านใบเสร็จไม่สำเร็จ');
               setOcrStep('upload');
             }
           } catch { /* keep polling */ }
@@ -574,10 +703,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
         await poll();
         receiptPollRef.current = setInterval(poll, 2000);
-        receiptJobsApi.list().then(setReceiptJobsList).catch(() => {});
+        refreshOcrJobs();
       }
     } catch (err) {
-      setOcrError(err.message || 'OCR ล้มเหลว');
+      setOcrError(err.message || 'อ่านใบเสร็จไม่สำเร็จ');
       setOcrStep('upload');
     } finally {
       setOcrLoading(false);
@@ -589,11 +718,12 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setOcrModal('receipt');
     setOcrStep('processing');
     setOcrError('');
+    setActiveReceipt(null);
     try {
       const job = await receiptJobsApi.get(jobId);
       showReceiptJobOutcome(job);
     } catch (err) {
-      setOcrError(err.message || 'โหลดงาน OCR ไม่สำเร็จ');
+      setOcrError(err.message || 'โหลดรายการที่สแกนไม่สำเร็จ');
     }
   };
 
@@ -616,10 +746,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   };
 
   const saveOcrReceipt = async () => {
-    const selected = ocrItems.filter((it) => it.include && it.unit_price > 0);
+    const selected = receiptFinalItems();
     if (selected.length === 0) { setOcrError('เลือกรายการอย่างน้อย 1 อัน'); return; }
     if (selected.some((it) => !it.category_id)) { setOcrError('กรุณาเลือกหมวดหมู่ให้ครบทุกรายการ'); return; }
-    const total = selected.reduce((sum, it) => sum + (parseFloat(it.unit_price) * (parseFloat(it.quantity) || 1)), 0);
+    const total = selected.reduce((sum, it) => sum + Number(it.finalAmount || 0), 0);
+    if (total <= 0) { setOcrError('ยอดสุทธิต้องมากกว่า 0 บาท'); return; }
     const account = accounts.find((a) => a.id === ocrAccount);
     if (total > Number(account?.balance || 0)) {
       setOcrError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(account?.balance || 0)}`);
@@ -630,7 +761,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       await Promise.all(selected.map((it) =>
         txApi.create({
           type:             'expense',
-          amount:           parseFloat(it.unit_price) * (parseFloat(it.quantity) || 1),
+          amount:           Number(it.finalAmount || 0),
           name:             it.name || null,
           note:             it.note || ocrNote || null,
           category_id:      it.category_id,
@@ -648,8 +779,12 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         const nextResult = (updatedJob.receipts || []).find((r) => r.status === 'done');
         if (nextResult) {
           applyReceiptResult(nextResult);
-        } else {
+        } else if (isOcrJobHandled(updatedJob, 'receipts')) {
           closeOcr();
+        } else if (receiptBlockedResults(updatedJob).length > 0 || updatedJob.status === 'done') {
+          showReceiptJobOutcome(updatedJob);
+        } else {
+          waitForNextReceiptResult(updatedJob);
         }
       } else {
         closeOcr();
@@ -673,8 +808,12 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       const nextResult = (updatedJob.receipts || []).find((r) => r.status === 'done');
       if (nextResult) {
         applyReceiptResult(nextResult);
-      } else {
+      } else if (isOcrJobHandled(updatedJob, 'receipts')) {
         closeOcr();
+      } else if (receiptBlockedResults(updatedJob).length > 0 || updatedJob.status === 'done') {
+        showReceiptJobOutcome(updatedJob);
+      } else {
+        waitForNextReceiptResult(updatedJob);
       }
       await refreshOcrJobs();
     } catch (err) {
@@ -701,6 +840,14 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
   const openSlipScanner = () => {
     if (!hasAccounts) return;
+    const pendingReceipt = receiptJobsList[0];
+    const pendingSlip = slipJobsList[0];
+    if (pendingReceipt || pendingSlip) {
+      setSlipError('มีรายการที่สแกนยังไม่ได้จัดการ กรุณาตรวจสอบหรือยกเลิกก่อนเริ่มสแกนใหม่');
+      if (pendingSlip) openSlipJob(pendingSlip.id);
+      else openReceiptJob(pendingReceipt.id);
+      return;
+    }
     if (slipPollRef.current) clearInterval(slipPollRef.current);
     setSlipFiles([]); setSlipPreviews([]); setSlipJobId(null); setSlipJob(null);
     setSlipUploading(false); setSlipError(''); setSlipSaving({}); setSlipSaved({}); setSlipReview({});
@@ -726,7 +873,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               category_id: expCat?.id || '',
               name: r.receiver || r.sender || '',
               note: '',
-              amount: String(r.amount || ''),
+              amount: Number(r.amount || 0).toFixed(2),
               transaction_date: r.transaction_date || today,
             };
           }
@@ -734,27 +881,46 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         return next;
       });
     } catch (err) {
-      setSlipError(err.message || 'โหลดงาน OCR ไม่สำเร็จ');
+      setSlipError(err.message || 'โหลดรายการที่สแกนไม่สำเร็จ');
     }
   };
 
-  const closeSlipScanner = () => {
+  const clearBlockedSlipResults = async (job = slipJob) => {
+    const jobId = job?.id || slipJobId;
+    if (!jobId || !hasOnlyBlockedOcrResults(job, 'slips')) return;
+    await Promise.all((job.slips || [])
+      .filter((result) => RECEIPT_BLOCKED_STATUSES.includes(result.status))
+      .map((result) => slipJobsApi.skip(jobId, result.id).catch(() => null)));
+    await refreshOcrJobs();
+  };
+
+  const closeSlipScanner = async () => {
     if (slipPollRef.current) clearInterval(slipPollRef.current);
+    await clearBlockedSlipResults();
     setShowSlipScanner(false);
   };
 
   const handleSlipFilesSelect = (fileList) => {
-    const fileArr = Array.from(fileList).slice(0, 5);
-    setSlipFiles(fileArr);
-    setSlipError('');
-    const previews = new Array(fileArr.length).fill('');
+    const fileArr = Array.from(fileList || []).filter(Boolean);
+    if (fileArr.length === 0) return;
+    const slots = Math.max(0, 5 - slipFiles.length);
+    if (slots === 0) {
+      setSlipError('เพิ่มรูปได้สูงสุด 5 รูปต่อครั้ง');
+      return;
+    }
+    const selected = fileArr.slice(0, slots);
+    setSlipFiles((prev) => [...prev, ...selected]);
+    setSlipError(fileArr.length > slots ? 'เพิ่มได้สูงสุด 5 รูปต่อครั้ง ระบบเพิ่มให้เท่าที่เหลือแล้ว' : '');
+    const previews = new Array(selected.length).fill('');
     let loaded = 0;
-    fileArr.forEach((f, i) => {
+    selected.forEach((f, i) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         previews[i] = e.target.result;
         loaded++;
-        if (loaded === fileArr.length) setSlipPreviews([...previews]);
+        if (loaded === selected.length) {
+          setSlipPreviews((prev) => [...prev, ...previews]);
+        }
       };
       reader.readAsDataURL(f);
     });
@@ -772,6 +938,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       const res = await slipJobsApi.create(slipFiles);
       const jobId = res.job_id;
       setSlipJobId(jobId);
+      refreshOcrJobs();
 
       const poll = async () => {
         try {
@@ -793,7 +960,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   category_id:      expCat?.id || '',
                   name:             autoName,
                   note:             '',
-                  amount:           String(r.amount || ''),
+                  amount:           Number(r.amount || 0).toFixed(2),
                   transaction_date: r.transaction_date || today,
                 };
               }
@@ -835,7 +1002,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         tx_type:          rv.tx_type || 'expense',
         account_id:       rv.account_id,
         category_id:      rv.category_id,
-        amount:           parseFloat(rv.amount),
+        amount:           Number(parseFloat(rv.amount).toFixed(2)),
         name:             rv.name || '',
         transaction_date: rv.transaction_date || today,
         note:             rv.note || '',
@@ -844,6 +1011,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       });
       setSlipSaved((p) => ({ ...p, [slip.id]: true }));
       await Promise.all([onRefreshAccounts?.(), fetchTx(), onNotificationRefresh?.()]);
+      const job = await slipJobsApi.get(slipJobId);
+      setSlipJob(job);
+      if (isOcrJobHandled(job, 'slips')) {
+        closeSlipScanner();
+      }
       await refreshOcrJobs();
     } catch (err) {
       setSlipError(err.message || 'บันทึกไม่สำเร็จ');
@@ -860,6 +1032,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       await slipJobsApi.skip(slipJobId, slip.id);
       const job = await slipJobsApi.get(slipJobId);
       setSlipJob(job);
+      if (isOcrJobHandled(job, 'slips')) {
+        closeSlipScanner();
+      }
       await refreshOcrJobs();
     } catch (err) {
       setSlipError(err.message || 'ข้ามรายการไม่สำเร็จ');
@@ -1312,7 +1487,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Loader2 size={14} className="animate-spin text-[#2C6488]" />
-              <p className="text-xs font-semibold text-slate-700">งาน OCR</p>
+              <p className="text-xs font-semibold text-slate-700">รายการที่สแกน</p>
             </div>
             <button onClick={refreshOcrJobs} className="text-[11px] font-medium text-[#2C6488] hover:underline">รีเฟรช</button>
           </div>
@@ -1738,7 +1913,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                     {receiptWasCancelled(receiptJob) ? 'ยกเลิกสแกนแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'สแกนใบเสร็จไม่สำเร็จ' : 'กำลังสแกนใบเสร็จ...'}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
-                    {receiptWasCancelled(receiptJob) ? 'งาน OCR นี้ถูกยกเลิกแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'ตรวจสอบข้อความด้านล่าง หรือเลือกเมนูสแกนที่ถูกต้อง' : 'OCR + แปลผล อาจใช้เวลา 10–30 วินาที'}
+                    {receiptWasCancelled(receiptJob) ? 'รายการที่สแกนนี้ถูกยกเลิกแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'ตรวจสอบข้อความด้านล่าง หรือเลือกเมนูสแกนที่ถูกต้อง' : 'ระบบกำลังดึงวันที่ รายการ และราคา อาจใช้เวลา 10–30 วินาที'}
                   </p>
                 </div>
                 {receiptWasCancelled(receiptJob) && (
@@ -1751,6 +1926,16 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   <div className="w-full rounded-xl border border-red-100 bg-red-50 px-3 py-3 text-left">
                     <p className="text-sm font-semibold text-red-600">ไม่ใช่ใบเสร็จ</p>
                     <p className="text-xs text-red-500 mt-1">{receiptBlockedMessage(receiptJob)}</p>
+                    <div className="mt-3 space-y-2">
+                      {receiptBlockedResults(receiptJob).map((result, i) => (
+                        <div key={result.id || i} className="flex items-center justify-between gap-3 rounded-lg bg-white/70 border border-red-100 px-2.5 py-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-700 truncate">ใบที่ {i + 1} {result.filename ? `· ${result.filename}` : ''}</p>
+                            <p className="text-[11px] text-red-500 truncate">{result.error_msg || 'อ่านข้อมูลไม่สำเร็จ'}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {receiptJob && (
@@ -1811,16 +1996,40 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             {/* ─── Step: upload ─── */}
             {ocrStep === 'upload' && (
               <>
+                <div className="rounded-2xl border border-[#BFD8E4] bg-[#EAF3F7] px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-800">อัปโหลดรูปใบเสร็จ</p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    ระบบจะอ่านวันที่ รายการสินค้า และราคาให้ก่อนนำไปบันทึกเป็นรายจ่าย
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    รองรับ JPG, PNG, HEIC สูงสุด 5 รูปต่อครั้ง ควรถ่ายให้เห็นวันที่ รายการ และยอดเงินชัดเจน
+                  </p>
+                </div>
                 <div
-                  onDoubleClick={() => ocrFileRef.current?.click()}
+                  onClick={() => ocrFileRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); handleOcrFileSelect(e.dataTransfer.files); }}
                   className="relative border-2 border-dashed border-sky-200 rounded-2xl overflow-hidden cursor-pointer hover:border-sky-400 transition-colors"
                   style={{ minHeight: 180 }}
                 >
                   {ocrPreviews.length > 0 ? (
                     <div className="grid grid-cols-5 gap-2 p-3">
                       {ocrPreviews.map((preview, i) => (
-                        <img key={i} src={preview} alt="preview" className="w-full aspect-[3/4] object-cover rounded-xl border border-slate-100" />
+                        <div key={i} className="relative group">
+                          <img src={preview} alt={`preview ${i + 1}`} className="w-full aspect-[3/4] object-cover rounded-xl border border-slate-100" />
+                          <button type="button" onClick={(e) => { e.stopPropagation(); removeOcrFile(i); }}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 border border-slate-200 text-slate-500 hover:text-red-500 hover:border-red-200 flex items-center justify-center shadow-sm">
+                            <X size={13} />
+                          </button>
+                        </div>
                       ))}
+                      {ocrPreviews.length < 5 && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); ocrFileRef.current?.click(); }}
+                          className="aspect-[3/4] rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sky-500 flex flex-col items-center justify-center gap-1 text-xs font-semibold hover:bg-sky-100">
+                          <Upload size={18} />
+                          เพิ่มรูป
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center gap-2 py-12 text-sky-300">
@@ -1832,7 +2041,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 </div>
 
                 <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl border border-amber-100">
-                  รองรับเฉพาะรายจ่ายเท่านั้น
+                  ระบบจะอ่านเฉพาะใบเสร็จรายจ่าย หากเป็นสลิปโอนเงินให้ใช้เมนูสแกนสลิป
                 </p>
 
                 <div className="flex gap-3">
@@ -1843,7 +2052,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   <button onClick={runOcr} disabled={ocrFiles.length === 0 || ocrLoading}
                     className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
                     style={{ background: '#0284c7' }}>
-                    {ocrLoading ? <><Loader2 size={15} className="animate-spin" /> กำลังอ่าน...</> : 'สแกน'}
+                    {ocrLoading ? <><Loader2 size={15} className="animate-spin" /> กำลังอ่านใบเสร็จ...</> : `เริ่มสแกน ${ocrFiles.length ? ocrFiles.length + ' รูป' : ''}`}
                   </button>
                 </div>
               </>
@@ -1904,27 +2113,54 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                         {/* ชื่อ + ยอดรวม */}
                         <div className="flex items-center gap-2 mb-2">
                           <input type="checkbox" checked={it.include}
-                            onChange={(e) => setOcrItems((prev) => prev.map((x, j) => j === i ? { ...x, include: e.target.checked } : x))}
+                            onChange={(e) => setOcrItems((prev) => {
+                              if (!e.target.checked && !String(it.name || '').trim() && !Number(it.amount || 0) && !String(it.note || '').trim()) {
+                                return prev.filter((_, j) => j !== i);
+                              }
+                              return prev.map((x, j) => j === i ? { ...x, include: e.target.checked } : x);
+                            })}
                             className="accent-[#2C6488] flex-shrink-0" />
                           <input value={it.name}
+                            placeholder="ชื่อรายการ"
                             onChange={(e) => setOcrItems((prev) => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                            className="flex-1 text-sm font-medium bg-transparent border-b border-slate-200 focus:outline-none focus:border-[#2C6488] text-slate-700" />
+                            className="flex-1 text-sm font-medium bg-transparent border-b border-slate-200 focus:outline-none focus:border-[#2C6488] text-slate-700 placeholder-slate-400" />
                           <span className="text-sm font-bold text-red-500 whitespace-nowrap flex-shrink-0">
-                            ฿{fmt(parseFloat(it.unit_price || 0) * parseFloat(it.quantity || 1))}
+                            ฿{fmt(Number(it.amount || 0))}
                           </span>
                         </div>
-                        {/* จำนวน × ราคา */}
+                        {/* ราคา */}
                         <div className="ml-6 flex items-center gap-2 mb-2">
-                          <span className="text-xs text-slate-400">จำนวน</span>
-                          <input type="number" min="0" value={it.quantity}
-                            onChange={(e) => setOcrItems((prev) => prev.map((x, j) => j === i ? { ...x, quantity: e.target.value } : x))}
-                            className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs text-center bg-white" />
-                          <span className="text-xs text-slate-400">× ราคา</span>
-                          <input type="number" min="0" value={it.unit_price}
-                            onChange={(e) => setOcrItems((prev) => prev.map((x, j) => j === i ? { ...x, unit_price: e.target.value } : x))}
-                            className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white" />
+                          <span className="text-xs text-slate-400">ราคา</span>
+                          <input type="number" min="0" value={it.amount}
+                            placeholder="0.00"
+                            onChange={(e) => setOcrItems((prev) => prev.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))}
+                            className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white placeholder-slate-400" />
                           <span className="text-xs text-slate-400">฿</span>
                         </div>
+                        {(() => {
+                          const adj = receiptItemAdjustmentPreview(it);
+                          if (!it.include || (adj.vat <= 0 && adj.discount <= 0)) return null;
+                          return (
+                            <div className="ml-6 mb-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-500 space-y-0.5">
+                              {adj.vat > 0 && (
+                                <div className="flex justify-between gap-2">
+                                  <span>VAT ที่บวกเพิ่ม</span>
+                                  <b className="text-slate-700">+฿{fmt(adj.vat)}</b>
+                                </div>
+                              )}
+                              {adj.discount > 0 && (
+                                <div className="flex justify-between gap-2">
+                                  <span>ส่วนลดที่กระจายให้รายการนี้</span>
+                                  <b className="text-red-500">-฿{fmt(adj.discount)}</b>
+                                </div>
+                              )}
+                              <div className="flex justify-between gap-2 border-t border-slate-100 pt-0.5">
+                                <span>ยอดที่จะบันทึก</span>
+                                <b className="text-[#2C6488]">฿{fmt(adj.finalAmount)}</b>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {/* หมวดหมู่ */}
                         <div className="ml-6 mb-2">
                           <CatSelect
@@ -1946,7 +2182,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   {/* ปุ่มเพิ่มรายการ */}
                   <button
                     onClick={() => setOcrItems((prev) => [...prev, {
-                      name: '', quantity: 1, unit_price: '', note: '',
+                      name: '', amount: '', note: '',
                       category_id: expCats[0]?.id || '',
                       include: true,
                     }])}
@@ -1955,6 +2191,66 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                     + เพิ่มรายการ
                   </button>
                 </div>
+
+                {(() => {
+                  const totals = receiptTotals();
+                  return (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">ภาษีมูลค่าเพิ่ม</label>
+                          <input type="number" min="0" value={ocrVatAmount}
+                            onChange={(e) => setOcrVatAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">การคิด VAT</label>
+                          <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                            <button type="button" onClick={() => setOcrVatMode('include')}
+                              className={`py-2 rounded-lg text-xs font-semibold ${ocrVatMode === 'include' ? 'bg-white text-[#2C6488] shadow-sm' : 'text-slate-500'}`}>
+                              รวมแล้ว
+                            </button>
+                            <button type="button" onClick={() => setOcrVatMode('exclude')}
+                              className={`py-2 rounded-lg text-xs font-semibold ${ocrVatMode === 'exclude' ? 'bg-white text-[#2C6488] shadow-sm' : 'text-slate-500'}`}>
+                              บวกเพิ่ม
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">ส่วนลดรวม</label>
+                          <input type="number" min="0" value={ocrDiscountAmount}
+                            onChange={(e) => setOcrDiscountAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">การใช้ส่วนลด</label>
+                          <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                            <button type="button" onClick={() => setOcrDiscountMode('prorate')}
+                              className={`py-2 rounded-lg text-xs font-semibold ${ocrDiscountMode === 'prorate' ? 'bg-white text-[#2C6488] shadow-sm' : 'text-slate-500'}`}>
+                              กระจาย
+                            </button>
+                            <button type="button" onClick={() => setOcrDiscountMode('ignore')}
+                              className={`py-2 rounded-lg text-xs font-semibold ${ocrDiscountMode === 'ignore' ? 'bg-white text-[#2C6488] shadow-sm' : 'text-slate-500'}`}>
+                              ไม่ใช้
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-[#EAF3F7] border border-[#BFD8E4] p-3 space-y-1 text-xs">
+                        <div className="flex justify-between text-slate-600"><span>รวมรายการ</span><b>฿{fmt(totals.baseTotal)}</b></div>
+                        <div className="flex justify-between text-slate-600"><span>VAT บวกเพิ่ม</span><b>฿{fmt(totals.vat)}</b></div>
+                        <div className="flex justify-between text-slate-600"><span>ส่วนลด</span><b>-฿{fmt(totals.discount)}</b></div>
+                        <div className="flex justify-between text-[#2C6488] text-sm pt-1 border-t border-[#BFD8E4]"><span className="font-semibold">ยอดสุทธิที่จะบันทึก</span><b>฿{fmt(totals.finalTotal)}</b></div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex gap-3 pt-2">
                   <button onClick={closeOcr}
@@ -1985,6 +2281,15 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             {/* ─── Phase 1: upload ─── */}
             {!slipJob && (
               <>
+                <div className="rounded-2xl border border-[#BFD8E4] bg-[#EAF3F7] px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-800">อัปโหลดรูปสลิปโอนเงิน</p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    ระบบจะอ่านยอดเงิน ผู้โอน ผู้รับ วันที่ เวลา และเลขอ้างอิงให้ก่อนนำไปบันทึก
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    รองรับ JPG, PNG, HEIC สูงสุด 5 รูปต่อครั้ง ควรใช้รูปที่เห็นยอดเงิน ผู้รับ และเลขอ้างอิงชัดเจน
+                  </p>
+                </div>
                 <input
                   ref={slipFileRef} type="file" accept="image/*,.heic,.heif" multiple className="hidden"
                   onChange={(e) => { handleSlipFilesSelect(e.target.files); e.target.value = ''; }}
@@ -1993,38 +2298,52 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   onClick={() => slipFileRef.current?.click()}
                   onDrop={(e) => { e.preventDefault(); handleSlipFilesSelect(e.dataTransfer.files); }}
                   onDragOver={(e) => e.preventDefault()}
-                  className="border-2 border-dashed border-sky-200 rounded-2xl p-6 text-center cursor-pointer hover:border-sky-400 transition-colors"
+                  className="relative border-2 border-dashed border-sky-200 rounded-2xl overflow-hidden cursor-pointer hover:border-sky-400 transition-colors"
+                  style={{ minHeight: 180 }}
                 >
-                  <Upload size={30} color="#7dd3fc" style={{ margin: '0 auto 8px' }} />
-                  <p className="text-sm font-medium text-sky-500">คลิกหรือลากวางรูปสลิป</p>
-                  <p className="text-xs text-slate-400 mt-1">สูงสุด 5 ใบ · JPG, PNG, HEIC</p>
+                  {slipFiles.length > 0 ? (
+                    <div className="grid grid-cols-5 gap-2 p-3">
+                      {slipFiles.map((f, i) => (
+                        <div key={`${f.name}-${i}`} className="relative group">
+                          {slipPreviews[i] ? (
+                            <img src={slipPreviews[i]} alt={f.name} className="w-full aspect-[3/4] object-cover rounded-xl border border-slate-100" />
+                          ) : (
+                            <div className="w-full aspect-[3/4] rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center">
+                              <ImageIcon size={20} color="#cbd5e1" />
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeSlipFile(i); }}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 border border-slate-200 text-slate-500 hover:text-red-500 hover:border-red-200 flex items-center justify-center shadow-sm"
+                          >
+                            <X size={13} />
+                          </button>
+                          <div className="absolute bottom-1 left-1 right-1 rounded-lg bg-black/45 px-1.5 py-0.5">
+                            <p className="text-[9px] text-white truncate">{f.name}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {slipFiles.length < 5 && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); slipFileRef.current?.click(); }}
+                          className="aspect-[3/4] rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sky-500 flex flex-col items-center justify-center gap-1 text-xs font-semibold hover:bg-sky-100">
+                          <Upload size={18} />
+                          เพิ่มรูป
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-2 py-12 text-sky-300">
+                      <ScanLine size={36} />
+                      <p className="text-sm font-medium text-sky-500">คลิกหรือลากวางรูปสลิป</p>
+                      <p className="text-xs text-slate-400">สูงสุด 5 รูป · JPG, PNG, HEIC</p>
+                    </div>
+                  )}
                 </div>
 
-                {slipFiles.length > 0 && (
-                  <div className="grid grid-cols-5 gap-2">
-                    {slipFiles.map((f, i) => (
-                      <div key={i} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
-                        style={{ aspectRatio: '3/4' }}>
-                        {slipPreviews[i] ? (
-                          <img src={slipPreviews[i]} alt={f.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon size={20} color="#cbd5e1" />
-                          </div>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); removeSlipFile(i); }}
-                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shadow"
-                        >
-                          <X size={10} color="white" />
-                        </button>
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/40 px-1 py-0.5">
-                          <p className="text-[9px] text-white truncate">{f.name}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl border border-amber-100">
+                  ระบบจะรับเฉพาะสลิปโอนเงิน หากเป็นใบเสร็จให้ใช้เมนูสแกนใบเสร็จ
+                </p>
 
                 {slipError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{slipError}</p>}
 
@@ -2037,8 +2356,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                     className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
                     style={{ background: '#0284c7' }}>
                     {slipUploading
-                      ? <><Loader2 size={15} className="animate-spin" /> กำลังอัปโหลด...</>
-                      : `เริ่มสแกน ${slipFiles.length > 0 ? slipFiles.length + ' ใบ' : ''}`}
+                      ? <><Loader2 size={15} className="animate-spin" /> กำลังอ่านข้อมูลสลิป...</>
+                      : `เริ่มสแกน ${slipFiles.length > 0 ? slipFiles.length + ' รูป' : ''}`}
                   </button>
                 </div>
               </>
@@ -2057,6 +2376,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       {slipJob.done_count} / {slipJob.total_count} ใบ
                     </span>
                   </div>
+                  {slipJob.status !== 'done' && slipJob.status !== 'cancelled' && (
+                    <p className="text-xs text-slate-400 mb-2">
+                      ระบบกำลังดึงยอดเงิน ผู้รับ และเลขอ้างอิง อาจใช้เวลา 10–30 วินาที
+                    </p>
+                  )}
                   <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-500"
@@ -2112,8 +2436,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                           }`}>
                             {slip.status === 'done'    ? 'เสร็จ'     :
                              slip.status === 'error'   ? 'ผิดพลาด'   :
+                             slip.status === 'rejected' ? 'Reject'    :
                              slip.status === 'queued'  ? 'รอคิว'     :
-                             slip.status === 'ocr'     ? 'กำลัง OCR' :
+                             slip.status === 'ocr'     ? 'กำลังสแกน' :
                              slip.status === 'parsing' ? 'แปลผล'     :
                              slip.status === 'saved'   ? 'บันทึกแล้ว' :
                              slip.status === 'skipped' ? 'ไม่บันทึก' : slip.status}
@@ -2123,7 +2448,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                         {/* Error message */}
                         {(slip.status === 'error' || slip.status === 'rejected') && (
                           <div className="px-4 py-3 text-xs text-red-500">
-                            {slip.error_msg || 'OCR ล้มเหลว'}
+                            <p>{slip.error_msg || 'สแกนไม่สำเร็จ'}</p>
                           </div>
                         )}
 
@@ -2192,7 +2517,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                               </div>
 
                               {/* Extracted summary */}
-                              {(slip.bank || slip.sender || slip.receiver || slip.ref_no) && (
+                              {(slip.bank || slip.sender || slip.receiver) && (
                                 <div className="bg-sky-50 rounded-xl px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                   {slip.bank && (
                                     <div><span className="text-slate-400">ธนาคาร: </span>
@@ -2210,10 +2535,6 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                                     <div><span className="text-slate-400">ผู้รับ: </span>
                                     <span className="font-medium text-slate-700">{slip.receiver}</span></div>
                                   )}
-                                  {slip.ref_no && (
-                                    <div className="col-span-2"><span className="text-slate-400">Ref No.: </span>
-                                    <span className="font-medium text-slate-700">{slip.ref_no}</span></div>
-                                  )}
                                 </div>
                               )}
 
@@ -2224,6 +2545,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                                   <input
                                     type="number" min="0" value={rv.amount}
                                     onChange={(e) => setSlipReview((p) => ({ ...p, [slip.id]: { ...p[slip.id], amount: e.target.value } }))}
+                                    onBlur={() => setSlipReview((p) => ({ ...p, [slip.id]: { ...p[slip.id], amount: Number(p[slip.id]?.amount || 0).toFixed(2) } }))}
+                                    step="0.01"
                                     className="w-full border border-slate-200 rounded-xl px-2 py-1.5 text-sm font-bold bg-slate-50 text-slate-700"
                                   />
                                 </div>
