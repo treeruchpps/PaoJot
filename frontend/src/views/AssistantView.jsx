@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { 
-  Bot, Send, Sparkles, AlertCircle, CheckCircle2, 
-  Repeat2, PiggyBank, UploadCloud, RefreshCw, HelpCircle,
+  MessageCircle, Send, Sparkles, AlertCircle, CheckCircle2, 
+  Repeat2, PiggyBank, RefreshCw, HelpCircle,
   Lightbulb, BarChart2, ArrowRight, Check, Edit3, 
-  CreditCard, TrendingUp, AlertTriangle, Info, Calendar, Trash2, Paperclip
+  CreditCard, TrendingUp, AlertTriangle, Info, Calendar
 } from 'lucide-react';
 import { 
   quickEntry, savingsGoals, transactions, budgets as budgetsApi, 
-  notifications as notiApi, receiptJobs as receiptJobsApi, 
-  slipJobs as slipJobsApi, aiSummary as aiSummaryApi 
+  notifications as notiApi, aiSummary as aiSummaryApi 
 } from '../services/api';
 import { fmt } from '../constants/data';
 
@@ -98,7 +97,7 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [] }) 
   );
 }
 
-export default function AssistantView({ accounts = [], categories = [], onRefresh }) {
+export default function AssistantView({ accounts = [], categories = [], onRefresh, onGoAccounts, onGoGoals }) {
   const [mode, setMode] = useState('expense');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState(() => [firstBotMessage('expense')]);
@@ -119,11 +118,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const chatBottomRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
-  // OCR Slips & Receipts Upload
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrError, setOcrError] = useState('');
-  const [dragActive, setDragActive] = useState(false);
-  const fileInputRef = useRef(null);
+
 
   // AI Summary state
   const [aiLoading, setAiLoading] = useState(false);
@@ -169,9 +164,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           success: !!msg.success,
         };
       });
-      await quickEntry.saveChatLog(mode, safe);
+      await quickEntry.saveChatLog('chat', safe);
     } catch {}
-  }, [mode, chatLoaded]);
+  }, [chatLoaded]);
 
   // Fetch helper lists
   const fetchAuxData = useCallback(async () => {
@@ -199,13 +194,13 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     const initChat = async () => {
       try {
         const [chatData, notiList] = await Promise.all([
-          quickEntry.getChatLog(mode).catch(() => null),
+          quickEntry.getChatLog('chat').catch(() => null),
           notiApi.list().catch(() => [])
         ]);
         if (cancelled) return;
         
         const storedMessages = Array.isArray(chatData?.messages) ? chatData.messages : [];
-        let merged = storedMessages.length > 0 ? [...storedMessages] : [firstBotMessage(mode)];
+        let merged = storedMessages.length > 0 ? [...storedMessages] : [firstBotMessage('chat')];
         
         if (Array.isArray(notiList)) {
           notiList.forEach((noti) => {
@@ -229,10 +224,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         setMessages(merged);
         setChatLoaded(true);
         // Persist initial merged list
-        await quickEntry.saveChatLog(mode, merged.slice(-80));
+        await quickEntry.saveChatLog('chat', merged.slice(-80));
       } catch {
         if (!cancelled) {
-          setMessages([firstBotMessage(mode)]);
+          setMessages([firstBotMessage('chat')]);
           setChatLoaded(true);
         }
       }
@@ -240,7 +235,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
     initChat();
     return () => { cancelled = true; };
-  }, [mode]);
+  }, []);
 
   // Append new notifications to chat log when they arrive dynamically
   useEffect(() => {
@@ -275,7 +270,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   // Scroll to bottom of chat
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, parsing, ocrLoading, aiLoading]);
+  }, [messages, parsing, aiLoading]);
 
 
 
@@ -304,8 +299,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setCategoryId('');
     setPendingText('');
     setParsed(null);
-    setMessages([firstBotMessage(mode)]);
-    quickEntry.clearChatLog(mode).catch(() => {});
+    setMessages([firstBotMessage('chat')]);
+    quickEntry.clearChatLog('chat').catch(() => {});
   };
 
   // Ask for confirmation inputs
@@ -331,6 +326,13 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       actions: list.map((account) => ({
         label: `${account.name} (฿${fmt(account.balance)})`,
         onClick: () => {
+          if ((mode === 'expense' || mode === 'saving') && result.amount > account.balance) {
+            addMessage({
+              role: 'bot',
+              text: `ยอดเงินในบัญชี "${account.name}" ไม่เพียงพอครับ (ยอดคงเหลือ ฿${fmt(account.balance)}) ไม่สามารถเลือกบัญชีนี้สำหรับยอดเงิน ฿${fmt(result.amount)} ได้ กรุณาเลือกบัญชีอื่นหรือพิมพ์รายการใหม่ครับ`
+            });
+            return;
+          }
           setAccountId(account.id);
           addMessage({ role: 'user', text: account.name });
           showPreview(result, categoryId, { accountId: account.id, goalId });
@@ -419,11 +421,29 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     addMessage({ role: 'user', text });
 
     if (mode !== 'saving' && assetAccounts.length === 0) {
-      addMessage({ role: 'bot', text: 'ต้องสร้างบัญชีก่อน ถึงจะบันทึกรายรับหรือรายจ่ายได้ครับ' });
+      addMessage({
+        role: 'bot',
+        text: 'ต้องสร้างบัญชีก่อน ถึงจะบันทึกรายรับหรือรายจ่ายได้ครับ',
+        actions: onGoAccounts ? [
+          {
+            label: 'ไปที่หน้าจัดการบัญชี',
+            onClick: onGoAccounts
+          }
+        ] : undefined
+      });
       return;
     }
     if (mode === 'saving' && goals.length === 0) {
-      addMessage({ role: 'bot', text: 'ยังไม่มีเป้าหมายการออมเงินในตอนนี้ สร้างเป้าหมายก่อนนะครับ' });
+      addMessage({
+        role: 'bot',
+        text: 'ยังไม่มีเป้าหมายการออมเงินในตอนนี้ สร้างเป้าหมายก่อนนะครับ',
+        actions: onGoGoals ? [
+          {
+            label: 'ไปที่หน้าตั้งเป้าหมายออมเงิน',
+            onClick: onGoGoals
+          }
+        ] : undefined
+      });
       return;
     }
 
@@ -451,6 +471,19 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setParsing(true);
     try {
       const result = await quickEntry.parse({ mode, text });
+      
+      const activeAccId = overrides.accountId || accountId;
+      const activeAcc = assetAccounts.find((a) => a.id === activeAccId);
+      if (activeAcc && (mode === 'expense' || mode === 'saving') && result.amount > activeAcc.balance) {
+        addMessage({
+          role: 'bot',
+          text: `ยอดเงินในบัญชี "${activeAcc.name}" ไม่เพียงพอครับ (ยอดคงเหลือ ฿${fmt(activeAcc.balance)}) แต่คุณระบุจำนวนเงิน ฿${fmt(result.amount)} กรุณากรอกจำนวนเงินใหม่ให้ถูกต้อง`
+        });
+        setParsed(null);
+        setPendingText('');
+        return;
+      }
+
       setParsed(result);
       const nextCategoryId = result.category_id || '';
       setCategoryId(nextCategoryId);
@@ -484,6 +517,24 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       category: previewCategory,
       mode,
     });
+  };
+
+  const handleCancelPreview = (msgId, title, amount) => {
+    setMessages((prev) => {
+      const filtered = prev.filter((m) => m.id !== msgId);
+      const next = [
+        ...filtered,
+        {
+          id: messageId(),
+          role: 'bot',
+          text: `ยกเลิกการบันทึกรายการ "${title}" จำนวน ฿${fmt(amount)} เรียบร้อยแล้วครับ`,
+        }
+      ];
+      saveChatLog(next);
+      return next;
+    });
+    setParsed(null);
+    setPendingText('');
   };
 
   const handleSave = async () => {
@@ -556,244 +607,6 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       addMessage({ role: 'bot', text: err.message || 'บันทึกรายการไม่สำเร็จ' });
     } finally {
       setSaving(false);
-    }
-  };
-
-  // OCR Drag and Drop Upload Callback
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      uploadAndClassifyFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      uploadAndClassifyFile(e.target.files[0]);
-    }
-  };
-
-  const autoClassifyCategory = (title) => {
-    if (!title) return '';
-    const text = title.toLowerCase();
-    
-    const rules = [
-      { keywords: ['ข้าว', 'กะเพรา', 'อาหาร', 'กิน', 'food', 'kfc', 'mcdonald', 'shabu', 'ชาบู', 'ส้มตำ', 'ก๋วยเตี๋ยว', 'บุฟเฟต์', 'pizza', 'สเต็ก', 'sushi', 'โออิชิ'], category: 'อาหาร' },
-      { keywords: ['กาแฟ', 'coffee', 'starbucks', 'cafe', 'ชาไข่มุก', 'ชา', 'tea', 'amazon', 'cafe amazon'], category: 'เครื่องดื่ม' },
-      { keywords: ['bts', 'mrt', 'grab', 'bolt', 'taxi', 'น้ำมัน', 'ptt', 'ปตท', 'shell', 'caltex', 'esso', 'เดินทาง', 'รถไฟฟ้า', 'ทางด่วน', 'วิน'], category: 'เดินทาง' },
-      { keywords: ['shopee', 'lazada', 'ห้าง', 'mall', 'ของใช้', 'วัตสัน', 'watsons', 'boots', 'เสื้อผ้า', 'uniqlo', 'zara', 'h&m', 'shopping', 'ช็อปปิ้ง', 'ซื้อของ'], category: 'ช็อปปิ้ง' },
-      { keywords: ['ค่าไฟ', 'ค่าน้ำ', 'เน็ต', 'internet', 'ais', 'true', 'dtac', 'netflix', 'spotify', 'youtube', 'บิล', 'bill', 'ไฟฟ้า', 'ประปา'], category: 'ค่าสาธารณูปโภค' },
-      { keywords: ['ยา', 'หมอ', 'คลินิก', 'โรงพยาบาล', 'medical', 'hospital', 'pharmacy', 'สุขภาพ'], category: 'สุขภาพ' },
-      { keywords: ['หนัง', 'ตั๋วหนัง', 'คอนเสิร์ต', 'คาราโอเกะ', 'game', 'เกม', 'เติมเกม', 'steam', 'playstation', 'นวด', 'สปา'], category: 'บันเทิง' }
-    ];
-
-    for (const rule of rules) {
-      if (rule.keywords.some(k => text.includes(k))) {
-        const matched = categories.find(c => c.name.toLowerCase().includes(rule.category.toLowerCase()) || rule.category.toLowerCase().includes(c.name.toLowerCase()));
-        if (matched) return matched.id;
-      }
-    }
-
-    for (const cat of categories) {
-      const catName = cat.name.toLowerCase();
-      if (text.includes(catName) || catName.includes(text)) {
-        return cat.id;
-      }
-    }
-
-    const firstExpense = categories.find(c => c.type === 'expense');
-    return firstExpense ? firstExpense.id : '';
-  };
-
-  // Upload any file and auto-classify
-  const uploadAndClassifyFile = async (file) => {
-    if (!file) return;
-    if (ocrLoading) return;
-    
-    if (!file.type.startsWith('image/')) {
-      setOcrError('รองรับเฉพาะไฟล์รูปภาพธนาคารสลิปหรือใบเสร็จเท่านั้นครับ');
-      return;
-    }
-
-    setOcrLoading(true);
-    setOcrError('');
-    
-    const statusMsgId = messageId();
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: statusMsgId,
-        role: 'bot',
-        text: `กำลังตรวจสอบวิเคราะห์รูปภาพ "${file.name}" เพื่อประเมินประเภทข้อมูลธุรกรรม...`
-      }
-    ]);
-
-    try {
-      // Step 1: Upload to slip-jobs first
-      const slipRes = await slipJobsApi.create([file]);
-      const slipJobId = slipRes.job_id;
-      
-      let slipPollCounter = 0;
-      const slipPoll = setInterval(async () => {
-        slipPollCounter++;
-        try {
-          const job = await slipJobsApi.get(slipJobId);
-          if (job.status === 'done') {
-            clearInterval(slipPoll);
-            
-            const doneSlip = (job.slips || []).find((s) => s.status === 'done');
-            if (doneSlip) {
-              // Successfully parsed as a bank SLIP
-              setMessages((prev) => prev.filter((m) => m.id !== statusMsgId));
-              setOcrLoading(false);
-              
-              const slipTitle = doneSlip.receiver || doneSlip.sender || 'โอนเงินสลิป';
-              const slipAmount = doneSlip.amount || 0;
-
-              quickEntry.parse({ mode: 'expense', text: slipTitle })
-                .then((parseRes) => {
-                  const result = {
-                    title: slipTitle,
-                    amount: slipAmount,
-                    category_id: parseRes.category_id || autoClassifyCategory(slipTitle),
-                  };
-                  setParsed(result);
-                  setMode('expense');
-                  setCategoryId(result.category_id);
-                  showPreview(result, result.category_id);
-                })
-                .catch(() => {
-                  const localCatId = autoClassifyCategory(slipTitle);
-                  const result = {
-                    title: slipTitle,
-                    amount: slipAmount,
-                    category_id: localCatId,
-                  };
-                  setParsed(result);
-                  setMode('expense');
-                  setCategoryId(localCatId);
-                  showPreview(result, localCatId);
-                });
-            } else {
-              // Failed or rejected as a slip. Try analyzing as a RECEIPT!
-              setMessages((prev) => prev.map((m) => m.id === statusMsgId ? {
-                ...m,
-                text: `ไม่ใช่สลิปธนาคาร กำลังวิเคราะห์รูปภาพเพื่อแปลงข้อมูลใบเสร็จรับเงิน...`
-              } : m));
-              tryReceiptOCR(file, statusMsgId);
-            }
-          } else if (job.status === 'error') {
-            clearInterval(slipPoll);
-            // Slip error fallback to receipt
-            setMessages((prev) => prev.map((m) => m.id === statusMsgId ? {
-              ...m,
-              text: `ไม่พบข้อมูลการโอนเงิน กำลังแปลงข้อมูลเป็นใบเสร็จรับเงิน...`
-            } : m));
-            tryReceiptOCR(file, statusMsgId);
-          }
-        } catch {
-          if (slipPollCounter > 15) {
-            clearInterval(slipPoll);
-            tryReceiptOCR(file, statusMsgId);
-          }
-        }
-      }, 1500);
-    } catch {
-      // Direct fallback to receipt job
-      tryReceiptOCR(file, statusMsgId);
-    }
-  };
-
-  const tryReceiptOCR = async (file, statusMsgId) => {
-    try {
-      const recRes = await receiptJobsApi.create(file);
-      const recJobId = recRes.job_id;
-      
-      let recPollCounter = 0;
-      const recPoll = setInterval(async () => {
-        recPollCounter++;
-        try {
-          const job = await receiptJobsApi.get(recJobId);
-          if (job.status === 'done') {
-            clearInterval(recPoll);
-            setOcrLoading(false);
-            
-            const doneReceipt = (job.receipts || []).find((r) => r.status === 'done');
-            if (doneReceipt && doneReceipt.data) {
-              setMessages((prev) => prev.filter((m) => m.id !== statusMsgId));
-              
-              const d = doneReceipt.data || {};
-              const parsedAmount = d.items?.reduce((sum, it) => sum + (Number(it.amount) || 0), 0) || 0;
-              const storeName = d.store_name || 'บิลใบเสร็จรับเงิน';
-              
-              quickEntry.parse({ mode: 'expense', text: storeName })
-                .then((parseRes) => {
-                  const result = {
-                    title: storeName,
-                    amount: parsedAmount,
-                    category_id: parseRes.category_id || autoClassifyCategory(storeName),
-                  };
-                  setParsed(result);
-                  setMode('expense');
-                  setCategoryId(result.category_id);
-                  showPreview(result, result.category_id);
-                })
-                .catch(() => {
-                  const localCatId = autoClassifyCategory(storeName);
-                  const result = {
-                    title: storeName,
-                    amount: parsedAmount,
-                    category_id: localCatId,
-                  };
-                  setParsed(result);
-                  setMode('expense');
-                  setCategoryId(localCatId);
-                  showPreview(result, localCatId);
-                });
-            } else {
-              setOcrLoading(false);
-              setMessages((prev) => prev.map((m) => m.id === statusMsgId ? {
-                ...m,
-                text: `รูปภาพนี้ไม่ใช่สลิปโอนเงินหรือใบเสร็จรับเงินที่ระบบรองรับ กรุณาลองใช้รูปภาพอื่นครับ`
-              } : m));
-            }
-          } else if (job.status === 'error') {
-            clearInterval(recPoll);
-            setOcrLoading(false);
-            setMessages((prev) => prev.map((m) => m.id === statusMsgId ? {
-              ...m,
-              text: `วิเคราะห์ใบเสร็จล้มเหลว: รูปภาพนี้ไม่ใช่สลิปโอนเงินหรือใบเสร็จรับเงินที่ระบบรองรับ`
-            } : m));
-          }
-        } catch {
-          if (recPollCounter > 15) {
-            clearInterval(recPoll);
-            setOcrLoading(false);
-            setMessages((prev) => prev.map((m) => m.id === statusMsgId ? {
-              ...m,
-              text: `หมดเวลาเชื่อมต่อการสแกนรูปภาพ กรุณาลองใหม่อีกครั้ง`
-            } : m));
-          }
-        }
-      }, 1500);
-    } catch (err) {
-      setOcrLoading(false);
-      setMessages((prev) => prev.map((m) => m.id === statusMsgId ? {
-        ...m,
-        text: `เกิดข้อผิดพลาดในการวิเคราะห์: ${err.message}`
-      } : m));
     }
   };
 
@@ -982,6 +795,12 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     <span>เปลี่ยนบัญชี</span>
                   </span>
                 </button>
+                <button
+                  onClick={() => handleCancelPreview(message.id, message.result.title, message.result.amount)}
+                  className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-650 dark:text-red-400 text-xs font-semibold border border-red-100 dark:border-red-900/40 transition-colors"
+                >
+                  <span>ยกเลิก</span>
+                </button>
               </div>
             )}
           </div>
@@ -1139,7 +958,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           <div className="flex items-start gap-2">
             {!isUser && (
               <div className="w-5 h-5 rounded-lg bg-[#EAF3F7] dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Bot size={13} className="text-[#2C6488] dark:text-[#4da2db]" />
+                <MessageCircle size={13} className="text-[#2C6488] dark:text-[#4da2db]" />
               </div>
             )}
             <div className="flex-1">
@@ -1168,23 +987,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto h-[calc(100vh-80px)] flex flex-col relative"
-         onDragEnter={handleDrag}
-         onDragOver={handleDrag}>
-      
-      {/* Absolute Drag File Overlay */}
-      {dragActive && (
-        <div 
-          onDragLeave={handleDrag}
-          onDrop={handleDrop}
-          className="absolute inset-0 z-50 bg-[#EAF3F7]/95 dark:bg-slate-900/95 border-4 border-dashed border-[#2C6488] dark:border-[#4da2db] m-4 rounded-3xl flex flex-col items-center justify-center gap-3 animate-fade-in"
-        >
-          <UploadCloud size={48} className="text-[#2C6488] dark:text-[#4da2db] animate-bounce" />
-          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">วางไฟล์รูปภาพตรงนี้</p>
-          <p className="text-xs text-slate-500">ระบบจะวิเคราะห์และสแกนแยกแยะ สลิป/ใบเสร็จ อัตโนมัติ</p>
-        </div>
-      )}
-
+    <div className="p-4 md:p-6 w-full max-w-5xl mx-auto flex-1 flex flex-col min-h-0 relative">
       {/* Main Single Chat Card Container */}
       <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm h-full">
         
@@ -1192,10 +995,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         <div className="bg-white dark:bg-slate-800 px-5 py-4 border-b border-slate-100 dark:border-slate-700/60 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#EAF3F7] dark:bg-slate-700 flex items-center justify-center">
-              <Bot size={20} className="text-[#2C6488] dark:text-[#4da2db]" />
+              <MessageCircle size={20} className="text-[#2C6488] dark:text-[#4da2db]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">ผู้ช่วยอัจฉริยะ PaoJot</h3>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">แชทPaoJot</h3>
               <p className="text-[11px] text-slate-400">ผู้ช่วยจัดการการเงิน วิเคราะห์ OCR และคำนวณงบประมาณในช่องแชทเดียว</p>
             </div>
           </div>
@@ -1207,25 +1010,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           </button>
         </div>
 
-        {/* Mode Selector Tab Bar */}
-        <div className="bg-white dark:bg-slate-800 px-4 py-2 border-b border-slate-100 dark:border-slate-700/60 flex-shrink-0">
-          <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 dark:bg-slate-900 p-1">
-            {Object.entries(MODE_META).map(([key, meta]) => (
-              <button
-                key={key}
-                onClick={() => changeMode(key)}
-                className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                  mode === key 
-                    ? 'bg-white dark:bg-slate-850 shadow-sm' 
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-                style={{ color: mode === key ? meta.tone : undefined }}
-              >
-                {meta.label}
-              </button>
-            ))}
-          </div>
-        </div>
+
 
         {/* Scrollable Chat Area */}
         <div 
@@ -1235,11 +1020,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           {/* Welcome User Guide Card */}
           <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 rounded-2xl p-5 mb-4 space-y-4 shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-700/50 pb-2.5">
-              <Bot className="text-[#2C6488] dark:text-[#4da2db]" size={18} />
+              <MessageCircle className="text-[#2C6488] dark:text-[#4da2db]" size={18} />
               <span className="text-sm font-bold text-slate-800 dark:text-slate-200">คู่มือและวิธีการกรอกข้อมูลในช่องแชท</span>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
               <div className="space-y-1.5">
                 <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
                   <Edit3 size={13} />
@@ -1254,18 +1039,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
               <div className="space-y-1.5">
                 <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
-                  <UploadCloud size={13} />
-                  <span>2. อัปโหลดรูปสแกนอัตโนมัติ</span>
-                </h4>
-                <p className="text-slate-500 dark:text-slate-400 leading-normal pl-1">
-                  ลากรูปสลิปธนาคารหรือรูปใบเสร็จมาวางในแชทนี้ ระบบจะจำแนกความต่างและสแกนประมวลผลให้โดยไม่ต้องกดเลือกปุ่มสลับประเภท
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
                   <Sparkles size={13} className="text-yellow-500" />
-                  <span>3. ระบบแจ้งเตือน & AI</span>
+                  <span>2. ระบบแจ้งเตือน & AI</span>
                 </h4>
                 <p className="text-slate-500 dark:text-slate-400 leading-normal pl-1">
                   สัญญาณเตือนเกี่ยวกับงบประมาณ งวดโอนเงินประจำ หรือรายงานการวิเคราะห์รายสัปดาห์/เดือน จะถูกส่งเข้ามาตอบโต้ในหน้านี้โดยตรง
@@ -1285,14 +1060,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             </div>
           )}
           
-          {ocrLoading && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-none bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 px-4 py-2.5 text-sm text-slate-500 shadow-sm flex items-center gap-2 animate-fade-in">
-                <RefreshCw size={14} className="animate-spin text-[#2C6488]" />
-                ผู้ช่วยอัจฉริยะกำลังประมวลผลวิเคราะห์รูปภาพของคุณ...
-              </div>
-            </div>
-          )}
+
 
           {aiLoading && (
             <div className="flex justify-start">
@@ -1303,14 +1071,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             </div>
           )}
 
-          {ocrError && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-none bg-red-50 dark:bg-red-950/30 border border-red-150 dark:border-red-900/40 px-4 py-2.5 text-xs text-red-500 shadow-sm flex items-center gap-2 animate-fade-in">
-                <AlertCircle size={14} />
-                <span>{ocrError}</span>
-              </div>
-            </div>
-          )}
+
 
           <div ref={chatBottomRef} />
         </div>
@@ -1318,8 +1079,43 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         {/* Quick Action Chips Bar */}
         <div className="px-4 py-2 bg-slate-50 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 flex-shrink-0">
           <button 
+            onClick={() => changeMode('expense')}
+            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              mode === 'expense'
+                ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-655 dark:text-red-400 font-extrabold'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-655 dark:text-slate-455 hover:bg-slate-100'
+            }`}
+          >
+            <span>จดรายจ่าย</span>
+          </button>
+
+          <button 
+            onClick={() => changeMode('income')}
+            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              mode === 'income'
+                ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-655 dark:text-emerald-455 hover:bg-slate-100'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-655 dark:text-slate-455 hover:bg-slate-100'
+            }`}
+          >
+            <span>จดรายรับ</span>
+          </button>
+
+          <button 
+            onClick={() => changeMode('saving')}
+            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              mode === 'saving'
+                ? 'bg-[#EAF3F7] dark:bg-slate-800/40 border-[#DCE8EE] dark:border-slate-700/60 text-[#2C6488] dark:text-[#4da2db] font-extrabold'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-655 dark:text-slate-455 hover:bg-slate-100'
+            }`}
+          >
+            <span>บันทึกการออม</span>
+          </button>
+
+          <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 self-center" />
+
+          <button 
             onClick={() => handleGenerateSummaryInline('weekly')}
-            disabled={aiLoading || ocrLoading}
+            disabled={aiLoading}
             className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
           >
             <Sparkles size={13} className="text-yellow-500" />
@@ -1328,7 +1124,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           
           <button 
             onClick={() => handleGenerateSummaryInline('monthly')}
-            disabled={aiLoading || ocrLoading}
+            disabled={aiLoading}
             className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
           >
             <Calendar size={13} className="text-blue-500" />
@@ -1337,41 +1133,27 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
           <button 
             onClick={handleGuideScroll}
-            className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-slate-500 dark:text-slate-455 hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <HelpCircle size={13} />
             <span>ดูคู่มือใช้งาน</span>
           </button>
-
-          <button 
-            onClick={clearChatLog}
-            className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors flex items-center gap-1.5 shadow-sm ml-auto"
-          >
-            <Trash2 size={13} />
-            <span>ล้างห้องแชท</span>
-          </button>
         </div>
 
         {/* Chat Text Input Bar & Upload triggers */}
-        <div className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700/60 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            
-            {/* Image Attachment Button */}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileChange} 
-              className="hidden" 
-              accept="image/*"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={ocrLoading || parsing}
-              title="อัปโหลดรูปภาพสลิป/ใบเสร็จ"
-              className="w-11 h-11 rounded-xl border border-slate-200 dark:border-slate-750 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 flex items-center justify-center transition-colors flex-shrink-0 disabled:opacity-60"
+        <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 bg-white dark:bg-slate-800 p-2.5 rounded-2xl shadow-md border border-slate-150 dark:border-slate-700/60 focus-within:ring-2 focus-within:ring-[#2C6488]/30 transition-all">
+
+            {/* Active Mode Indicator Badge */}
+            <span 
+              className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all select-none flex-shrink-0"
+              style={{ 
+                color: MODE_META[mode].tone, 
+                backgroundColor: mode === 'saving' ? '#EAF3F7' : MODE_META[mode].bg
+              }}
             >
-              <Paperclip size={18} />
-            </button>
+              <span>{MODE_META[mode].label}</span>
+            </span>
 
             {/* Main Input Text Field */}
             <input
@@ -1379,15 +1161,15 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
               placeholder={MODE_META[mode].placeholder}
-              disabled={!chatLoaded || parsing || ocrLoading || aiLoading}
-              className="flex-1 min-w-0 border border-slate-200 dark:border-slate-750 rounded-xl px-4 py-3 text-sm bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:bg-white focus:outline-none"
+              disabled={!chatLoaded || parsing || aiLoading}
+              className="flex-1 min-w-0 px-2 py-2 text-sm bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
             />
             
             {/* Send Button */}
             <button
               onClick={handleSend}
-              disabled={parsing || saving || ocrLoading || aiLoading || !chatLoaded}
-              className="w-11 h-11 rounded-xl bg-[#2C6488] hover:bg-[#25536F] text-white flex items-center justify-center transition-colors disabled:opacity-60 flex-shrink-0"
+              disabled={parsing || saving || aiLoading || !chatLoaded}
+              className="w-10 h-10 rounded-xl bg-[#2C6488] hover:bg-[#25536F] text-white flex items-center justify-center transition-colors disabled:opacity-60 flex-shrink-0"
             >
               <Send size={16} />
             </button>

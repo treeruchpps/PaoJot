@@ -8,9 +8,7 @@ import LoginPage        from './pages/LoginPage';
 import RegisterPage     from './pages/RegisterPage';
 import SetupAccountPage from './pages/SetupAccountPage';
 
-import Sidebar from './components/layout/Sidebar';
-import Topbar  from './components/layout/Topbar';
-import QuickEntryPanel from './components/common/QuickEntryPanel';
+import Navbar from './components/layout/Navbar';
 
 import AnalyticsView    from './views/AnalyticsView';
 import AssistantView    from './views/AssistantView';
@@ -22,7 +20,7 @@ import RecurringView    from './views/RecurringView';
 import CategoriesView   from './views/CategoriesView';
 import ProfileView      from './views/ProfileView';
 
-import { NAV } from './constants/data';
+
 
 // ─── Loading Spinner ──────────────────────────────────────────────────────────
 function Spinner() {
@@ -44,7 +42,7 @@ function AppShell() {
   const [appState, setAppState]     = useState('checking'); // 'checking'|'setup'|'app'
   const [view, setView]             = useState('analytics');
   const [initialAccountId, setInitialAccountId] = useState(null);
-  const [collapsed, setCollapsed]   = useState(false);
+
   const [accounts,      setAccounts]      = useState([]);
   const [categories,    setCategories]    = useState([]);
   const [notiList,      setNotiList]      = useState([]);
@@ -151,103 +149,88 @@ function AppShell() {
   }
 
   // ── Full app ──
-  const pageTitle = view === 'profile'
-    ? 'โปรไฟล์'
-    : NAV.find((n) => n.id === view)?.label || '';
+
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F6FAFC]">
-      <Sidebar
+    <div className="flex flex-col h-screen overflow-hidden bg-[#F6FAFC] dark:bg-slate-900 transition-colors">
+      <Navbar
         view={view}
         setView={setView}
         accounts={accounts}
-        collapsed={collapsed}
-        setCollapsed={setCollapsed}
+        notifications={notiList}
+        onNotificationRefresh={refreshNotifications}
+        onRefreshAccounts={refreshAccounts}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         avatarUrl={avatarUrl}
       />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Topbar
-          pageTitle={pageTitle}
-          onProfile={() => setView('profile')}
-          notifications={notiList}
-          onNotificationRefresh={refreshNotifications}
-          onRefreshAccounts={refreshAccounts}
-          isDarkMode={isDarkMode}
-          onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
-        />
-        <main className="flex-1 overflow-y-auto">
-          {view === 'analytics'    && (
-            <AnalyticsView
-              accounts={accounts}
-              categories={categories}
-              onGoProfile={() => setView('profile')}
-              onGoAccounts={() => setView('accounts')}
-              isDarkMode={isDarkMode}
-            />
-          )}
-          {view === 'assistant'    && (
-            <AssistantView
-              accounts={accounts}
-              categories={categories}
-              onRefresh={async () => {
-                await Promise.all([refreshAccounts(), refreshNotifications()]);
-                setQuickEntryRefreshKey((v) => v + 1);
-              }}
-            />
-          )}
-          {view === 'accounts'     && (
-            <AccountsView
-              accounts={accounts}
-              onRefresh={refreshAccounts}
-              onGoTransactions={(accId) => {
-                setInitialAccountId(accId);
-                setView('transactions');
-              }}
-            />
-          )}
-          {view === 'transactions' && (
-            <TransactionsView
-              accounts={accounts}
-              categories={categories}
-              onRefreshAccounts={refreshAccounts}
-              onNotificationRefresh={refreshNotifications}
-              onGoAccounts={() => setView('accounts')}
-              initialAccountId={initialAccountId}
-              onClearInitialAccountId={() => setInitialAccountId(null)}
-              quickEntryRefreshKey={quickEntryRefreshKey}
-            />
-          )}
-          {view === 'budgets'      && (
-            <BudgetsView categories={categories} />
-          )}
-          {view === 'goals'        && (
-            <GoalsView accounts={accounts} onRefreshAccounts={refreshAccounts} quickEntryRefreshKey={quickEntryRefreshKey} />
-          )}
-          {view === 'recurring'    && (
-            <RecurringView
-              accounts={accounts}
-              categories={categories}
-              onNotificationRefresh={refreshNotifications}
-            />
-          )}
-          {view === 'categories'   && (
-            <CategoriesView onRefresh={refreshCategories} />
-          )}
-          {view === 'profile'      && (
-            <ProfileView />
-          )}
-        </main>
-        {view !== 'assistant' && (
-          <QuickEntryPanel
+      <main className={`flex-1 min-w-0 ${view === 'assistant' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'}`}>
+        {view === 'assistant' ? (
+          <AssistantView
             accounts={accounts}
             categories={categories}
-            onSaved={async () => {
+            onGoAccounts={() => setView('accounts')}
+            onGoGoals={() => setView('goals')}
+            onRefresh={async () => {
               await Promise.all([refreshAccounts(), refreshNotifications()]);
               setQuickEntryRefreshKey((v) => v + 1);
             }}
           />
+        ) : (
+          <div className="mx-auto w-full max-w-7xl">
+            {view === 'analytics'    && (
+              <AnalyticsView
+                accounts={accounts}
+                categories={categories}
+                onGoProfile={() => setView('profile')}
+                onGoAccounts={() => setView('accounts')}
+                isDarkMode={isDarkMode}
+              />
+            )}
+            {view === 'accounts'     && (
+              <AccountsView
+                accounts={accounts}
+                onRefresh={refreshAccounts}
+                onGoTransactions={(accId) => {
+                  setInitialAccountId(accId);
+                  setView('transactions');
+                }}
+              />
+            )}
+            {view === 'transactions' && (
+              <TransactionsView
+                accounts={accounts}
+                categories={categories}
+                onRefreshAccounts={refreshAccounts}
+                onNotificationRefresh={refreshNotifications}
+                onGoAccounts={() => setView('accounts')}
+                initialAccountId={initialAccountId}
+                onClearInitialAccountId={() => setInitialAccountId(null)}
+                quickEntryRefreshKey={quickEntryRefreshKey}
+              />
+            )}
+            {view === 'budgets'      && (
+              <BudgetsView categories={categories} />
+            )}
+            {view === 'goals'        && (
+              <GoalsView accounts={accounts} onRefreshAccounts={refreshAccounts} quickEntryRefreshKey={quickEntryRefreshKey} />
+            )}
+            {view === 'recurring'    && (
+              <RecurringView
+                accounts={accounts}
+                categories={categories}
+                onNotificationRefresh={refreshNotifications}
+              />
+            )}
+            {view === 'categories'   && (
+              <CategoriesView onRefresh={refreshCategories} />
+            )}
+            {view === 'profile'      && (
+              <ProfileView />
+            )}
+          </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

@@ -213,11 +213,18 @@ func (h *NotificationHandler) generateAISummaryNotifications(ctx context.Context
 	}
 	today := time.Now()
 	weekStartDate := today.AddDate(0, 0, -((int(today.Weekday()) - weekStart + 7) % 7))
-	weekEndDate := weekStartDate.AddDate(0, 0, 6)
+	
+	// Previous Completed Week
+	prevWeekStart := weekStartDate.AddDate(0, 0, -7)
+	prevWeekEnd := weekStartDate.AddDate(0, 0, -1)
+
+	// Previous Completed Month
 	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, today.Location())
-	monthEnd := monthStart.AddDate(0, 1, -1)
-	h.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", weekStartDate, weekEndDate, 11)
-	h.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", monthStart, monthEnd, 31)
+	prevMonthStart := monthStart.AddDate(0, -1, 0)
+	prevMonthEnd := monthStart.AddDate(0, 0, -1)
+
+	h.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", prevWeekStart, prevWeekEnd, 11)
+	h.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", prevMonthStart, prevMonthEnd, 31)
 }
 
 func (h *NotificationHandler) insertAISummaryIfEligible(ctx context.Context, userID, notiType, title string, start, end time.Time, minCount int) {

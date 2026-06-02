@@ -1,0 +1,7 @@
+./account.go
+./budget.go
+./category.go
+./recurring.go
+./savings_goal.go
+./transaction.go
+./user.go

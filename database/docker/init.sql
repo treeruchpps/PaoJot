@@ -278,7 +278,7 @@ CREATE TABLE ai_summaries (
 CREATE TABLE quick_entry_chat_logs (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving')),
+    mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'chat')),
     messages   JSONB       NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

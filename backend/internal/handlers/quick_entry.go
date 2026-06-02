@@ -38,6 +38,12 @@ type quickEntryParseRequest struct {
 	Text string `json:"text" binding:"required"`
 }
 
+var (
+	quickEntryAmountRe       = regexp.MustCompile(`[-+]?\d+(?:[,.]\d+)?`)
+	quickEntryNegativeAmount = regexp.MustCompile(`(^|[^\d])-\s*\d+(?:[,.]\d+)?`)
+	quickEntryMeaningfulText = regexp.MustCompile(`\p{L}`)
+)
+
 type quickEntryParseResponse struct {
 	Mode         string  `json:"mode"`
 	Title        string  `json:"title"`
@@ -49,7 +55,7 @@ type quickEntryParseResponse struct {
 }
 
 type quickEntryChatLogRequest struct {
-	Mode     string          `json:"mode" binding:"required,oneof=income expense saving"`
+	Mode     string          `json:"mode" binding:"required"`
 	Messages json.RawMessage `json:"messages" binding:"required"`
 }
 
@@ -77,19 +83,23 @@ func ensureQuickEntryChatLogsTable(db *pgxpool.Pool) error {
 		CREATE TABLE IF NOT EXISTS quick_entry_chat_logs (
 			id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving')),
+			mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'chat')),
 			messages   JSONB       NOT NULL DEFAULT '[]'::jsonb,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE (user_id, mode)
 		);
+		ALTER TABLE quick_entry_chat_logs DROP CONSTRAINT IF EXISTS quick_entry_chat_logs_mode_check;
+		ALTER TABLE quick_entry_chat_logs
+			ADD CONSTRAINT quick_entry_chat_logs_mode_check
+			CHECK (mode IN ('income', 'expense', 'saving', 'chat'));
 		CREATE INDEX IF NOT EXISTS idx_quick_entry_chat_logs_user ON quick_entry_chat_logs(user_id, mode);
 	`)
 	return err
 }
 
 func validQuickEntryMode(mode string) bool {
-	return mode == "income" || mode == "expense" || mode == "saving"
+	return mode == "income" || mode == "expense" || mode == "saving" || mode == "chat"
 }
 
 func normalizeQuickEntryMessages(raw json.RawMessage) (json.RawMessage, error) {
@@ -175,6 +185,38 @@ func (h *QuickEntryHandler) ClearChatLog(c *gin.Context) {
 	c.JSON(http.StatusOK, quickEntryChatLogResponse{Mode: mode, Messages: json.RawMessage("[]")})
 }
 
+func validateQuickEntryInput(mode, text string) string {
+	text = strings.TrimSpace(text)
+	if quickEntryNegativeAmount.MatchString(text) {
+		return "จำนวนเงินต้องมากกว่า 0 บาทครับ กรุณาใส่จำนวนเงินเป็นค่าบวก เช่น \"กาแฟ 50\""
+	}
+
+	matches := quickEntryAmountRe.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return "ยังไม่พบจำนวนเงินครับ ลองพิมพ์ชื่อรายการพร้อมจำนวนเงิน เช่น \"กาแฟ 50\""
+	}
+
+	last := matches[len(matches)-1]
+	amountText := text[last[0]:last[1]]
+	amount, err := strconv.ParseFloat(strings.ReplaceAll(amountText, ",", ""), 64)
+	if err != nil || amount <= 0 {
+		return "จำนวนเงินต้องมากกว่า 0 บาทครับ กรุณาใส่จำนวนเงินเป็นค่าบวก เช่น \"กาแฟ 50\""
+	}
+
+	titleText := strings.TrimSpace(text[:last[0]] + " " + text[last[1]:])
+	titleText = strings.TrimSpace(strings.ReplaceAll(titleText, "บาท", ""))
+	if mode != "saving" {
+		for _, word := range []string{"รายรับ", "รายจ่าย", "จ่าย", "รับ"} {
+			titleText = strings.TrimSpace(strings.TrimPrefix(titleText, word))
+		}
+	}
+	if !quickEntryMeaningfulText.MatchString(titleText) {
+		return "ยังไม่พบชื่อรายการครับ ลองพิมพ์เป็น \"กาแฟ 50\" หรือ \"เงินเดือน 30000\""
+	}
+
+	return ""
+}
+
 func (h *QuickEntryHandler) Parse(c *gin.Context) {
 	userID := c.GetString("user_id")
 
@@ -186,6 +228,11 @@ func (h *QuickEntryHandler) Parse(c *gin.Context) {
 	req.Text = strings.TrimSpace(req.Text)
 	if req.Text == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาพิมพ์รายการที่ต้องการบันทึก"})
+		return
+	}
+
+	if validationError := validateQuickEntryInput(req.Mode, req.Text); validationError != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": validationError})
 		return
 	}
 

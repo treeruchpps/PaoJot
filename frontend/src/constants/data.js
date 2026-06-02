@@ -1,6 +1,6 @@
 export const NAV = [
   { id: 'analytics',    label: 'แดชบอร์ด',         icon: 'LayoutDashboard' },
-  { id: 'assistant',    label: 'ผู้ช่วยอัจฉริยะ',     icon: 'Bot' },
+  { id: 'assistant',    label: 'แชท',                 icon: 'MessageCircle' },
   { id: 'accounts',     label: 'บัญชี', icon: 'Wallet' },
   { id: 'transactions', label: 'รายการธุรกรรม',       icon: 'ArrowLeftRight' },
   { id: 'budgets',      label: 'งบประมาณ',           icon: 'ChartPie' },

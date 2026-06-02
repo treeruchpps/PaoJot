@@ -346,6 +346,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
               <p className="text-xs text-slate-400 mt-0.5">{k.label} (เป้าหมาย)</p>
             </div>
           </div>
+          {false && (
           <div className="flex gap-1">
             <button onClick={() => onGoTransactions?.(acc.id)}
               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
@@ -353,6 +354,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
               <ReceiptText size={12} className="text-slate-500" />
             </button>
           </div>
+          )}
         </div>
 
         <div className="mt-6 relative z-10">

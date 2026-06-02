@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import Icon from '../components/common/Icon';
-import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, RefreshCw, X, Maximize2, PiggyBank, Target, Clock } from 'lucide-react';
-import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi, savingsGoals as goalsApi } from '../services/api';
+import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2 } from 'lucide-react';
+import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi } from '../services/api';
 import { fmt } from '../constants/data';
-import { formatDisplayDate, formatDisplayDateRange } from '../utils/dateFormat';
+import { formatDisplayDateRange } from '../utils/dateFormat';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const MONTH_LABELS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -13,13 +12,6 @@ const FULL_MONTH_LABELS = [
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ];
 const FALLBACK_CATEGORY_COLOR = '#94a3b8';
-const ACCOUNT_KIND_META = {
-  cash: { icon: 'DollarSign', color: '#10b981' },
-  bank_account: { icon: 'Briefcase', color: '#2C6488' },
-  savings: { icon: 'Star', color: '#f59e0b' },
-  e_wallet: { icon: 'Smartphone', color: '#2C6488' },
-  investment: { icon: 'TrendingUp', color: '#5F9A7A' },
-};
 
 const PERIOD_CONFIG = [
   { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
@@ -327,165 +319,7 @@ function getYearCashflowTrend(txs) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-function getGoalProgress(goal) {
-  const target = Number(goal.target_amount || 0);
-  const current = Number(goal.current_amount || 0);
-  const remaining = Math.max(0, target - current);
-  const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-  return { target, current, remaining, pct };
-}
 
-function getMonthsLeft(deadline) {
-  if (!deadline) return 1;
-  const today = new Date();
-  const end = new Date(deadline);
-  if (Number.isNaN(end.getTime()) || end < today) return 1;
-  const diff = (end.getFullYear() - today.getFullYear()) * 12 + (end.getMonth() - today.getMonth());
-  return Math.max(diff + 1, 1);
-}
-
-function AccountKindIcon({ kind, size = 13 }) {
-  const meta = ACCOUNT_KIND_META[kind] || ACCOUNT_KIND_META.cash;
-  return <Icon name={meta.icon} size={size} color={meta.color} />;
-}
-
-function SavingsOverviewCard({ goals = [], accounts = [] }) {
-  const activeGoals = goals.filter((g) => g.status === 'in_progress');
-  const completedCount = goals.filter((g) => g.status === 'completed').length;
-  const totalTarget = activeGoals.reduce((sum, goal) => sum + Number(goal.target_amount || 0), 0);
-  const totalCurrent = activeGoals.reduce((sum, goal) => sum + Number(goal.current_amount || 0), 0);
-  const totalRemaining = Math.max(0, totalTarget - totalCurrent);
-  const overallPct = totalTarget > 0 ? Math.min((totalCurrent / totalTarget) * 100, 100) : 0;
-  const monthlyNeed = activeGoals.reduce((sum, goal) => {
-    const { remaining } = getGoalProgress(goal);
-    return sum + Math.ceil(remaining / getMonthsLeft(goal.deadline));
-  }, 0);
-
-  const focusGoals = [...activeGoals]
-    .sort((a, b) => {
-      const aProgress = getGoalProgress(a);
-      const bProgress = getGoalProgress(b);
-      const aDate = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
-      const bDate = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
-      return (bProgress.pct - aProgress.pct) || (aDate - bDate);
-    });
-
-  return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center">
-              <PiggyBank size={17} color="#2C6488" />
-            </span>
-            <h3 className="text-sm font-semibold text-slate-700">ความคืบหน้าการออม</h3>
-          </div>
-          <p className="text-xs text-slate-400">ดูภาพรวมเป้าหมายที่กำลังออมและเงินที่ยังต้องออมต่อ</p>
-        </div>
-        <span className="px-2.5 py-1 rounded-full bg-[#EAF3F7] text-[#2C6488] text-xs font-semibold">
-          {activeGoals.length} เป้าหมาย
-        </span>
-      </div>
-
-      {activeGoals.length === 0 ? (
-        <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-6 text-center">
-          <PiggyBank size={26} color="#cbd5e1" className="mx-auto mb-2" />
-          <p className="text-sm font-semibold text-slate-600">ยังไม่มีเป้าหมายที่กำลังออม</p>
-          <p className="text-xs text-slate-400 mt-1">เมื่อสร้างเป้าหมายแล้ว ความคืบหน้าจะมาแสดงในส่วนนี้</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded-2xl bg-[#EAF3F7] border border-[#DCE8EE] p-4">
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,1fr)_minmax(360px,2fr)] gap-4 items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center flex-shrink-0">
-                  <Target size={22} color="#2C6488" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-[#2C6488] font-semibold">ออมแล้วรวม</p>
-                  <p className="text-2xl font-bold text-[#2C6488] mt-1">฿{fmt(totalCurrent)}</p>
-                  <div className="mt-3 h-2.5 rounded-full bg-white overflow-hidden">
-                    <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${overallPct}%` }} />
-                  </div>
-                  <div className="flex items-center justify-between text-xs mt-2">
-                    <span className="text-slate-500">เป้าหมายรวม ฿{fmt(totalTarget)}</span>
-                    <span className="font-bold text-[#2C6488]">{overallPct.toFixed(0)}%</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="rounded-xl bg-white/75 px-3 py-2.5">
-                  <p className="text-[11px] text-slate-500">เป้าหมายรวม</p>
-                  <p className="text-sm font-bold text-slate-700">฿{fmt(totalTarget)}</p>
-                </div>
-                <div className="rounded-xl bg-white/75 px-3 py-2.5">
-                  <p className="text-[11px] text-slate-500">ต้องออมเพิ่ม</p>
-                  <p className="text-sm font-bold text-slate-700">฿{fmt(totalRemaining)}</p>
-                </div>
-                <div className="rounded-xl bg-white/75 px-3 py-2.5">
-                  <p className="text-[11px] text-slate-500">ควรออม/เดือน</p>
-                  <p className="text-sm font-bold text-[#2C6488]">฿{fmt(monthlyNeed)}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-slate-500">เป้าหมายที่กำลังออม</p>
-              {focusGoals.length > 3 && (
-                <p className="text-[11px] text-slate-400">เลื่อนดูได้ {focusGoals.length} เป้าหมาย</p>
-              )}
-            </div>
-            <div className="max-h-[320px] overflow-y-auto pr-1 grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {focusGoals.map((goal) => {
-              const { target, current, remaining, pct } = getGoalProgress(goal);
-              const account = accounts.find((a) => a.id === goal.account_id);
-              return (
-                <div key={goal.id} className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-700 truncate">{goal.name}</p>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
-                        <span className="inline-flex items-center gap-1 min-w-0">
-                          <AccountKindIcon kind={account?.kind} />
-                          <span className="truncate">{account?.name || 'ไม่ระบุบัญชี'}</span>
-                        </span>
-                        {goal.deadline && (
-                          <span className="inline-flex items-center gap-1">
-                            <Clock size={12} />
-                            {formatDisplayDate(goal.deadline, '')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold text-[#2C6488] flex-shrink-0">{pct.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="flex items-center justify-between text-xs mt-2">
-                    <span className="text-slate-500">฿{fmt(current)} / ฿{fmt(target)}</span>
-                    <span className="font-semibold text-slate-700">เหลือ ฿{fmt(remaining)}</span>
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {goals.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-100">ทั้งหมด {goals.length}</span>
-          <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">สำเร็จแล้ว {completedCount}</span>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, isDarkMode }) {
   const [period,       setPeriod]       = useState('all');
@@ -497,26 +331,15 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const [barData,      setBarData]      = useState([]);
   const [aiPeriod,     setAiPeriod]     = useState('monthly');
   const [aiState,      setAiState]      = useState(null);
-  const [aiLoading,    setAiLoading]    = useState(false);
   const [aiError,      setAiError]      = useState('');
   const [showAiSummary, setShowAiSummary] = useState(true);
   const [showAiSummaryModal, setShowAiSummaryModal] = useState(false);
   const [chartTab,     setChartTab]     = useState('compare'); // 'compare' or 'trend'
-  const [goals,        setGoals]        = useState([]);
-
   // ── Fetch profile once ────────────────────────────────────────────────────
   useEffect(() => {
     profileApi.get()
       .then((p) => { if (p?.week_start_day !== undefined) setWeekStartDay(p.week_start_day); })
       .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    goalsApi.list()
-      .then((data) => { if (alive) setGoals(data || []); })
-      .catch(() => { if (alive) setGoals([]); });
-    return () => { alive = false; };
   }, []);
 
   // ── Fetch all periods' summary + selected period's detail + bar ───────────
@@ -588,23 +411,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
 
   useEffect(() => { loadAiSummary(aiPeriod); }, [aiPeriod, weekStartDay, loadAiSummary]);
 
-  const handleGenerateSummary = async (periodType = aiPeriod) => {
-    setAiLoading(true);
-    setAiError('');
-    try {
-      const data = await aiSummaryApi.generate(periodType);
-      setAiState(data);
-      setShowAiSummary(true);
-    } catch (err) {
-      setAiError(err.message || 'สรุปด้วย AI ไม่สำเร็จ');
-      try {
-        const data = await aiSummaryApi.get(periodType);
-        setAiState(data);
-      } catch {}
-    } finally {
-      setAiLoading(false);
-    }
-  };
 
   const handleDonutPeriodSelect = (id) => {
     setPeriod(id);
@@ -750,15 +556,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                     เปิดสรุป
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleGenerateSummary(aiPeriod)}
-                  disabled={aiLoading || aiState?.eligible === false}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#2C6488] text-white text-xs font-semibold disabled:opacity-50"
-                >
-                  {aiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  {aiState?.stale ? 'สรุปใหม่' : 'สรุปด้วย AI'}
-                </button>
               </div>
             </div>
           )}
@@ -802,15 +599,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                     </button>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateSummary(aiPeriod)}
-                  disabled={aiLoading || aiState?.eligible === false}
-                  className="w-8 h-8 rounded-xl bg-[#2C6488] text-white inline-flex items-center justify-center disabled:opacity-50 hover:bg-[#25536F]"
-                  title={aiState?.stale ? 'สรุปใหม่' : 'รีเฟรชสรุป'}
-                >
-                  <RefreshCw size={15} className={aiLoading ? 'animate-spin' : ''} />
-                </button>
                 <button
                   type="button"
                   onClick={() => setShowAiSummaryModal(true)}
@@ -1117,7 +905,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             </div>
           </div>
 
-          <SavingsOverviewCard goals={goals} accounts={accounts} />
         </>
       )}
 

@@ -165,7 +165,11 @@ func (h *AISummaryHandler) Generate(c *gin.Context) {
 		return
 	}
 	if !resp.Eligible {
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      resp.Reason,
+			"eligible":   resp.Eligible,
+			"ai_consent": resp.AIConsent,
+		})
 		return
 	}
 	c.JSON(http.StatusOK, resp)
@@ -173,12 +177,18 @@ func (h *AISummaryHandler) Generate(c *gin.Context) {
 
 func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType string, generate bool) (*aiSummaryResponse, error) {
 	weekStartDay, _ := h.getWeekStartDay(ctx, userID)
-	start, end := currentPeriodRange(periodType, weekStartDay)
 	consent, consentAt, err := h.getAIConsent(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+
+	currStart, currEnd := currentPeriodRange(periodType, weekStartDay)
+	prevStart, prevEnd := previousPeriodRange(periodType, weekStartDay)
+
+	var start, end time.Time
+
 	if !consent {
+		start, end = currStart, currEnd
 		return &aiSummaryResponse{
 			PeriodType:   periodType,
 			PeriodStart:  start.Format("2006-01-02"),
@@ -190,6 +200,22 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 			AIConsent:    false,
 		}, nil
 	}
+
+	if generate {
+		// Manual generation via POST always targets the current ongoing period
+		start, end = currStart, currEnd
+	} else {
+		// View mode (GET)
+		// 1. Check if user has manually generated a summary for the current ongoing period
+		cachedCurr, _, err := h.loadCachedSummary(ctx, userID, periodType, currStart, currEnd, weekStartDay)
+		if err == nil && cachedCurr != nil {
+			start, end = currStart, currEnd
+		} else {
+			// 2. Otherwise, target the previous completed period
+			start, end = prevStart, prevEnd
+		}
+	}
+
 	input, err := h.buildInput(ctx, userID, periodType, start, end, weekStartDay)
 	if err != nil {
 		return nil, err
@@ -216,14 +242,15 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, err
 	}
+
 	if cached != nil {
 		resp.Summary = cached
 		resp.Cached = cachedHash == dataHash
 		resp.Stale = cachedHash != dataHash
 	} else {
-		// No summary exists for the current period yet
+		// No summary exists for the target period yet
 		if eligible {
-			// AUTOMATIC GENERATION: If eligible and no summary exists, generate it automatically
+			// If eligible (whether ongoing generated or completed automated), generate it
 			summary, err := h.callGeminiSummary(input)
 			if err == nil {
 				if err := h.saveSummary(ctx, userID, input, dataHash, summary); err == nil {
@@ -237,24 +264,24 @@ func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType
 		// Fallback: If auto-generation wasn't run (ineligible) or failed, AND we are just viewing (GET request)
 		if resp.Summary == nil && !generate {
 			var raw []byte
-			var prevStart, prevEnd time.Time
-			var prevDataHash, prevModel string
+			var fbackStart, fbackEnd time.Time
+			var fbackDataHash, fbackModel string
 			err := h.db.QueryRow(ctx, `
 				SELECT summary_json, period_start, period_end, data_hash, model
 				FROM ai_summaries
 				WHERE user_id = $1 AND period_type = $2
 				ORDER BY period_end DESC
 				LIMIT 1
-			`, userID, periodType).Scan(&raw, &prevStart, &prevEnd, &prevDataHash, &prevModel)
+			`, userID, periodType).Scan(&raw, &fbackStart, &fbackEnd, &fbackDataHash, &fbackModel)
 
 			if err == nil {
 				var summary aiSummaryResult
 				if err := json.Unmarshal(raw, &summary); err == nil {
 					resp.Summary = &summary
-					resp.PeriodStart = prevStart.Format("2006-01-02")
-					resp.PeriodEnd = prevEnd.Format("2006-01-02")
-					resp.Model = prevModel
-					resp.DataHash = prevDataHash
+					resp.PeriodStart = fbackStart.Format("2006-01-02")
+					resp.PeriodEnd = fbackEnd.Format("2006-01-02")
+					resp.Model = fbackModel
+					resp.DataHash = fbackDataHash
 					resp.Cached = true
 					resp.Stale = false
 				}
@@ -687,6 +714,26 @@ func currentPeriodRange(periodType string, weekStartDay int) (time.Time, time.Ti
 	start := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, loc)
 	end := start.AddDate(0, 1, -1)
 	return start, end
+}
+
+func previousPeriodRange(periodType string, weekStartDay int) (time.Time, time.Time) {
+	now := time.Now()
+	loc := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	if periodType == "weekly" {
+		diff := int(today.Weekday()) - weekStartDay
+		if diff < 0 {
+			diff += 7
+		}
+		currentStart := today.AddDate(0, 0, -diff)
+		prevStart := currentStart.AddDate(0, 0, -7)
+		prevEnd := currentStart.AddDate(0, 0, -1)
+		return prevStart, prevEnd
+	}
+	currentStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, loc)
+	prevStart := currentStart.AddDate(0, -1, 0)
+	prevEnd := currentStart.AddDate(0, 0, -1)
+	return prevStart, prevEnd
 }
 
 func randomID() string {
