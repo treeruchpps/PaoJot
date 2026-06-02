@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -126,10 +127,6 @@ func (h *SavingsGoalHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.AccountID == nil || *req.AccountID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกบัญชีเก็บออม"})
-		return
-	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกชื่อเป้าหมาย"})
@@ -168,17 +165,69 @@ func (h *SavingsGoalHandler) Create(c *gin.Context) {
 		}
 		deadline = &parsed
 	}
+
+	ctx := context.Background()
+
+	// Start DB transaction
+	dbTx, err := h.db.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		return
+	}
+	defer dbTx.Rollback(ctx)
+
+	// Find or create linked account
+	var accountID string
+	var isActive bool
+	err = dbTx.QueryRow(ctx,
+		`SELECT id, is_active FROM accounts WHERE user_id = $1 AND name = 'บัญชีเป้าหมายการออม' AND type = 'asset' LIMIT 1`,
+		userID,
+	).Scan(&accountID, &isActive)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Create it
+			err = dbTx.QueryRow(ctx,
+				`INSERT INTO accounts (user_id, name, type, kind, balance, currency)
+				 VALUES ($1, 'บัญชีเป้าหมายการออม', 'asset', 'savings_goal', 0.00, 'THB')
+				 RETURNING id`,
+				userID,
+			).Scan(&accountID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create associated account"})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check associated account"})
+			return
+		}
+	} else if !isActive {
+		// Reactivate it
+		_, err = dbTx.Exec(ctx,
+			`UPDATE accounts SET is_active = true WHERE id = $1`,
+			accountID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reactivate associated account"})
+			return
+		}
+	}
+
 	var g models.SavingsGoal
-	err = h.db.QueryRow(context.Background(),
+	err = dbTx.QueryRow(ctx,
 		`INSERT INTO savings_goals (user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
-		userID, req.AccountID, req.Name, req.ImageURL, req.TargetAmount, 0, startDate, deadline, models.GoalStatusInProgress,
+		userID, accountID, req.Name, req.ImageURL, req.TargetAmount, 0, startDate, deadline, models.GoalStatusInProgress,
 	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 		&g.CurrentAmount, &g.StartDate, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create savings goal"})
+		return
+	}
+
+	if err := dbTx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
 		return
 	}
 
@@ -216,10 +265,6 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.AccountID != nil && *req.AccountID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกบัญชีเก็บออม"})
-		return
-	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -238,8 +283,18 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 		req.Name = &name
 	}
 
+	ctx := context.Background()
+
+	// Start DB transaction
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		return
+	}
+	defer tx.Rollback(ctx)
+
 	var existing models.SavingsGoal
-	if err := h.db.QueryRow(context.Background(),
+	if err := tx.QueryRow(ctx,
 		`SELECT id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at
 		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
 		id, userID,
@@ -295,25 +350,31 @@ func (h *SavingsGoalHandler) Update(c *gin.Context) {
 		}
 	}
 
+
+
 	var g models.SavingsGoal
-	err := h.db.QueryRow(context.Background(),
+	err = tx.QueryRow(ctx,
 		`UPDATE savings_goals
-		 SET account_id     = COALESCE($1, account_id),
-		     name           = COALESCE($2, name),
-		     image_url      = $3,
-		     target_amount  = COALESCE($4, target_amount),
-		     current_amount = COALESCE($5, current_amount),
-		     start_date     = $6,
-		     deadline       = $7,
-		     status         = $8
-		 WHERE id = $9 AND user_id = $10
+		 SET name           = COALESCE($1, name),
+		     image_url      = $2,
+		     target_amount  = COALESCE($3, target_amount),
+		     current_amount = COALESCE($4, current_amount),
+		     start_date     = $5,
+		     deadline       = $6,
+		     status         = $7
+		 WHERE id = $8 AND user_id = $9
 		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
-		req.AccountID, req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, startDate, deadline, nextStatus, id, userID,
+		req.Name, req.ImageURL, req.TargetAmount, req.CurrentAmount, startDate, deadline, nextStatus, id, userID,
 	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.ImageURL, &g.TargetAmount,
 		&g.CurrentAmount, &g.StartDate, &g.Deadline, &g.Status, &g.CreatedAt, &g.UpdatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
 		return
 	}
 
@@ -339,13 +400,103 @@ func (h *SavingsGoalHandler) savingsGoalNameExists(ctx context.Context, userID, 
 func (h *SavingsGoalHandler) Delete(c *gin.Context) {
 	userID := c.GetString("user_id")
 	id := c.Param("id")
+	refundAccountID := c.Query("refund_account_id")
 
-	result, err := h.db.Exec(context.Background(),
+	ctx := context.Background()
+
+	// Get the existing savings goal details first
+	var g models.SavingsGoal
+	err := h.db.QueryRow(ctx,
+		`SELECT id, user_id, account_id, name, target_amount, current_amount, status
+		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
+		id, userID,
+	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount, &g.CurrentAmount, &g.Status)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
+		return
+	}
+
+	dbTx, err := h.db.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		return
+	}
+	defer dbTx.Rollback(ctx)
+
+	// If there is money accumulated, and refund account is specified, transfer it back
+	if g.CurrentAmount > 0 && g.AccountID != nil && refundAccountID != "" {
+		// Verify destination account
+		var refundAccExists bool
+		err = dbTx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1 AND user_id = $2 AND is_active = true AND type = 'asset')`,
+			refundAccountID, userID,
+		).Scan(&refundAccExists)
+		if err != nil || !refundAccExists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบบัญชีปลายทางที่จะรับเงินคืน"})
+			return
+		}
+
+		// Insert transfer transaction returning the balance
+		_, err = dbTx.Exec(ctx,
+			`INSERT INTO transactions (user_id, account_id, to_account_id, type, amount, name, note, transaction_date)
+			 VALUES ($1, $2, $3, 'transfer', $4, $5, $6, CURRENT_DATE)`,
+			userID, *g.AccountID, refundAccountID, g.CurrentAmount, fmt.Sprintf("คืนเงินจากเป้าหมาย: %s", g.Name), fmt.Sprintf("ลบเป้าหมายการออม: %s", g.Name),
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create refund transaction"})
+			return
+		}
+
+		// Update balances
+		err = debitAccount(ctx, dbTx, userID, *g.AccountID, g.CurrentAmount)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to debit saving goal account"})
+			return
+		}
+
+		err = creditAccount(ctx, dbTx, userID, refundAccountID, g.CurrentAmount)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to credit refund account"})
+			return
+		}
+	}
+
+	// Soft delete (is_active = false) the associated account if it's the last goal
+	if g.AccountID != nil {
+		var otherGoalsCount int
+		err = dbTx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM savings_goals WHERE user_id = $1 AND id <> $2`,
+			userID, id,
+		).Scan(&otherGoalsCount)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check other savings goals"})
+			return
+		}
+
+		if otherGoalsCount == 0 {
+			_, err = dbTx.Exec(ctx,
+				`UPDATE accounts SET is_active = false WHERE id = $1 AND user_id = $2`,
+				*g.AccountID, userID,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to deactivate associated account"})
+				return
+			}
+		}
+	}
+
+	// Physical delete the savings goal
+	result, err := dbTx.Exec(ctx,
 		`DELETE FROM savings_goals WHERE id = $1 AND user_id = $2`,
 		id, userID,
 	)
 	if err != nil || result.RowsAffected() == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
+		return
+	}
+
+	if err := dbTx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
 		return
 	}
 

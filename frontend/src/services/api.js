@@ -145,7 +145,10 @@ export const savingsGoals = {
   uploadImage: (body) => request('/savings-goals/images',       { method: 'POST',   body }, true, true),
   get:     (id)       => request(`/savings-goals/${id}`),
   update:  (id, body) => request(`/savings-goals/${id}`,        { method: 'PUT',    body: JSON.stringify(body) }),
-  delete:  (id)       => request(`/savings-goals/${id}`,        { method: 'DELETE' }),
+  delete:  (id, refundAccountId) => {
+    const q = refundAccountId ? `?refund_account_id=${refundAccountId}` : '';
+    return request(`/savings-goals/${id}${q}`, { method: 'DELETE' });
+  },
   addInitialBalance: (id, body) => request(`/savings-goals/${id}/initial-balance`, { method: 'POST', body: JSON.stringify(body) }),
   deposit: (id, body) => request(`/savings-goals/${id}/deposit`,{ method: 'POST',   body: JSON.stringify(body) }),
 };

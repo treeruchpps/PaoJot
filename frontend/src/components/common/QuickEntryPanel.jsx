@@ -60,7 +60,7 @@ export default function QuickEntryPanel({ accounts = [], categories = [], onSave
   const [saving, setSaving] = useState(false);
   const bottomRef = useRef(null);
 
-  const assetAccounts = useMemo(() => accounts.filter((a) => a.type === 'asset'), [accounts]);
+  const assetAccounts = useMemo(() => accounts.filter((a) => a.type === 'asset' && a.kind !== 'savings_goal'), [accounts]);
   const modeCategories = useMemo(() => categories.filter((c) => c.type === mode), [categories, mode]);
   const selectedAccount = assetAccounts.find((a) => a.id === accountId);
   const selectedGoal = goals.find((g) => g.id === goalId);

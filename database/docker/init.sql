@@ -35,7 +35,8 @@ CREATE TYPE account_kind AS ENUM (
     'bank_account',
     'savings',
     'investment',
-    'e_wallet'
+    'e_wallet',
+    'savings_goal'
 );
 
 CREATE TYPE transaction_type AS ENUM (

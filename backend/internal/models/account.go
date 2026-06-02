@@ -13,6 +13,7 @@ const (
 	AccountKindSavings     AccountKind = "savings"
 	AccountKindInvestment  AccountKind = "investment"
 	AccountKindEWallet     AccountKind = "e_wallet"
+	AccountKindSavingsGoal AccountKind = "savings_goal"
 )
 
 type Account struct {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown, ReceiptText } from 'lucide-react';
+import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown, ReceiptText, Target } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { accounts as accountsApi, transactions as txApi } from '../services/api';
@@ -15,6 +15,7 @@ const KINDS = [
   { value: 'savings',      label: 'ออมทรัพย์',    icon: 'Star',       color: '#f59e0b', type: 'asset' },
   { value: 'e_wallet',     label: 'E-Wallet',     icon: 'Smartphone', color: '#2C6488', type: 'asset' },
   { value: 'investment',   label: 'การลงทุน',     icon: 'TrendingUp', color: '#5F9A7A', type: 'asset' },
+  { value: 'savings_goal', label: 'เป้าหมายการออม', icon: 'Target',     color: '#2C6488', type: 'system' },
 ];
 const ASSET_KINDS     = KINDS.filter((k) => k.type === 'asset');
 const getKind = (v) => KINDS.find((k) => k.value === v) || KINDS[0];
@@ -31,6 +32,7 @@ function KindIcon({ icon, color, size = 18 }) {
   if (icon === 'Star')        return <Star        size={size} color={color} />;
   if (icon === 'Smartphone')  return <Smartphone  size={size} color={color} />;
   if (icon === 'TrendingUp')  return <TrendingUp  size={size} color={color} />;
+  if (icon === 'Target')      return <Target      size={size} color={color} />;
   return null;
 }
 
@@ -124,6 +126,8 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   const [deleting, setDeleting] = useState(false);
 
   const assetAccounts = accounts.filter((a) => a.type === 'asset');
+  const regularAccounts = assetAccounts.filter((a) => a.kind !== 'savings_goal' && !a.name.startsWith('เป้าหมาย:'));
+  const goalAccounts = assetAccounts.filter((a) => a.kind === 'savings_goal' || a.name.startsWith('เป้าหมาย:'));
   const totalAssets = assetAccounts.reduce((s, a) => s + a.balance, 0);
 
   // ── Pool-add helpers ───────────────────────────────────────────────────────
@@ -223,7 +227,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   // ── Distribute ─────────────────────────────────────────────────────────────
   const openDist = () => {
     setPoolAmount(''); setDistDate(todayStr()); setDistError('');
-    setAllocations(assetAccounts.map((a) => ({ account_id: a.id, name: a.name, kind: a.kind, amount: '' })));
+    setAllocations(regularAccounts.map((a) => ({ account_id: a.id, name: a.name, kind: a.kind, amount: '' })));
     setShowDist(true);
   };
   const setAlloc = (idx, val) =>
@@ -256,8 +260,8 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
 
   const handleDistributeEqually = () => {
     const amt = parseFloat(poolAmount) || 0;
-    if (amt <= 0 || assetAccounts.length === 0) return;
-    const equalAmt = (amt / assetAccounts.length).toFixed(2);
+    if (amt <= 0 || regularAccounts.length === 0) return;
+    const equalAmt = (amt / regularAccounts.length).toFixed(2);
     setAllocations(
       allocations.map((a) => ({
         ...a,
@@ -325,6 +329,45 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
     );
   };
 
+  const GoalAccountCard = ({ acc }) => {
+    const k = getKind(acc.kind);
+    
+    return (
+      <div
+        className="relative rounded-2xl p-5 shadow-sm border border-slate-100 bg-slate-50/50 overflow-hidden"
+      >
+        <div className="flex items-start justify-between mb-4 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: k.color + '18' }}>
+              <KindIcon icon={k.icon} color={k.color} size={20} />
+            </div>
+            <div>
+              <p className="font-bold text-slate-700 tracking-tight truncate max-w-[150px]" title={acc.name}>{acc.name}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{k.label} (เป้าหมาย)</p>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => onGoTransactions?.(acc.id)}
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
+              title="ดูรายการธุรกรรม">
+              <ReceiptText size={12} className="text-slate-500" />
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 relative z-10">
+          <p className="text-2xl font-extrabold tracking-tight text-[#2C6488]">
+            ฿{fmt(acc.balance)}
+          </p>
+          <div className="flex items-center justify-between mt-1 border-t border-slate-200/40 pt-2">
+            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">{acc.currency}</span>
+            <span className="text-[10px] font-medium text-slate-400">ล็อกแล้ว</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 space-y-5">
@@ -334,7 +377,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         <div className="grid grid-cols-2 gap-4">
           {[
             { label: 'ยอดเงินรวม', value: totalAssets, color: '#2C6488', bg: '#EAF3F7', prefix: '฿' },
-            { label: 'บัญชีทั้งหมด', value: assetAccounts.length, color: '#2C6488', bg: '#EAF3F7', suffix: ' บัญชี' },
+            { label: 'บัญชีเงินทั้งหมด', value: regularAccounts.length, color: '#2C6488', bg: '#EAF3F7', suffix: ' บัญชี' },
           ].map((s, i) => (
             <div key={i} className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
               <p className="text-xs text-slate-500 mb-1">{s.label}</p>
@@ -354,7 +397,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
             <Plus size={13} color="#ffffff" /> เพิ่มบัญชี
           </button>
-          {assetAccounts.length > 0 && (
+          {regularAccounts.length > 0 && (
             <button onClick={openDist}
               className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
               <Share2 size={13} color="#ffffff" /> จัดสรรเงินเข้าบัญชี
@@ -363,20 +406,29 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         </div>
       </div>
 
-      {assetAccounts.length > 0 && (
+      {regularAccounts.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-3">บัญชีเงิน</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {assetAccounts.map((acc) => <AccountCard key={acc.id} acc={acc} />)}
+            {regularAccounts.map((acc) => <AccountCard key={acc.id} acc={acc} />)}
           </div>
         </div>
       )}
 
-      {assetAccounts.length === 0 && (
+      {goalAccounts.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-[#2C6488] uppercase tracking-wider mb-3">บัญชีเป้าหมายการออม</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {goalAccounts.map((acc) => <GoalAccountCard key={acc.id} acc={acc} />)}
+          </div>
+        </div>
+      )}
+
+      {regularAccounts.length === 0 && (
         <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
           <Briefcase size={40} color="#cbd5e1" />
           <div>
-            <p className="text-sm font-semibold text-slate-600">ยังไม่มีบัญชี</p>
+            <p className="text-sm font-semibold text-slate-600">ยังไม่มีบัญชีเงิน</p>
             <p className="text-xs text-slate-400 mt-1">สร้างบัญชีแรกเพื่อเริ่มบันทึกรายรับ รายจ่าย และโอนเงิน</p>
           </div>
           <button onClick={openPoolAdd}
