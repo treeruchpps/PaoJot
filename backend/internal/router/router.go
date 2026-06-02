@@ -38,6 +38,7 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	slipH := handlers.NewSlipHandler(db, cfg)
 	receiptH := handlers.NewReceiptHandler(db, cfg)
 	aiSummaryH := handlers.NewAISummaryHandler(db, cfg)
+	quickEntryH := handlers.NewQuickEntryHandler(db, cfg)
 
 	// Static file serving for uploaded slip images
 	r.Static("/uploads", "./uploads")
@@ -115,6 +116,12 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		// AI financial summary
 		protected.GET("/ai-summary", aiSummaryH.Get)
 		protected.POST("/ai-summary", aiSummaryH.Generate)
+
+		// Quick entry assistant
+		protected.GET("/quick-entry/chat-log", quickEntryH.GetChatLog)
+		protected.PUT("/quick-entry/chat-log", quickEntryH.SaveChatLog)
+		protected.DELETE("/quick-entry/chat-log", quickEntryH.ClearChatLog)
+		protected.POST("/quick-entry/parse", quickEntryH.Parse)
 
 		// Receipt scanning (async, batch job)
 		protected.GET("/receipt-jobs", receiptH.ListJobs)

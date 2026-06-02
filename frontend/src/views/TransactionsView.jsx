@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, List, Calendar, ScanLine, Loader2, ChevronDown, DollarSign, Briefcase, Star, Smartphone, TrendingUp, CheckCircle2, XCircle, Clock, Upload, ImageIcon, Wallet } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, List, Calendar, ScanLine, Loader2, ChevronDown, DollarSign, Briefcase, Star, Smartphone, TrendingUp, CheckCircle2, XCircle, Clock, Upload, ImageIcon, Wallet, Plus } from 'lucide-react';
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -365,7 +365,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
 }
 
 // ─── Main view ────────────────────────────────────────────────────────────────
-export default function TransactionsView({ accounts, categories, onRefreshAccounts, onNotificationRefresh, onGoAccounts, initialAccountId, onClearInitialAccountId }) {
+export default function TransactionsView({ accounts, categories, onRefreshAccounts, onNotificationRefresh, onGoAccounts, initialAccountId, onClearInitialAccountId, quickEntryRefreshKey = 0 }) {
   const today     = new Date().toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
   const thisYear  = today.slice(0, 4);
@@ -388,6 +388,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const [loading,      setLoading]      = useState(true);
   const [exporting,    setExporting]    = useState(false);
   const [viewMode,     setViewMode]     = useState('list');   // 'list' | 'calendar'
+  const [addMenuOpen,  setAddMenuOpen]  = useState(false);
   const [showModal,    setShowModal]    = useState(false);
   const [txType,       setTxType]       = useState('expense');
   const [filterMonth,  setFilterMonth]  = useState('month');
@@ -1162,6 +1163,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   }, [buildTxListParams]);
 
   useEffect(() => { fetchTx(); }, [fetchTx]);
+  useEffect(() => {
+    if (quickEntryRefreshKey > 0) fetchTx();
+  }, [quickEntryRefreshKey, fetchTx]);
 
   // ── Categories ───────────────────────────────────────────────────────────
   const expCats      = applySavedCategoryOrder('expense', (categories || []).filter((c) => c.type === 'expense'));
@@ -1391,19 +1395,21 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   return (
     <div className="p-6 space-y-5">
 
-      {/* ── Summary cards ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4">
-        {[
-          { label: 'รายได้',  value: totalIncome,  color: '#10b981', bg: '#f0fdf4' },
-          { label: 'รายจ่าย', value: totalExpense, color: '#ef4444', bg: '#fff1f2' },
-        ].map((s, i) => (
-          <div key={i} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '40' }}>
-            <p className="text-xs text-slate-500 mb-1">{s.label}</p>
-            <p className="text-xl font-bold" style={{ color: s.color }}>
-              ฿{fmt(s.value)}
-            </p>
-          </div>
-        ))}
+      <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
+        <h2 className="text-base font-semibold text-slate-700">ภาพรวมรายการธุรกรรม</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {[
+            { label: 'รายได้',  value: totalIncome,  color: '#10b981', bg: '#f0fdf4' },
+            { label: 'รายจ่าย', value: totalExpense, color: '#ef4444', bg: '#fff1f2' },
+          ].map((s, i) => (
+            <div key={i} className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
+              <p className="text-xs text-slate-500 mb-1">{s.label}</p>
+              <p className="text-xl font-bold" style={{ color: s.color }}>
+                ฿{fmt(s.value)}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ── Toolbar ───────────────────────────────────────────────────────── */}
@@ -1425,30 +1431,50 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             ))}
           </div>
 
-          {/* Add buttons */}
-          {['income', 'expense', 'transfer'].map((t) => (
-            <button key={t} onClick={() => openAdd(t)} disabled={!hasAccounts} title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
-              className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-opacity ${!hasAccounts ? 'opacity-45 cursor-not-allowed' : ''}`}
-              style={{ color: TYPE_COLOR[t], background: TYPE_BG[t], borderColor: TYPE_COLOR[t] + '33' }}>
-              {TYPE_ICON[t] === 'ArrowUp' && <ArrowUp size={13} color={TYPE_COLOR[t]} />}
-              {TYPE_ICON[t] === 'ArrowDown' && <ArrowDown size={13} color={TYPE_COLOR[t]} />}
-              {TYPE_ICON[t] === 'ArrowLeftRight' && <ArrowLeftRight size={13} color={TYPE_COLOR[t]} />}
-              {TYPE_LABEL[t]}
+          {/* Add menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => hasAccounts && setAddMenuOpen((open) => !open)}
+              disabled={!hasAccounts}
+              title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
+              className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F] ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-[#2C6488] hover:border-[#2C6488]' : ''}`}
+            >
+              <Plus size={13} color="#ffffff" />
+              เพิ่มรายการ
+              <ChevronDown size={13} color="#ffffff" className={`transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-          ))}
+            {addMenuOpen && hasAccounts && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-44 rounded-2xl border border-slate-100 bg-white p-1.5 shadow-lg">
+                {['expense', 'income', 'transfer'].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => { setAddMenuOpen(false); openAdd(t); }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 flex items-center gap-2 hover:bg-[#EAF3F7] transition-colors"
+                  >
+                    {TYPE_ICON[t] === 'ArrowUp' && <ArrowUp size={14} color={TYPE_COLOR[t]} />}
+                    {TYPE_ICON[t] === 'ArrowDown' && <ArrowDown size={14} color={TYPE_COLOR[t]} />}
+                    {TYPE_ICON[t] === 'ArrowLeftRight' && <ArrowLeftRight size={14} color={TYPE_COLOR[t]} />}
+                    {TYPE_LABEL[t]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* OCR ปุ่มแยก 2 ปุ่ม */}
           <input ref={ocrFileRef} type="file" accept="image/*,.heic,.heif" multiple className="hidden"
             onChange={(e) => { handleOcrFileSelect(e.target.files); e.target.value = ''; }} />
 
           <button onClick={() => openOcrModal('receipt')} disabled={!hasAccounts} title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
-            className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-sky-200 bg-sky-50 text-sky-600 hover:bg-sky-100 transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-sky-50' : ''}`}>
-            <ScanLine size={13} />
+            className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white hover:bg-[#25536F] hover:border-[#25536F] transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-[#2C6488] hover:border-[#2C6488]' : ''}`}>
+            <ScanLine size={13} color="#ffffff" />
             สแกนใบเสร็จ
           </button>
           <button onClick={openSlipScanner} disabled={!hasAccounts} title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
-            className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-sky-200 bg-sky-50 text-sky-600 hover:bg-sky-100 transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-sky-50' : ''}`}>
-            <ScanLine size={13} />
+            className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white hover:bg-[#25536F] hover:border-[#25536F] transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-[#2C6488] hover:border-[#2C6488]' : ''}`}>
+            <ScanLine size={13} color="#ffffff" />
             สแกนสลิป
           </button>
 
@@ -2009,7 +2035,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   onClick={() => ocrFileRef.current?.click()}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => { e.preventDefault(); handleOcrFileSelect(e.dataTransfer.files); }}
-                  className="relative border-2 border-dashed border-sky-200 rounded-2xl overflow-hidden cursor-pointer hover:border-sky-400 transition-colors"
+                  className="relative border-2 border-dashed border-[#BFD8E4] rounded-2xl overflow-hidden cursor-pointer hover:border-[#2C6488] transition-colors"
                   style={{ minHeight: 180 }}
                 >
                   {ocrPreviews.length > 0 ? (
@@ -2025,16 +2051,16 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       ))}
                       {ocrPreviews.length < 5 && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); ocrFileRef.current?.click(); }}
-                          className="aspect-[3/4] rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sky-500 flex flex-col items-center justify-center gap-1 text-xs font-semibold hover:bg-sky-100">
+                          className="aspect-[3/4] rounded-xl border-2 border-dashed border-[#BFD8E4] bg-[#EAF3F7] text-[#2C6488] flex flex-col items-center justify-center gap-1 text-xs font-semibold hover:bg-[#DCE8EE]">
                           <Upload size={18} />
                           เพิ่มรูป
                         </button>
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center gap-2 py-12 text-sky-300">
-                      <ScanLine size={36} />
-                      <p className="text-sm font-medium text-sky-500">คลิกหรือลากวางรูปใบเสร็จ</p>
+                    <div className="flex flex-col items-center justify-center gap-2 py-12 text-[#2C6488]">
+                      <ScanLine size={36} color="#2C6488" />
+                      <p className="text-sm font-medium text-[#2C6488]">คลิกหรือลากวางรูปใบเสร็จ</p>
                       <p className="text-xs text-slate-400">สูงสุด 5 ใบ · JPG, PNG, HEIC</p>
                     </div>
                   )}
@@ -2050,8 +2076,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                     ปิด
                   </button>
                   <button onClick={runOcr} disabled={ocrFiles.length === 0 || ocrLoading}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                    style={{ background: '#0284c7' }}>
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#2C6488] hover:bg-[#25536F] disabled:opacity-50 flex items-center justify-center gap-2">
                     {ocrLoading ? <><Loader2 size={15} className="animate-spin" /> กำลังอ่านใบเสร็จ...</> : `เริ่มสแกน ${ocrFiles.length ? ocrFiles.length + ' รูป' : ''}`}
                   </button>
                 </div>
@@ -2298,7 +2323,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   onClick={() => slipFileRef.current?.click()}
                   onDrop={(e) => { e.preventDefault(); handleSlipFilesSelect(e.dataTransfer.files); }}
                   onDragOver={(e) => e.preventDefault()}
-                  className="relative border-2 border-dashed border-sky-200 rounded-2xl overflow-hidden cursor-pointer hover:border-sky-400 transition-colors"
+                  className="relative border-2 border-dashed border-[#BFD8E4] rounded-2xl overflow-hidden cursor-pointer hover:border-[#2C6488] transition-colors"
                   style={{ minHeight: 180 }}
                 >
                   {slipFiles.length > 0 ? (
@@ -2326,16 +2351,16 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       ))}
                       {slipFiles.length < 5 && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); slipFileRef.current?.click(); }}
-                          className="aspect-[3/4] rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sky-500 flex flex-col items-center justify-center gap-1 text-xs font-semibold hover:bg-sky-100">
+                          className="aspect-[3/4] rounded-xl border-2 border-dashed border-[#BFD8E4] bg-[#EAF3F7] text-[#2C6488] flex flex-col items-center justify-center gap-1 text-xs font-semibold hover:bg-[#DCE8EE]">
                           <Upload size={18} />
                           เพิ่มรูป
                         </button>
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center gap-2 py-12 text-sky-300">
-                      <ScanLine size={36} />
-                      <p className="text-sm font-medium text-sky-500">คลิกหรือลากวางรูปสลิป</p>
+                    <div className="flex flex-col items-center justify-center gap-2 py-12 text-[#2C6488]">
+                      <ScanLine size={36} color="#2C6488" />
+                      <p className="text-sm font-medium text-[#2C6488]">คลิกหรือลากวางรูปสลิป</p>
                       <p className="text-xs text-slate-400">สูงสุด 5 รูป · JPG, PNG, HEIC</p>
                     </div>
                   )}
@@ -2353,8 +2378,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                     ปิด
                   </button>
                   <button onClick={startSlipJob} disabled={slipFiles.length === 0 || slipUploading}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                    style={{ background: '#0284c7' }}>
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#2C6488] hover:bg-[#25536F] disabled:opacity-50 flex items-center justify-center gap-2">
                     {slipUploading
                       ? <><Loader2 size={15} className="animate-spin" /> กำลังอ่านข้อมูลสลิป...</>
                       : `เริ่มสแกน ${slipFiles.length > 0 ? slipFiles.length + ' รูป' : ''}`}
@@ -2386,7 +2410,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${slipJob.total_count > 0 ? (slipJob.done_count / slipJob.total_count) * 100 : 0}%`,
-                        background: '#0284c7',
+                        background: '#2C6488',
                       }}
                     />
                   </div>
@@ -2518,7 +2542,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
                               {/* Extracted summary */}
                               {(slip.bank || slip.sender || slip.receiver) && (
-                                <div className="bg-sky-50 rounded-xl px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                <div className="bg-[#EAF3F7] rounded-xl px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                   {slip.bank && (
                                     <div><span className="text-slate-400">ธนาคาร: </span>
                                     <span className="font-medium text-slate-700">{slip.bank}</span></div>

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from '../components/common/Icon';
-import { Sun, Calendar, BarChart2, TrendingUp, Wallet, ReceiptText, AlertCircle, Sparkles, RefreshCw, X, Maximize2 } from 'lucide-react';
-import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi } from '../services/api';
+import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, RefreshCw, X, Maximize2, PiggyBank, Target, Clock } from 'lucide-react';
+import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi, savingsGoals as goalsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate, formatDisplayDateRange } from '../utils/dateFormat';
 
@@ -13,6 +13,13 @@ const FULL_MONTH_LABELS = [
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ];
 const FALLBACK_CATEGORY_COLOR = '#94a3b8';
+const ACCOUNT_KIND_META = {
+  cash: { icon: 'DollarSign', color: '#10b981' },
+  bank_account: { icon: 'Briefcase', color: '#2C6488' },
+  savings: { icon: 'Star', color: '#f59e0b' },
+  e_wallet: { icon: 'Smartphone', color: '#2C6488' },
+  investment: { icon: 'TrendingUp', color: '#5F9A7A' },
+};
 
 const PERIOD_CONFIG = [
   { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
@@ -20,6 +27,7 @@ const PERIOD_CONFIG = [
   { id: 'month', label: 'เดือนนี้',   icon: 'BarChart2', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
   { id: 'year',  label: 'ปีนี้',      icon: 'TrendingUp', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
 ];
+const DONUT_PERIOD_OPTIONS = [{ id: 'all', label: 'ทั้งหมด' }, ...PERIOD_CONFIG];
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -148,16 +156,24 @@ function BarChart({ data, isDarkMode }) {
           {
             label:           'รายรับ',
             data:            data.map((d) => d.income),
-            backgroundColor: '#34d399',
-            borderRadius:    5,
-            barPercentage:   0.7,
+            backgroundColor: 'rgba(16, 185, 129, 0.75)',
+            hoverBackgroundColor: '#10b981',
+            borderRadius:    8,
+            borderSkipped:   false,
+            barPercentage:   0.64,
+            categoryPercentage: 0.62,
+            maxBarThickness: 22,
           },
           {
             label:           'รายจ่าย',
             data:            data.map((d) => d.expense),
-            backgroundColor: '#fb7185',
-            borderRadius:    5,
-            barPercentage:   0.7,
+            backgroundColor: 'rgba(244, 63, 94, 0.72)',
+            hoverBackgroundColor: '#f43f5e',
+            borderRadius:    8,
+            borderSkipped:   false,
+            barPercentage:   0.64,
+            categoryPercentage: 0.62,
+            maxBarThickness: 22,
           },
         ],
       },
@@ -167,18 +183,28 @@ function BarChart({ data, isDarkMode }) {
         animation:           false,
         plugins: {
           legend:  { display: false },
-          tooltip: { callbacks: { label: (ctx) => ` ฿${fmt(ctx.raw)}` } },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 10,
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ฿${fmt(ctx.raw)}` },
+          },
         },
         scales: {
           x: {
             grid:  { display: false },
-            ticks: { font: { size: 11 }, color: '#94a3b8' },
+            border: { display: false },
+            ticks: { font: { size: 11, weight: 600 }, color: '#94a3b8' },
           },
           y: {
-            grid:  { color: isDarkMode ? '#24304c' : '#f1f5f9' },
+            border: { display: false },
+            grid:  { color: isDarkMode ? '#24304c' : '#eef4f7', drawTicks: false },
             ticks: {
               font:     { size: 11 },
               color:    '#94a3b8',
+              padding:   8,
               callback: (v) => v >= 1000 ? `฿${(v / 1000).toFixed(0)}K` : `฿${v}`,
             },
           },
@@ -189,11 +215,11 @@ function BarChart({ data, isDarkMode }) {
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
   }, [data, isDarkMode]);
 
-  return <div className="h-48"><canvas ref={canvasRef} /></div>;
+  return <div className="h-56"><canvas ref={canvasRef} /></div>;
 }
 
 // ─── Chart: Line (Spending Trend) ──────────────────────────────────────────
-function LineChart({ data, isDarkMode }) {
+function TrendLineChart({ data, isDarkMode }) {
   const canvasRef = useRef(null);
   const chartRef  = useRef(null);
 
@@ -203,30 +229,40 @@ function LineChart({ data, isDarkMode }) {
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
 
     const ctx = canvasRef.current.getContext('2d');
-    const gradient = ctx.createLinearGradient(0, 0, 0, 180);
-    if (isDarkMode) {
-      gradient.addColorStop(0, 'rgba(77, 162, 219, 0.4)');
-      gradient.addColorStop(1, 'rgba(77, 162, 219, 0.0)');
-    } else {
-      gradient.addColorStop(0, 'rgba(44, 100, 136, 0.3)');
-      gradient.addColorStop(1, 'rgba(44, 100, 136, 0.0)');
-    }
+    const incomeGradient = ctx.createLinearGradient(0, 0, 0, 260);
+    incomeGradient.addColorStop(0, 'rgba(52, 211, 153, 0.18)');
+    incomeGradient.addColorStop(1, 'rgba(52, 211, 153, 0.02)');
 
     chartRef.current = new C(canvasRef.current, {
       type: 'line',
       data: {
-        labels:   data.map((d) => d.label),
-        datasets: [{
-          label:           'รายจ่ายสะสม',
-          data:            data.map((d) => d.amount),
-          borderColor:     isDarkMode ? '#4da2db' : '#2C6488',
-          backgroundColor: gradient,
-          borderWidth:     2,
-          fill:            true,
-          tension:         0.3,
-          pointRadius:     1.5,
-          pointHoverRadius: 4,
-        }],
+        labels:   data.map((d) => d.month),
+        datasets: [
+          {
+            label: 'รายรับ',
+            data: data.map((d) => d.income),
+            borderColor: '#34c986',
+            backgroundColor: incomeGradient,
+            borderWidth: 3,
+            fill: true,
+            tension: 0.42,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHitRadius: 14,
+          },
+          {
+            label: 'รายจ่าย',
+            data: data.map((d) => d.expense),
+            borderColor: '#fb7185',
+            backgroundColor: 'rgba(251, 113, 133, 0.04)',
+            borderWidth: 3,
+            fill: false,
+            tension: 0.42,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHitRadius: 14,
+          },
+        ],
       },
       options: {
         responsive:          true,
@@ -234,28 +270,35 @@ function LineChart({ data, isDarkMode }) {
         animation:           false,
         plugins: {
           legend:  { display: false },
-          tooltip: { callbacks: { label: (ctx) => ` ฿${fmt(ctx.raw)}` } },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 10,
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ฿${fmt(ctx.raw)}` },
+          },
         },
         scales: {
           x: {
             grid:  { display: false },
+            border: { display: false },
             ticks: {
-              font: { size: 9 },
-              color: '#94a3b8',
-              callback: function(val, index) {
-                const total = data.length;
-                if (total <= 12) {
-                  return data[index].label;
-                }
-                return (index + 1) % 5 === 0 ? data[index].label : '';
-              }
+              font: { size: 11, weight: 600 },
+              color: isDarkMode ? '#9ca3af' : '#111827',
             },
           },
           y: {
-            grid:  { color: isDarkMode ? '#24304c' : '#f1f5f9' },
+            border: { display: false },
+            grid:  {
+              color: isDarkMode ? '#24304c' : '#e5e7eb',
+              borderDash: [4, 4],
+              drawTicks: false,
+            },
             ticks: {
-              font:     { size: 10 },
-              color:    '#94a3b8',
+              font:     { size: 12 },
+              color:    isDarkMode ? '#9ca3af' : '#4b5563',
+              padding:   10,
               callback: (v) => v >= 1000 ? `฿${(v / 1000).toFixed(0)}K` : `฿${v}`,
             },
           },
@@ -266,149 +309,190 @@ function LineChart({ data, isDarkMode }) {
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
   }, [data, isDarkMode]);
 
-  return <div className="h-48"><canvas ref={canvasRef} /></div>;
+  return <div className="h-56"><canvas ref={canvasRef} /></div>;
 }
 
-function getTrendData(txs, period, weekStartDay) {
-  if (!txs || txs.length === 0) return [];
-  
-  if (period === 'week' || period === 'today') {
-    const days = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
-    const dailySums = Array.from({ length: 7 }, (_, i) => {
-      const d = (weekStartDay + i) % 7;
-      return { label: days[d], amount: 0 };
-    });
-    
-    txs.forEach((tx) => {
-      if (tx.type === 'expense' && tx.transaction_date) {
-        const d = new Date(tx.transaction_date);
-        const wday = d.getDay();
-        let index = (wday - weekStartDay) % 7;
-        if (index < 0) index += 7;
-        if (index >= 0 && index < 7) {
-          dailySums[index].amount += Number(tx.amount || 0);
-        }
-      }
-    });
-    return dailySums;
-  }
-  
-  if (period === 'month') {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const dailySums = Array.from({ length: daysInMonth }, (_, i) => ({
-      label: `วันที่ ${i + 1}`,
-      amount: 0,
-    }));
-    
-    txs.forEach((tx) => {
-      if (tx.type === 'expense' && tx.transaction_date) {
-        const dateParts = tx.transaction_date.split('-');
-        if (dateParts.length === 3) {
-          const dayNum = parseInt(dateParts[2], 10);
-          if (dayNum >= 1 && dayNum <= daysInMonth) {
-            dailySums[dayNum - 1].amount += Number(tx.amount || 0);
-          }
-        }
-      }
-    });
-    return dailySums;
-  }
-
-  if (period === 'year') {
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    const monthlySums = Array.from({ length: 12 }, (_, i) => ({
-      label: months[i],
-      amount: 0,
-    }));
-    
-    txs.forEach((tx) => {
-      if (tx.type === 'expense' && tx.transaction_date) {
-        const dateParts = tx.transaction_date.split('-');
-        if (dateParts.length === 3) {
-          const monthNum = parseInt(dateParts[1], 10);
-          if (monthNum >= 1 && monthNum <= 12) {
-            monthlySums[monthNum - 1].amount += Number(tx.amount || 0);
-          }
-        }
-      }
-    });
-    return monthlySums;
-  }
-  
-  return [];
+function getYearCashflowTrend(txs) {
+  const monthly = MONTH_LABELS.map((month) => ({ month, income: 0, expense: 0 }));
+  (txs || []).forEach((tx) => {
+    if (!tx.transaction_date) return;
+    const dateParts = tx.transaction_date.split('-');
+    if (dateParts.length !== 3) return;
+    const monthIndex = parseInt(dateParts[1], 10) - 1;
+    if (monthIndex < 0 || monthIndex > 11) return;
+    if (tx.type === 'income') monthly[monthIndex].income += Number(tx.amount || 0);
+    if (tx.type === 'expense') monthly[monthIndex].expense += Number(tx.amount || 0);
+  });
+  return monthly;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-function AccountCashflowBars({ data, totalIncome, totalExpense }) {
-  if (data.length === 0) {
-    return (
-      <div className="py-10 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-slate-50 mx-auto mb-3 flex items-center justify-center">
-          <Wallet size={20} color="#cbd5e1" />
-        </div>
-        <p className="text-xs text-slate-400">ยังไม่มีรายรับหรือรายจ่ายในช่วงนี้</p>
-      </div>
-    );
-  }
+function getGoalProgress(goal) {
+  const target = Number(goal.target_amount || 0);
+  const current = Number(goal.current_amount || 0);
+  const remaining = Math.max(0, target - current);
+  const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
+  return { target, current, remaining, pct };
+}
 
-  const max = Math.max(...data.map((item) => Math.max(item.income, item.expense)), 1);
+function getMonthsLeft(deadline) {
+  if (!deadline) return 1;
+  const today = new Date();
+  const end = new Date(deadline);
+  if (Number.isNaN(end.getTime()) || end < today) return 1;
+  const diff = (end.getFullYear() - today.getFullYear()) * 12 + (end.getMonth() - today.getMonth());
+  return Math.max(diff + 1, 1);
+}
+
+function AccountKindIcon({ kind, size = 13 }) {
+  const meta = ACCOUNT_KIND_META[kind] || ACCOUNT_KIND_META.cash;
+  return <Icon name={meta.icon} size={size} color={meta.color} />;
+}
+
+function SavingsOverviewCard({ goals = [], accounts = [] }) {
+  const activeGoals = goals.filter((g) => g.status === 'in_progress');
+  const completedCount = goals.filter((g) => g.status === 'completed').length;
+  const totalTarget = activeGoals.reduce((sum, goal) => sum + Number(goal.target_amount || 0), 0);
+  const totalCurrent = activeGoals.reduce((sum, goal) => sum + Number(goal.current_amount || 0), 0);
+  const totalRemaining = Math.max(0, totalTarget - totalCurrent);
+  const overallPct = totalTarget > 0 ? Math.min((totalCurrent / totalTarget) * 100, 100) : 0;
+  const monthlyNeed = activeGoals.reduce((sum, goal) => {
+    const { remaining } = getGoalProgress(goal);
+    return sum + Math.ceil(remaining / getMonthsLeft(goal.deadline));
+  }, 0);
+
+  const focusGoals = [...activeGoals]
+    .sort((a, b) => {
+      const aProgress = getGoalProgress(a);
+      const bProgress = getGoalProgress(b);
+      const aDate = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+      const bDate = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+      return (bProgress.pct - aProgress.pct) || (aDate - bDate);
+    });
 
   return (
-    <div className="space-y-4">
-      {data.map((item) => {
-        const incomeWidth = item.income > 0 ? Math.max((item.income / max) * 100, 6) : 0;
-        const expenseWidth = item.expense > 0 ? Math.max((item.expense / max) * 100, 6) : 0;
-        const incomePct = totalIncome > 0 ? (item.income / totalIncome) * 100 : 0;
-        const expensePct = totalExpense > 0 ? (item.expense / totalExpense) * 100 : 0;
+    <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center">
+              <PiggyBank size={17} color="#2C6488" />
+            </span>
+            <h3 className="text-sm font-semibold text-slate-700">ความคืบหน้าการออม</h3>
+          </div>
+          <p className="text-xs text-slate-400">ดูภาพรวมเป้าหมายที่กำลังออมและเงินที่ยังต้องออมต่อ</p>
+        </div>
+        <span className="px-2.5 py-1 rounded-full bg-[#EAF3F7] text-[#2C6488] text-xs font-semibold">
+          {activeGoals.length} เป้าหมาย
+        </span>
+      </div>
 
-        return (
-          <div key={item.id} className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                  <Wallet size={15} color="#2C6488" />
+      {activeGoals.length === 0 ? (
+        <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-6 text-center">
+          <PiggyBank size={26} color="#cbd5e1" className="mx-auto mb-2" />
+          <p className="text-sm font-semibold text-slate-600">ยังไม่มีเป้าหมายที่กำลังออม</p>
+          <p className="text-xs text-slate-400 mt-1">เมื่อสร้างเป้าหมายแล้ว ความคืบหน้าจะมาแสดงในส่วนนี้</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-[#EAF3F7] border border-[#DCE8EE] p-4">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,1fr)_minmax(360px,2fr)] gap-4 items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center flex-shrink-0">
+                  <Target size={22} color="#2C6488" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-700 truncate">{item.name}</p>
-                  <p className="text-[11px] text-slate-400">{item.count} รายการ</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-[#2C6488] font-semibold">ออมแล้วรวม</p>
+                  <p className="text-2xl font-bold text-[#2C6488] mt-1">฿{fmt(totalCurrent)}</p>
+                  <div className="mt-3 h-2.5 rounded-full bg-white overflow-hidden">
+                    <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${overallPct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-xs mt-2">
+                    <span className="text-slate-500">เป้าหมายรวม ฿{fmt(totalTarget)}</span>
+                    <span className="font-bold text-[#2C6488]">{overallPct.toFixed(0)}%</span>
+                  </div>
                 </div>
               </div>
-              <div className="text-right flex-shrink-0">
-                <p className="text-xs font-bold text-emerald-600">+฿{fmt(item.income)}</p>
-                <p className="text-xs font-bold text-red-500">-฿{fmt(item.expense)}</p>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="w-9 text-[10px] text-emerald-600 font-semibold">รับ</span>
-                <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full rounded-full bg-emerald-400" style={{ width: `${incomeWidth}%` }} />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="rounded-xl bg-white/75 px-3 py-2.5">
+                  <p className="text-[11px] text-slate-500">เป้าหมายรวม</p>
+                  <p className="text-sm font-bold text-slate-700">฿{fmt(totalTarget)}</p>
                 </div>
-                <span className="w-8 text-right text-[10px] text-slate-400">{incomePct.toFixed(0)}%</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-9 text-[10px] text-red-500 font-semibold">จ่าย</span>
-                <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full rounded-full bg-red-400" style={{ width: `${expenseWidth}%` }} />
+                <div className="rounded-xl bg-white/75 px-3 py-2.5">
+                  <p className="text-[11px] text-slate-500">ต้องออมเพิ่ม</p>
+                  <p className="text-sm font-bold text-slate-700">฿{fmt(totalRemaining)}</p>
                 </div>
-                <span className="w-8 text-right text-[10px] text-slate-400">{expensePct.toFixed(0)}%</span>
+                <div className="rounded-xl bg-white/75 px-3 py-2.5">
+                  <p className="text-[11px] text-slate-500">ควรออม/เดือน</p>
+                  <p className="text-sm font-bold text-[#2C6488]">฿{fmt(monthlyNeed)}</p>
+                </div>
               </div>
             </div>
           </div>
-        );
-      })}
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-500">เป้าหมายที่กำลังออม</p>
+              {focusGoals.length > 3 && (
+                <p className="text-[11px] text-slate-400">เลื่อนดูได้ {focusGoals.length} เป้าหมาย</p>
+              )}
+            </div>
+            <div className="max-h-[320px] overflow-y-auto pr-1 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {focusGoals.map((goal) => {
+              const { target, current, remaining, pct } = getGoalProgress(goal);
+              const account = accounts.find((a) => a.id === goal.account_id);
+              return (
+                <div key={goal.id} className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-700 truncate">{goal.name}</p>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1 min-w-0">
+                          <AccountKindIcon kind={account?.kind} />
+                          <span className="truncate">{account?.name || 'ไม่ระบุบัญชี'}</span>
+                        </span>
+                        {goal.deadline && (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock size={12} />
+                            {formatDisplayDate(goal.deadline, '')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-[#2C6488] flex-shrink-0">{pct.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-xs mt-2">
+                    <span className="text-slate-500">฿{fmt(current)} / ฿{fmt(target)}</span>
+                    <span className="font-semibold text-slate-700">เหลือ ฿{fmt(remaining)}</span>
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {goals.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-100">ทั้งหมด {goals.length}</span>
+          <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">สำเร็จแล้ว {completedCount}</span>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, isDarkMode }) {
-  const [period,       setPeriod]       = useState('month');
+  const [period,       setPeriod]       = useState('all');
   const [weekStartDay, setWeekStartDay] = useState(1); // 0=Sun 1=Mon 6=Sat
   const [periodStats,  setPeriodStats]  = useState({});   // { today:{inc,exp}, week:…, month:…, year:… }
   const [txList,       setTxList]       = useState([]);
+  const [allTxList,    setAllTxList]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [barData,      setBarData]      = useState([]);
   const [aiPeriod,     setAiPeriod]     = useState('monthly');
@@ -418,12 +502,21 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const [showAiSummary, setShowAiSummary] = useState(true);
   const [showAiSummaryModal, setShowAiSummaryModal] = useState(false);
   const [chartTab,     setChartTab]     = useState('compare'); // 'compare' or 'trend'
+  const [goals,        setGoals]        = useState([]);
 
   // ── Fetch profile once ────────────────────────────────────────────────────
   useEffect(() => {
     profileApi.get()
       .then((p) => { if (p?.week_start_day !== undefined) setWeekStartDay(p.week_start_day); })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    goalsApi.list()
+      .then((data) => { if (alive) setGoals(data || []); })
+      .catch(() => { if (alive) setGoals([]); });
+    return () => { alive = false; };
   }, []);
 
   // ── Fetch all periods' summary + selected period's detail + bar ───────────
@@ -444,6 +537,10 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       const stats = Object.fromEntries(summaryResults);
       setPeriodStats(stats);
 
+      const allResult = await txApi.list({ limit: 10000 });
+      const allData = allResult?.data || [];
+      setAllTxList(allData);
+
       // 2. 6-month bar data
       const now  = new Date();
       const bars = [];
@@ -462,11 +559,15 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       }
       setBarData(bars);
 
-      // 3. Set txList to initially selected period
-      setPeriod((prev) => { setTxList(stats[prev]?.data || []); return prev; });
+      // 3. Set txList for the donut chart filter.
+      setPeriod((prev) => {
+        setTxList(prev === 'all' ? allData : (stats[prev]?.data || []));
+        return prev;
+      });
     } catch {
       setPeriodStats({});
       setTxList([]);
+      setAllTxList([]);
       setBarData([]);
     } finally {
       setLoading(false);
@@ -505,43 +606,23 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
     }
   };
 
-  // When period tab changes, just swap txList from cached stats
-  const handlePeriodSelect = (id) => {
+  const handleDonutPeriodSelect = (id) => {
     setPeriod(id);
-    setTxList(periodStats[id]?.data || []);
+    setTxList(id === 'all' ? allTxList : (periodStats[id]?.data || []));
   };
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a)     => s + a.balance, 0);
+  const totalIncome = allTxList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalExpense = allTxList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
   const income = txList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const selectedPeriodLabel = PERIOD_CONFIG.find((p) => p.id === period)?.label || '';
+  const yearTrendData = getYearCashflowTrend(periodStats.year?.data || []);
+  const selectedPeriodLabel = DONUT_PERIOD_OPTIONS.find((p) => p.id === period)?.label || 'ทั้งหมด';
+  const barIncomeTotal = barData.reduce((sum, item) => sum + Number(item.income || 0), 0);
+  const barExpenseTotal = barData.reduce((sum, item) => sum + Number(item.expense || 0), 0);
   const spendRate = income > 0 ? Math.min((expense / income) * 100, 999) : 0;
-  const cashflowByAccount = {};
-  txList.filter((t) => t.type === 'income' || t.type === 'expense').forEach((t) => {
-    const key = t.account_id || '__other__';
-    if (!cashflowByAccount[key]) cashflowByAccount[key] = { income: 0, expense: 0, count: 0 };
-    if (t.type === 'income') cashflowByAccount[key].income += Number(t.amount || 0);
-    if (t.type === 'expense') cashflowByAccount[key].expense += Number(t.amount || 0);
-    cashflowByAccount[key].count += 1;
-  });
-  const accountCashflowData = Object.entries(cashflowByAccount)
-    .map(([id, item]) => {
-      const account = accounts.find((a) => a.id === id);
-      return {
-        id,
-        name: account?.name || 'ไม่ระบุบัญชี',
-        income: item.income,
-        expense: item.expense,
-        count: item.count,
-      };
-    })
-    .sort((a, b) => (b.income + b.expense) - (a.income + a.expense))
-    .slice(0, 6);
-  const recentTx = [...txList]
-    .sort((a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')))
-    .slice(0, 5);
   const aiSummary = aiState?.summary;
   const hasAiSummary = !!aiSummary;
   const aiConsentEnabled = aiState?.ai_consent !== false;
@@ -572,21 +653,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       return { label: cat.name, value, color: cat.color };
     })
     .sort((a, b) => b.value - a.value);
-
-  const top5 = Object.entries(expByCat)
-    .map(([id, value]) => {
-      const cat = getCatInfo(id === '__other__' ? null : id);
-      return {
-        id,
-        value,
-        catName: cat.name,
-        catIcon: cat.icon,
-        catColor: cat.color,
-      };
-    })
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5);
-
   return (
     <div className="p-6 space-y-5">
 
@@ -619,12 +685,12 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               <p className="text-lg font-bold text-[#2C6488]">{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
             </div>
             <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">รายรับ{selectedPeriodLabel}</p>
-              <p className="text-lg font-bold text-emerald-600">฿{fmt(income)}</p>
+              <p className="text-xs text-slate-500 mb-1 truncate">รายรับทั้งหมด</p>
+              <p className="text-lg font-bold text-emerald-600">฿{fmt(totalIncome)}</p>
             </div>
             <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">รายจ่าย{selectedPeriodLabel}</p>
-              <p className="text-lg font-bold text-red-500">฿{fmt(expense)}</p>
+              <p className="text-xs text-slate-500 mb-1 truncate">รายจ่ายทั้งหมด</p>
+              <p className="text-lg font-bold text-red-500">฿{fmt(totalExpense)}</p>
             </div>
           </div>
           {showAiConsentNotice && (
@@ -740,7 +806,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                   type="button"
                   onClick={() => handleGenerateSummary(aiPeriod)}
                   disabled={aiLoading || aiState?.eligible === false}
-                  className="w-8 h-8 rounded-xl bg-[#EAF3F7] text-[#2C6488] inline-flex items-center justify-center disabled:opacity-50 hover:bg-[#DCE8EE]"
+                  className="w-8 h-8 rounded-xl bg-[#2C6488] text-white inline-flex items-center justify-center disabled:opacity-50 hover:bg-[#25536F]"
                   title={aiState?.stale ? 'สรุปใหม่' : 'รีเฟรชสรุป'}
                 >
                   <RefreshCw size={15} className={aiLoading ? 'animate-spin' : ''} />
@@ -867,24 +933,18 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       </div>
 
       {/* ── Period Cards ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {PERIOD_CONFIG.map((pc) => {
           const stats    = periodStats[pc.id];
-          const active   = period === pc.id;
           const dateLabel = periodDateLabel(pc.id, weekStartDay);
 
           return (
-            <button
+            <div
               key={pc.id}
-              onClick={() => handlePeriodSelect(pc.id)}
-              className={`rounded-2xl p-4 text-left transition-all border-2 ${
-                active
-                  ? 'shadow-md scale-[1.02]'
-                  : 'hover:shadow-sm hover:scale-[1.01]'
-              }`}
+              className="rounded-xl p-3 text-left border shadow-sm"
               style={{
-                background:   active ? (isDarkMode ? '#152438' : pc.bg)  : (isDarkMode ? '#131926' : '#ffffff'),
-                borderColor:  active ? (isDarkMode ? '#2c6488' : pc.ring) : (isDarkMode ? '#24304c' : '#f1f5f9'),
+                background:   isDarkMode ? '#131926' : '#ffffff',
+                borderColor:  isDarkMode ? '#24304c' : '#f1f5f9',
               }}
             >
               {/* Header */}
@@ -899,9 +959,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                   </div>
                   <span className="text-sm font-semibold" style={{ color: isDarkMode ? '#4da2db' : pc.color }}>{pc.label}</span>
                 </div>
-                {active && (
-                  <div className="w-2 h-2 rounded-full" style={{ background: isDarkMode ? '#4da2db' : pc.color }} />
-                )}
               </div>
 
               {/* Date range */}
@@ -931,7 +988,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                   </div>
                 </div>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -944,11 +1001,24 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             {/* Donut */}
             <div className="col-span-1 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-              <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
-              <p className="text-xs text-slate-400 mb-3">
-                {PERIOD_CONFIG.find((p) => p.id === period)?.label}
-                {' · '}฿{fmt(expense)}
-              </p>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
+                  <p className="text-xs text-slate-400">
+                    {selectedPeriodLabel}
+                    {' · '}฿{fmt(expense)}
+                  </p>
+                </div>
+                <select
+                  value={period}
+                  onChange={(e) => handleDonutPeriodSelect(e.target.value)}
+                  className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-[#2C6488] focus:ring-2 focus:ring-[#EAF3F7]"
+                >
+                  {DONUT_PERIOD_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
               {donutData.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>
               ) : (
@@ -973,145 +1043,81 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             {/* Bar & Line Chart Container */}
             <div className="col-span-1 lg:col-span-3 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700">ภาพรวมรายรับรายจ่าย</h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {chartTab === 'compare'
+                        ? 'เปรียบเทียบย้อนหลัง 6 เดือน'
+                        : 'แนวโน้มรายเดือนของปีนี้'}
+                    </p>
+                  </div>
+                  <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
                     <button
                       type="button"
                       onClick={() => setChartTab('compare')}
-                      className={`text-sm font-bold pb-1 border-b-2 transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         chartTab === 'compare'
-                          ? 'border-[#2C6488] text-[#2C6488]'
-                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          : 'text-slate-500 hover:text-[#2C6488]'
                       }`}
                     >
-                      รายรับ vs รายจ่าย (6 เดือน)
+                      6 เดือน
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartTab('trend')}
-                      className={`text-sm font-bold pb-1 border-b-2 transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         chartTab === 'trend'
-                          ? 'border-[#2C6488] text-[#2C6488]'
-                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          : 'text-slate-500 hover:text-[#2C6488]'
                       }`}
                     >
-                      แนวโน้มรายจ่าย ({selectedPeriodLabel})
+                      แนวโน้ม
                     </button>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                   {chartTab === 'compare' ? (
                     <div className="flex gap-3 text-xs">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full" style={{ background: '#34d399' }} />
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#10b981' }} />
                         <span className="text-slate-500">รายรับ</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full" style={{ background: '#fb7185' }} />
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#f43f5e' }} />
                         <span className="text-slate-500">รายจ่าย</span>
                       </div>
                     </div>
                   ) : (
-                    <span className="text-xs font-semibold text-slate-500">
-                      เฉลี่ยรายจ่ายต่อวัน: ฿{fmt(expense / (getTrendData(txList, period, weekStartDay).length || 1))}
-                    </span>
+                    <div className="flex gap-3 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#34c986' }} />
+                        <span className="text-slate-500">รายรับ</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#fb7185' }} />
+                        <span className="text-slate-500">รายจ่าย</span>
+                      </div>
+                    </div>
                   )}
+                  <span className="text-xs text-slate-400">
+                    {chartTab === 'compare' ? `รายรับ ฿${fmt(barIncomeTotal)} · รายจ่าย ฿${fmt(barExpenseTotal)}` : 'ม.ค. - ธ.ค.'}
+                  </span>
                 </div>
-                <p className="text-xs text-slate-400 mb-3">
-                  {chartTab === 'compare'
-                    ? 'สถิติสรุปข้อมูลรายรับและรายจ่าย 6 เดือนที่ผ่านมา'
-                    : `การแจกแจงรายจ่ายสะสมในแต่ละวันในช่วง${selectedPeriodLabel} (รวม ฿${fmt(expense)})`}
-                </p>
               </div>
 
               {chartTab === 'compare' ? (
                 <BarChart data={barData} isDarkMode={isDarkMode} />
               ) : (
-                <LineChart data={getTrendData(txList, period, weekStartDay)} isDarkMode={isDarkMode} />
+                <TrendLineChart data={yearTrendData} isDarkMode={isDarkMode} />
               )}
 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-slate-700">รายการล่าสุด</h3>
-                <ReceiptText size={16} color="#94a3b8" />
-              </div>
-              {recentTx.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">ยังไม่มีรายการในช่วงนี้</div>
-              ) : (
-                <div className="space-y-3">
-                  {recentTx.map((tx) => {
-                    const cat = (categories || []).find((c) => c.id === tx.category_id);
-                    return (
-                      <div key={tx.id} className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{ background: isDarkMode ? (tx.type === 'income' ? '#152920' : tx.type === 'expense' ? '#2a1b1d' : '#152438') : (tx.type === 'income' ? '#f0fdf4' : tx.type === 'expense' ? '#fff1f2' : '#EAF3F7') }}>
-                          <Icon name={cat?.icon || 'Tag'} size={16} color={tx.type === 'income' ? '#10b981' : tx.type === 'expense' ? '#ef4444' : (isDarkMode ? '#4da2db' : '#2C6488')} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-700 truncate">{tx.name || tx.note || 'ไม่มีชื่อรายการ'}</p>
-                          <p className="text-xs text-slate-400">{formatDisplayDate(tx.transaction_date, '')}</p>
-                        </div>
-                        <p className={`text-sm font-bold ${tx.type === 'expense' ? 'text-red-500' : 'text-emerald-600'}`}>
-                          {tx.type === 'expense' ? '-' : '+'}฿{fmt(tx.amount)}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700">รายรับรายจ่ายตามบัญชี</h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {selectedPeriodLabel} · รับ ฿{fmt(income)} · จ่าย ฿{fmt(expense)}
-                  </p>
-                </div>
-                <Wallet size={16} color="#94a3b8" />
-              </div>
-              <AccountCashflowBars data={accountCashflowData} totalIncome={income} totalExpense={expense} />
-            </div>
-          </div>
-
-          {/* Top 5 */}
-          {top5.length > 0 && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-              <h3 className="text-sm font-semibold text-slate-700 mb-1">
-                Top 5 รายจ่ายสูงสุด
-              </h3>
-              <p className="text-xs text-slate-400 mb-4">
-                {PERIOD_CONFIG.find((p) => p.id === period)?.label}
-                {' · '}{periodDateLabel(period, weekStartDay)}
-              </p>
-              <div className="space-y-3">
-                {top5.map((item, i) => {
-                  const pct = (item.value / top5[0].value) * 100;
-                  return (
-                    <div key={item.id} className="flex items-center gap-3">
-                      <div className="w-6 text-center text-xs font-bold text-slate-400">#{i + 1}</div>
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ background: `${item.catColor || FALLBACK_CATEGORY_COLOR}20` }}>
-                        <Icon name={item.catIcon} size={16} color={item.catColor || FALLBACK_CATEGORY_COLOR} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-center mb-1">
-                          <p className="text-xs font-medium text-slate-700">{item.catName}</p>
-                          <p className="text-xs font-bold text-slate-800 ml-2">฿{fmt(item.value)}</p>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: item.catColor || FALLBACK_CATEGORY_COLOR }} />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <SavingsOverviewCard goals={goals} accounts={accounts} />
         </>
       )}
 

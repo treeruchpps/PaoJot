@@ -10,6 +10,7 @@ import SetupAccountPage from './pages/SetupAccountPage';
 
 import Sidebar from './components/layout/Sidebar';
 import Topbar  from './components/layout/Topbar';
+import QuickEntryPanel from './components/common/QuickEntryPanel';
 
 import AnalyticsView    from './views/AnalyticsView';
 import AccountsView     from './views/AccountsView';
@@ -47,6 +48,7 @@ function AppShell() {
   const [categories,    setCategories]    = useState([]);
   const [notiList,      setNotiList]      = useState([]);
   const [avatarUrl,     setAvatarUrl]     = useState(null);
+  const [quickEntryRefreshKey, setQuickEntryRefreshKey] = useState(0);
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('theme') === 'dark';
@@ -203,13 +205,14 @@ function AppShell() {
               onGoAccounts={() => setView('accounts')}
               initialAccountId={initialAccountId}
               onClearInitialAccountId={() => setInitialAccountId(null)}
+              quickEntryRefreshKey={quickEntryRefreshKey}
             />
           )}
           {view === 'budgets'      && (
             <BudgetsView categories={categories} />
           )}
           {view === 'goals'        && (
-            <GoalsView accounts={accounts} onRefreshAccounts={refreshAccounts} />
+            <GoalsView accounts={accounts} onRefreshAccounts={refreshAccounts} quickEntryRefreshKey={quickEntryRefreshKey} />
           )}
           {view === 'recurring'    && (
             <RecurringView
@@ -225,6 +228,14 @@ function AppShell() {
             <ProfileView />
           )}
         </main>
+        <QuickEntryPanel
+          accounts={accounts}
+          categories={categories}
+          onSaved={async () => {
+            await Promise.all([refreshAccounts(), refreshNotifications()]);
+            setQuickEntryRefreshKey((v) => v + 1);
+          }}
+        />
       </div>
     </div>
   );

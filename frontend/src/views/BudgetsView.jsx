@@ -204,14 +204,15 @@ export default function BudgetsView({ categories }) {
   return (
     <div className="p-6 space-y-5">
       {!loading && visibleBudgets.length > 0 && (
-        <div className="space-y-4">
+        <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-4">
+          <h2 className="text-base font-semibold text-slate-700">ภาพรวมงบประมาณ</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { label: 'งบรวม', value: totalLimit, color: '#2C6488', bg: '#EAF3F7' },
-              { label: 'ใช้ไปแล้ว', value: totalSpent, color: getColor(totalPct), bg: getBg(totalPct) },
-              { label: 'คงเหลือ', value: totalRemaining, color: '#10b981', bg: '#f0fdf4' },
+              { label: 'ใช้ไปแล้ว', value: totalSpent, color: '#2C6488', bg: '#EAF3F7' },
+              { label: 'คงเหลือ', value: totalRemaining, color: '#2C6488', bg: '#EAF3F7' },
             ].map((s) => (
-              <div key={s.label} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '33' }}>
+              <div key={s.label} className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
                 <p className="text-xs text-slate-500 mb-1">{s.label}</p>
                 <p className="text-2xl font-bold" style={{ color: s.color }}>
                   {s.suffix ? `${s.value} ${s.suffix}` : `฿${fmt(s.value)}`}
@@ -220,7 +221,7 @@ export default function BudgetsView({ categories }) {
             ))}
           </div>
 
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <div className="bg-slate-50 rounded-2xl p-5 shadow-sm border border-slate-100">
             <div className="flex justify-between items-center mb-3">
               <p className="text-sm font-semibold text-slate-700">ภาพรวมการใช้งบ</p>
               <p className="text-sm font-bold" style={{ color: getColor(totalPct) }}>{totalPct}%</p>
@@ -239,8 +240,8 @@ export default function BudgetsView({ categories }) {
           <p className="text-xs text-slate-400 mt-0.5">กำหนดวงเงินตามช่วงวันที่ที่ต้องการ</p>
         </div>
         <button onClick={openCreate}
-          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-          <Plus size={13} color="#2C6488" /> เพิ่มงบประมาณ
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+          <Plus size={13} color="#ffffff" /> เพิ่มงบประมาณ
         </button>
       </div>
 
@@ -277,8 +278,8 @@ export default function BudgetsView({ categories }) {
             <p className="text-xs text-slate-400 mt-1">สร้างงบโดยเลือกหมวดหมู่ วงเงิน และช่วงวันที่ที่ต้องการคุมค่าใช้จ่าย</p>
           </div>
           <button onClick={openCreate}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-            <Plus size={13} color="#2C6488" /> สร้างงบประมาณแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+            <Plus size={13} color="#ffffff" /> สร้างงบประมาณแรก
           </button>
         </div>
       ) : (

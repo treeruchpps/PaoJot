@@ -11,10 +11,10 @@ import { savingsGoals as goalsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 
-const STATUS_LABEL = { all: 'ทั้งหมด', in_progress: 'กำลังออม', completed: 'สำเร็จแล้ว', cancelled: 'ยกเลิก' };
+const STATUS_LABEL = { in_progress: 'กำลังออม', completed: 'สำเร็จแล้ว', cancelled: 'ยกเลิก' };
 const STATUS_COLOR = { in_progress: '#2C6488', completed: '#10b981', cancelled: '#94a3b8' };
 const STATUS_BG = { in_progress: '#EAF3F7', completed: '#ecfdf5', cancelled: '#f1f5f9' };
-const STATUS_FILTERS = ['all', 'in_progress', 'completed', 'cancelled'];
+const STATUS_FILTERS = ['in_progress', 'completed', 'cancelled'];
 const ACCOUNT_KIND_META = {
   cash: { icon: 'DollarSign', color: '#10b981' },
   bank_account: { icon: 'Briefcase', color: '#2C6488' },
@@ -58,10 +58,10 @@ function AccountKindIcon({ kind, size = 12 }) {
   return <Icon name={meta.icon} size={size} color={meta.color} />;
 }
 
-export default function GoalsView({ accounts, onRefreshAccounts }) {
+export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefreshKey = 0 }) {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('in_progress');
 
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -109,6 +109,9 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
   };
 
   useEffect(() => { fetchGoals(); }, []);
+  useEffect(() => {
+    if (quickEntryRefreshKey > 0) fetchGoals();
+  }, [quickEntryRefreshKey]);
 
   const openCreate = () => {
     setEditId(null);
@@ -295,30 +298,33 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
   const totalRemaining = Math.max(0, totalTarget - totalCurrent);
   const overviewPct = totalTarget > 0 ? Math.min((totalCurrent / totalTarget) * 100, 100) : 0;
   const completed = goals.filter((g) => g.status === 'completed').length;
-  const filteredGoals = statusFilter === 'all' ? goals : goals.filter((g) => g.status === statusFilter);
+  const filteredGoals = goals.filter((g) => g.status === statusFilter);
 
   return (
     <div className="p-6 space-y-5">
       {!loading && goals.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-2xl p-4 border" style={{ background: '#EAF3F7', borderColor: '#2C648840' }}>
-            <p className="text-xs text-slate-500 mb-1">เป้าหมายทั้งหมด</p>
-            <p className="text-xl font-bold text-[#2C6488]">{goals.length}</p>
-            <p className="text-xs text-slate-500 mt-1">สำเร็จแล้ว {completed} เป้าหมาย</p>
-          </div>
-          <div className="rounded-2xl p-4 border" style={{ background: '#f0fdf4', borderColor: '#10b98140' }}>
-            <p className="text-xs text-slate-500 mb-1">ออมแล้วรวม</p>
-            <p className="text-xl font-bold text-emerald-600">฿{fmt(totalCurrent)}</p>
-            <p className="text-xs text-slate-500 mt-1">จากเป้าหมายที่กำลังออม</p>
-          </div>
-          <div className="rounded-2xl p-4 bg-white border border-slate-100 shadow-sm">
-            <p className="text-xs text-slate-500 mb-1">ต้องออมเพิ่ม</p>
-            <div className="flex items-end justify-between gap-3">
-              <p className="text-xl font-bold text-[#2C6488]">฿{fmt(totalRemaining)}</p>
-              <p className="text-sm font-bold text-[#2C6488]">{overviewPct.toFixed(0)}%</p>
+        <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
+          <h2 className="text-base font-semibold text-slate-700">ภาพรวมเป้าหมายการออม</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
+              <p className="text-xs text-slate-500 mb-1">เป้าหมายทั้งหมด</p>
+              <p className="text-xl font-bold text-[#2C6488]">{goals.length}</p>
+              <p className="text-xs text-slate-500 mt-1">สำเร็จแล้ว {completed} เป้าหมาย</p>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-              <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${overviewPct}%` }} />
+            <div className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
+              <p className="text-xs text-slate-500 mb-1">ออมแล้วรวม</p>
+              <p className="text-xl font-bold text-emerald-600">฿{fmt(totalCurrent)}</p>
+              <p className="text-xs text-slate-500 mt-1">จากเป้าหมายที่กำลังออม</p>
+            </div>
+            <div className="rounded-2xl p-4 bg-slate-50 border border-slate-100 shadow-sm">
+              <p className="text-xs text-slate-500 mb-1">ต้องออมเพิ่ม</p>
+              <div className="flex items-end justify-between gap-3">
+                <p className="text-xl font-bold text-[#2C6488]">฿{fmt(totalRemaining)}</p>
+                <p className="text-sm font-bold text-[#2C6488]">{overviewPct.toFixed(0)}%</p>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${overviewPct}%` }} />
+              </div>
             </div>
           </div>
         </div>
@@ -330,8 +336,8 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
           <p className="text-xs text-slate-400 mt-0.5">ติดตามความคืบหน้าและออมเงินเข้าเป้าหมาย</p>
         </div>
         <button onClick={openCreate}
-          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center justify-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-          <Plus size={13} color="#2C6488" /> เพิ่มเป้าหมาย
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center justify-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+          <Plus size={13} color="#ffffff" /> เพิ่มเป้าหมาย
         </button>
       </div>
 
@@ -339,7 +345,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
         <div className="flex flex-wrap gap-2">
           {STATUS_FILTERS.map((status) => {
             const active = statusFilter === status;
-            const count = status === 'all' ? goals.length : goals.filter((g) => g.status === status).length;
+            const count = goals.filter((g) => g.status === status).length;
             return (
               <button key={status} onClick={() => setStatusFilter(status)}
                 className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
@@ -362,8 +368,8 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
             <p className="text-xs text-slate-400 mt-1">สร้างเป้าหมายแรกเพื่อเริ่มเห็นความคืบหน้าชัดๆ</p>
           </div>
           <button onClick={openCreate}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-            <Plus size={13} color="#2C6488" /> สร้างเป้าหมายแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+            <Plus size={13} color="#ffffff" /> สร้างเป้าหมายแรก
           </button>
         </div>
       ) : filteredGoals.length === 0 ? (
@@ -510,7 +516,7 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                       </button>
                       {g.account_id && initialAvailableForGoal(g) > 0 && (
                         <button onClick={() => openInitialBalance(g)}
-                          className="w-full py-2 rounded-xl text-sm font-semibold border border-[#DCE8EE] bg-[#EAF3F7] text-[#2C6488] hover:bg-[#DCE8EE] transition-colors">
+                          className="w-full py-2 rounded-xl text-sm font-semibold border border-[#2C6488] bg-[#2C6488] text-white hover:bg-[#25536F] hover:border-[#25536F] transition-colors">
                           เพิ่มยอดเริ่มต้น
                         </button>
                       )}
@@ -615,8 +621,8 @@ export default function GoalsView({ accounts, onRefreshAccounts }) {
                   placeholder="วางลิงก์รูป หรืออัปโหลดจากเครื่อง"
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
                 <button type="button" onClick={() => imageInputRef.current?.click()} disabled={imageUploading}
-                  className="px-4 py-2.5 rounded-xl border border-[#DCE8EE] bg-[#EAF3F7] text-[#2C6488] text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60">
-                  <Upload size={14} color="#2C6488" />
+                  className="px-4 py-2.5 rounded-xl border border-[#2C6488] bg-[#2C6488] text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-[#25536F] hover:border-[#25536F] disabled:opacity-60">
+                  <Upload size={14} color="#ffffff" />
                   {imageUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูป'}
                 </button>
               </div>

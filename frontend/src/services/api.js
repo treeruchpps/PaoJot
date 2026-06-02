@@ -239,3 +239,25 @@ export const aiSummary = {
       body: JSON.stringify({ period_type: periodType }),
     }),
 };
+
+// ====================================================
+// QUICK ENTRY ASSISTANT
+// ====================================================
+export const quickEntry = {
+  parse: (body) =>
+    request('/quick-entry/parse', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getChatLog: (mode) =>
+    request(`/quick-entry/chat-log?mode=${encodeURIComponent(mode)}`),
+  saveChatLog: (mode, messages) =>
+    request('/quick-entry/chat-log', {
+      method: 'PUT',
+      body: JSON.stringify({ mode, messages }),
+    }),
+  clearChatLog: (mode) =>
+    request(`/quick-entry/chat-log?mode=${encodeURIComponent(mode)}`, {
+      method: 'DELETE',
+    }),
+};

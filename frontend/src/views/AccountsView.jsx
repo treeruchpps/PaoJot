@@ -329,19 +329,21 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   return (
     <div className="p-6 space-y-5">
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        {[
-          { label: 'ยอดเงินรวม', value: totalAssets, color: '#2C6488', bg: '#EAF3F7', prefix: '฿' },
-          { label: 'บัญชีทั้งหมด', value: assetAccounts.length, color: '#10b981', bg: '#f0fdf4', suffix: ' บัญชี' },
-        ].map((s, i) => (
-          <div key={i} className="rounded-2xl p-4 border" style={{ background: s.bg, borderColor: s.color + '40' }}>
-            <p className="text-xs text-slate-500 mb-1">{s.label}</p>
-            <p className="text-2xl font-bold" style={{ color: s.color }}>
-              {s.prefix || ''}{s.prefix ? fmt(s.value) : s.value}{s.suffix || ''}
-            </p>
-          </div>
-        ))}
+      <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
+        <h2 className="text-base font-semibold text-slate-700">ภาพรวมบัญชี</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {[
+            { label: 'ยอดเงินรวม', value: totalAssets, color: '#2C6488', bg: '#EAF3F7', prefix: '฿' },
+            { label: 'บัญชีทั้งหมด', value: assetAccounts.length, color: '#2C6488', bg: '#EAF3F7', suffix: ' บัญชี' },
+          ].map((s, i) => (
+            <div key={i} className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
+              <p className="text-xs text-slate-500 mb-1">{s.label}</p>
+              <p className="text-2xl font-bold" style={{ color: s.color }}>
+                {s.prefix || ''}{s.prefix ? fmt(s.value) : s.value}{s.suffix || ''}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Header + action buttons */}
@@ -349,13 +351,13 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         <h2 className="text-base font-semibold text-slate-700">บัญชีทั้งหมด</h2>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={openPoolAdd}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-            <Plus size={13} color="#2C6488" /> เพิ่มบัญชี
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+            <Plus size={13} color="#ffffff" /> เพิ่มบัญชี
           </button>
           {assetAccounts.length > 0 && (
             <button onClick={openDist}
-              className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-              <Share2 size={13} color="#2C6488" /> จัดสรรเงินเข้าบัญชี
+              className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+              <Share2 size={13} color="#ffffff" /> จัดสรรเงินเข้าบัญชี
             </button>
           )}
         </div>
@@ -378,8 +380,8 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             <p className="text-xs text-slate-400 mt-1">สร้างบัญชีแรกเพื่อเริ่มบันทึกรายรับ รายจ่าย และโอนเงิน</p>
           </div>
           <button onClick={openPoolAdd}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-            <Plus size={13} color="#2C6488" /> สร้างบัญชีแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+            <Plus size={13} color="#ffffff" /> สร้างบัญชีแรก
           </button>
         </div>
       )}

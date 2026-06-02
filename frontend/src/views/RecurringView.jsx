@@ -286,8 +286,8 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
           </p>
         </div>
         <button onClick={openAdd}
-          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-          <Plus size={13} color="#2C6488" /> เพิ่มรายการ
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+          <Plus size={13} color="#ffffff" /> เพิ่มรายการ
         </button>
       </div>
 
@@ -302,8 +302,8 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
             <p className="text-xs text-slate-400 mt-1">เพิ่มรายการแรกเพื่อให้ระบบช่วยเตือนเมื่อถึงกำหนด</p>
           </div>
           <button onClick={openAdd}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border transition-colors bg-[#EAF3F7] text-[#2C6488] border-[#2C6488]/30 hover:bg-[#DCE8EE]">
-            <Plus size={13} color="#2C6488" /> สร้างรายการแรก
+            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+            <Plus size={13} color="#ffffff" /> สร้างรายการแรก
           </button>
         </div>
       ) : (
