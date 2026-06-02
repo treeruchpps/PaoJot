@@ -14,7 +14,7 @@ import { formatDisplayDate } from '../utils/dateFormat';
 const STATUS_LABEL = { in_progress: 'กำลังออม', completed: 'สำเร็จแล้ว', cancelled: 'ยกเลิก' };
 const STATUS_COLOR = { in_progress: '#2C6488', completed: '#10b981', cancelled: '#94a3b8' };
 const STATUS_BG = { in_progress: '#EAF3F7', completed: '#ecfdf5', cancelled: '#f1f5f9' };
-const STATUS_FILTERS = ['in_progress', 'completed', 'cancelled'];
+const STATUS_FILTERS = ['in_progress', 'completed'];
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -191,9 +191,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
     }
   };
 
-  const cancelGoal = async (goal) => {
-    setConfirmAction({ type: 'cancel', goal });
-  };
+
 
   const confirmGoalAction = async () => {
     if (!confirmAction?.goal) return;
@@ -337,7 +335,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
           ไม่มีเป้าหมายในสถานะนี้
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
           {filteredGoals.map((g) => {
             const { target, current, pct, monthlyNeeded } = goalMath(g);
             const isDone = g.status === 'completed';
@@ -376,13 +374,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
                           <Edit size={12} color="#64748b" />
                         </button>
                       )}
-                      {!isDone && !isCancelled && (
-                        <button onClick={() => cancelGoal(g)}
-                          title="ยกเลิกเป้าหมาย"
-                          className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-amber-100 flex items-center justify-center transition-colors">
-                          <X size={12} color="#64748b" />
-                        </button>
-                      )}
+
                       <button onClick={() => remove(g)}
                         title="ลบเป้าหมาย"
                         className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">

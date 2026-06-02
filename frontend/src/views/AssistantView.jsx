@@ -357,7 +357,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     addMessage({
       role: 'bot',
       text: 'กรุณาเลือกหมวดหมู่ให้รายการนี้ด้วยครับ:',
-      actions: modeCategories.slice(0, 12).map((cat) => ({
+      actions: modeCategories.map((cat) => ({
         label: cat.name,
         onClick: () => {
           setCategoryId(cat.id);
