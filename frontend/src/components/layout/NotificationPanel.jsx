@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { BellOff, Bot, ChartPie, PiggyBank, RefreshCw } from 'lucide-react';
+import { BellOff, Bot, ChartPie, PiggyBank, RefreshCw, Check } from 'lucide-react';
 import { notifications as notiApi } from '../../services/api';
 import { formatDisplayDateTime } from '../../utils/dateFormat';
 
@@ -106,11 +106,12 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
                 {isRecurring && (
                   <div className="flex gap-2 ml-6">
                     <button onClick={() => confirm(n.id)}
-                      className="flex-1 text-xs py-2 rounded-xl font-semibold transition-colors"
+                      className="flex-1 text-xs py-2 rounded-xl font-semibold transition-colors flex items-center justify-center gap-1.5"
                       style={{ background: '#EAF3F7', color: '#2C6488' }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#BFD8E4'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = '#EAF3F7'; }}>
-                      ✓ บันทึกรายการ
+                      <Check size={13} />
+                      <span>บันทึกรายการ</span>
                     </button>
                     <button onClick={() => skip(n.id)}
                       className="flex-1 text-xs py-2 rounded-xl font-medium bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">

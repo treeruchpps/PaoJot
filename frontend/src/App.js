@@ -13,6 +13,7 @@ import Topbar  from './components/layout/Topbar';
 import QuickEntryPanel from './components/common/QuickEntryPanel';
 
 import AnalyticsView    from './views/AnalyticsView';
+import AssistantView    from './views/AssistantView';
 import AccountsView     from './views/AccountsView';
 import TransactionsView from './views/TransactionsView';
 import BudgetsView      from './views/BudgetsView';
@@ -50,9 +51,7 @@ function AppShell() {
   const [avatarUrl,     setAvatarUrl]     = useState(null);
   const [quickEntryRefreshKey, setQuickEntryRefreshKey] = useState(0);
 
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    return localStorage.getItem('theme') === 'dark';
-  });
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -186,6 +185,16 @@ function AppShell() {
               isDarkMode={isDarkMode}
             />
           )}
+          {view === 'assistant'    && (
+            <AssistantView
+              accounts={accounts}
+              categories={categories}
+              onRefresh={async () => {
+                await Promise.all([refreshAccounts(), refreshNotifications()]);
+                setQuickEntryRefreshKey((v) => v + 1);
+              }}
+            />
+          )}
           {view === 'accounts'     && (
             <AccountsView
               accounts={accounts}
@@ -228,14 +237,16 @@ function AppShell() {
             <ProfileView />
           )}
         </main>
-        <QuickEntryPanel
-          accounts={accounts}
-          categories={categories}
-          onSaved={async () => {
-            await Promise.all([refreshAccounts(), refreshNotifications()]);
-            setQuickEntryRefreshKey((v) => v + 1);
-          }}
-        />
+        {view !== 'assistant' && (
+          <QuickEntryPanel
+            accounts={accounts}
+            categories={categories}
+            onSaved={async () => {
+              await Promise.all([refreshAccounts(), refreshNotifications()]);
+              setQuickEntryRefreshKey((v) => v + 1);
+            }}
+          />
+        )}
       </div>
     </div>
   );
