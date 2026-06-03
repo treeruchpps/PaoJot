@@ -10,6 +10,7 @@ import { AccountSelect } from '../components/common/FinanceSelects';
 import { savingsGoals as goalsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
+import { getTransactionAccounts } from '../utils/accountFilters';
 
 const STATUS_LABEL = { in_progress: 'กำลังออม', completed: 'สำเร็จแล้ว', cancelled: 'ยกเลิก' };
 const STATUS_COLOR = { in_progress: '#2C6488', completed: '#10b981', cancelled: '#94a3b8' };
@@ -71,7 +72,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
   const [refundAccountId, setRefundAccountId] = useState('');
   const [refundGoal, setRefundGoal] = useState(null);
 
-  const assetAccounts = accounts.filter((a) => a.type === 'asset' && a.kind !== 'savings_goal' && !a.name.startsWith('เป้าหมาย:'));
+  const assetAccounts = getTransactionAccounts(accounts);
   const formTargetAmount = Number(form.target_amount) || 0;
   const plannedMonthly = (() => {
     const current = Number(form.current_amount) || 0;

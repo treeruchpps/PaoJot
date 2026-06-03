@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2 } from 'lucide-react';
-import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi } from '../services/api';
+import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi, savingsGoals as goalsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
 
@@ -12,6 +12,7 @@ const FULL_MONTH_LABELS = [
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ];
 const FALLBACK_CATEGORY_COLOR = '#94a3b8';
+const SAVING_COLOR = '#0EA5E9';
 
 const PERIOD_CONFIG = [
   { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
@@ -167,6 +168,17 @@ function BarChart({ data, isDarkMode }) {
             categoryPercentage: 0.62,
             maxBarThickness: 22,
           },
+          {
+            label:           'การออม',
+            data:            data.map((d) => d.saving),
+            backgroundColor: 'rgba(14, 165, 233, 0.72)',
+            hoverBackgroundColor: SAVING_COLOR,
+            borderRadius:    8,
+            borderSkipped:   false,
+            barPercentage:   0.64,
+            categoryPercentage: 0.62,
+            maxBarThickness: 22,
+          },
         ],
       },
       options: {
@@ -224,6 +236,9 @@ function TrendLineChart({ data, isDarkMode }) {
     const incomeGradient = ctx.createLinearGradient(0, 0, 0, 260);
     incomeGradient.addColorStop(0, 'rgba(52, 211, 153, 0.18)');
     incomeGradient.addColorStop(1, 'rgba(52, 211, 153, 0.02)');
+    const savingGradient = ctx.createLinearGradient(0, 0, 0, 260);
+    savingGradient.addColorStop(0, 'rgba(14, 165, 233, 0.16)');
+    savingGradient.addColorStop(1, 'rgba(14, 165, 233, 0.02)');
 
     chartRef.current = new C(canvasRef.current, {
       type: 'line',
@@ -249,6 +264,18 @@ function TrendLineChart({ data, isDarkMode }) {
             backgroundColor: 'rgba(251, 113, 133, 0.04)',
             borderWidth: 3,
             fill: false,
+            tension: 0.42,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHitRadius: 14,
+          },
+          {
+            label: 'การออม',
+            data: data.map((d) => d.saving),
+            borderColor: SAVING_COLOR,
+            backgroundColor: savingGradient,
+            borderWidth: 3,
+            fill: true,
             tension: 0.42,
             pointRadius: 0,
             pointHoverRadius: 4,
@@ -304,8 +331,12 @@ function TrendLineChart({ data, isDarkMode }) {
   return <div className="h-56"><canvas ref={canvasRef} /></div>;
 }
 
-function getYearCashflowTrend(txs) {
-  const monthly = MONTH_LABELS.map((month) => ({ month, income: 0, expense: 0 }));
+function isSavingTransfer(tx, savingAccountIds) {
+  return tx?.type === 'transfer' && tx.to_account_id && savingAccountIds.has(tx.to_account_id);
+}
+
+function getYearCashflowTrend(txs, savingAccountIds) {
+  const monthly = MONTH_LABELS.map((month) => ({ month, income: 0, expense: 0, saving: 0 }));
   (txs || []).forEach((tx) => {
     if (!tx.transaction_date) return;
     const dateParts = tx.transaction_date.split('-');
@@ -314,6 +345,7 @@ function getYearCashflowTrend(txs) {
     if (monthIndex < 0 || monthIndex > 11) return;
     if (tx.type === 'income') monthly[monthIndex].income += Number(tx.amount || 0);
     if (tx.type === 'expense') monthly[monthIndex].expense += Number(tx.amount || 0);
+    if (isSavingTransfer(tx, savingAccountIds)) monthly[monthIndex].saving += Number(tx.amount || 0);
   });
   return monthly;
 }
@@ -327,6 +359,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const [periodStats,  setPeriodStats]  = useState({});   // { today:{inc,exp}, week:…, month:…, year:… }
   const [txList,       setTxList]       = useState([]);
   const [allTxList,    setAllTxList]    = useState([]);
+  const [goals,        setGoals]        = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [barData,      setBarData]      = useState([]);
   const [aiPeriod,     setAiPeriod]     = useState('monthly');
@@ -334,7 +367,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const [aiError,      setAiError]      = useState('');
   const [showAiSummary, setShowAiSummary] = useState(true);
   const [showAiSummaryModal, setShowAiSummaryModal] = useState(false);
-  const [chartTab,     setChartTab]     = useState('compare'); // 'compare' or 'trend'
+  const [chartTab,     setChartTab]     = useState('trend'); // 'compare' or 'trend'
   // ── Fetch profile once ────────────────────────────────────────────────────
   useEffect(() => {
     profileApi.get()
@@ -346,6 +379,11 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const fetchAll = useCallback(async (wsd) => {
     setLoading(true);
     try {
+      const goalsList = await goalsApi.list();
+      const activeGoals = (goalsList || []).filter((goal) => goal.status !== 'cancelled');
+      const savingAccountIds = new Set(activeGoals.map((goal) => goal.account_id).filter(Boolean));
+      setGoals(activeGoals);
+
       // 1. Fetch all 4 period summaries in parallel
       const summaryResults = await Promise.all(
         PERIOD_CONFIG.map(async (pc) => {
@@ -354,7 +392,8 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
           const data = r?.data || [];
           const inc  = data.filter((t) => t.type === 'income').reduce((s, t)  => s + t.amount, 0);
           const exp  = data.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-          return [pc.id, { inc, exp, data }];
+          const sav  = data.filter((t) => isSavingTransfer(t, savingAccountIds)).reduce((s, t) => s + t.amount, 0);
+          return [pc.id, { inc, exp, sav, data }];
         })
       );
       const stats = Object.fromEntries(summaryResults);
@@ -378,7 +417,8 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
         const ds = r?.data || [];
         const inc = ds.filter((x) => x.type === 'income').reduce((s, x)  => s + x.amount, 0);
         const exp = ds.filter((x) => x.type === 'expense').reduce((s, x) => s + x.amount, 0);
-        bars.push({ month: MONTH_LABELS[d.getMonth()], income: inc, expense: exp });
+        const sav = ds.filter((x) => isSavingTransfer(x, savingAccountIds)).reduce((s, x) => s + x.amount, 0);
+        bars.push({ month: MONTH_LABELS[d.getMonth()], income: inc, expense: exp, saving: sav });
       }
       setBarData(bars);
 
@@ -391,6 +431,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       setPeriodStats({});
       setTxList([]);
       setAllTxList([]);
+      setGoals([]);
       setBarData([]);
     } finally {
       setLoading(false);
@@ -421,13 +462,16 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a)     => s + a.balance, 0);
   const totalIncome = allTxList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const totalExpense = allTxList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const activeSavingAccountIds = new Set((goals || []).map((goal) => goal.account_id).filter(Boolean));
+  const totalSaving = goals.reduce((sum, goal) => sum + Number(goal.current_amount || 0), 0);
 
   const income = txList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const yearTrendData = getYearCashflowTrend(periodStats.year?.data || []);
+  const yearTrendData = getYearCashflowTrend(periodStats.year?.data || [], activeSavingAccountIds);
   const selectedPeriodLabel = DONUT_PERIOD_OPTIONS.find((p) => p.id === period)?.label || 'ทั้งหมด';
   const barIncomeTotal = barData.reduce((sum, item) => sum + Number(item.income || 0), 0);
   const barExpenseTotal = barData.reduce((sum, item) => sum + Number(item.expense || 0), 0);
+  const barSavingTotal = barData.reduce((sum, item) => sum + Number(item.saving || 0), 0);
   const spendRate = income > 0 ? Math.min((expense / income) * 100, 999) : 0;
   const aiSummary = aiState?.summary;
   const hasAiSummary = !!aiSummary;
@@ -485,7 +529,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               <Wallet size={24} color="#2C6488" />
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <div className="rounded-xl p-4 border border-white bg-white/75">
               <p className="text-xs text-slate-500 mb-1">บัญชีทั้งหมด</p>
               <p className="text-lg font-bold text-[#2C6488]">{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
@@ -497,6 +541,10 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             <div className="rounded-xl p-4 border border-white bg-white/75">
               <p className="text-xs text-slate-500 mb-1 truncate">รายจ่ายทั้งหมด</p>
               <p className="text-lg font-bold text-red-500">฿{fmt(totalExpense)}</p>
+            </div>
+            <div className="rounded-xl p-4 border border-white bg-white/75">
+              <p className="text-xs text-slate-500 mb-1 truncate">การออมทั้งหมด</p>
+              <p className="text-lg font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(totalSaving)}</p>
             </div>
           </div>
           {showAiConsentNotice && (
@@ -757,6 +805,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                 <div className="space-y-1.5">
                   <div className="h-4 bg-slate-100 rounded-lg animate-pulse w-3/4" />
                   <div className="h-4 bg-slate-100 rounded-lg animate-pulse w-2/3" />
+                  <div className="h-4 bg-slate-100 rounded-lg animate-pulse w-1/2" />
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -774,6 +823,13 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                     </div>
                     <span className="text-xs font-bold text-red-500">-฿{fmt(stats.exp)}</span>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: SAVING_COLOR }} />
+                      <span className="text-xs text-slate-500">การออม</span>
+                    </div>
+                    <span className="text-xs font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(stats.sav || 0)}</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -788,7 +844,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
         <>
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             {/* Donut */}
-            <div className="col-span-1 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+            <div className="col-span-1 lg:col-span-2 order-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
@@ -829,29 +885,18 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             </div>
 
             {/* Bar & Line Chart Container */}
-            <div className="col-span-1 lg:col-span-3 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-between">
+            <div className="col-span-1 lg:col-span-3 order-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-between">
               <div>
                 <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-700">ภาพรวมรายรับรายจ่าย</h3>
+                    <h3 className="text-sm font-semibold text-slate-700">แนวโน้มการเงิน</h3>
                     <p className="text-xs text-slate-400 mt-1">
                       {chartTab === 'compare'
                         ? 'เปรียบเทียบย้อนหลัง 6 เดือน'
-                        : 'แนวโน้มรายเดือนของปีนี้'}
+                        : 'รายรับ รายจ่าย และการออมรายเดือนของปีนี้'}
                     </p>
                   </div>
                   <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setChartTab('compare')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                        chartTab === 'compare'
-                          ? 'bg-white text-[#2C6488] shadow-sm'
-                          : 'text-slate-500 hover:text-[#2C6488]'
-                      }`}
-                    >
-                      6 เดือน
-                    </button>
                     <button
                       type="button"
                       onClick={() => setChartTab('trend')}
@@ -862,6 +907,17 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                       }`}
                     >
                       แนวโน้ม
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartTab('compare')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        chartTab === 'compare'
+                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          : 'text-slate-500 hover:text-[#2C6488]'
+                      }`}
+                    >
+                      6 เดือน
                     </button>
                   </div>
                 </div>
@@ -877,6 +933,10 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                         <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#f43f5e' }} />
                         <span className="text-slate-500">รายจ่าย</span>
                       </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: SAVING_COLOR }} />
+                        <span className="text-slate-500">การออม</span>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex gap-3 text-xs">
@@ -888,10 +948,16 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                         <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#fb7185' }} />
                         <span className="text-slate-500">รายจ่าย</span>
                       </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: SAVING_COLOR }} />
+                        <span className="text-slate-500">การออม</span>
+                      </div>
                     </div>
                   )}
                   <span className="text-xs text-slate-400">
-                    {chartTab === 'compare' ? `รายรับ ฿${fmt(barIncomeTotal)} · รายจ่าย ฿${fmt(barExpenseTotal)}` : 'ม.ค. - ธ.ค.'}
+                    {chartTab === 'compare'
+                      ? `รายรับ ฿${fmt(barIncomeTotal)} · รายจ่าย ฿${fmt(barExpenseTotal)} · การออม ฿${fmt(barSavingTotal)}`
+                      : 'ม.ค. - ธ.ค.'}
                   </span>
                 </div>
               </div>

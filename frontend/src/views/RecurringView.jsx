@@ -8,6 +8,7 @@ import { recurring as recurApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
+import { getTransactionAccounts } from '../utils/accountFilters';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2C6488' };
@@ -39,11 +40,15 @@ const emptyForm = (accounts) => ({
 });
 
 export default function RecurringView({ accounts, categories, onNotificationRefresh }) {
+  const transactionAccounts = getTransactionAccounts(accounts || []);
+  const transactionAccountIds = new Set(transactionAccounts.map((a) => a.id));
+  const defaultAccountId = transactionAccounts[0]?.id || '';
+  const defaultToAccountId = transactionAccounts[1]?.id || transactionAccounts[0]?.id || '';
   const [list,      setList]      = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editId,    setEditId]    = useState(null);
-  const [form,      setForm]      = useState(emptyForm(accounts));
+  const [form,      setForm]      = useState(emptyForm(transactionAccounts));
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -73,7 +78,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   const openAdd = () => {
     setEditId(null);
     setError('');
-    const f = emptyForm(accounts);
+    const f = emptyForm(transactionAccounts);
     const cats = expCats;
     setForm({ ...f, category_id: cats[0]?.id || '' });
     setShowModal(true);
@@ -89,8 +94,8 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       name:          r.name || '',
       note:          r.note || '',
       category_id:   r.category_id || cats[0]?.id || '',
-      account_id:    r.account_id,
-      to_account_id: r.to_account_id || accounts[1]?.id || accounts[0]?.id || '',
+      account_id:    r.account_id || defaultAccountId,
+      to_account_id: r.to_account_id || defaultToAccountId,
       frequency:     r.frequency,
       next_due_date: r.next_due_date,
     });
@@ -106,6 +111,10 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
     if (!form.amount || parseFloat(form.amount) <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
     if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
     if (!form.next_due_date) { setError('กรุณาเลือกวันครบกำหนดถัดไป'); return; }
+    if (!transactionAccountIds.has(form.account_id) || (form.type === 'transfer' && !transactionAccountIds.has(form.to_account_id))) {
+      setError('กรุณาเลือกบัญชีที่ใช้บันทึกรายการได้');
+      return;
+    }
     setSaving(true); setError('');
     try {
       const body = {
@@ -401,7 +410,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                   <AccountSelect
                     value={form.account_id}
                     onChange={(v) => setForm({ ...form, account_id: v })}
-                    accounts={accounts}
+                    accounts={transactionAccounts}
                   />
                 </div>
               </div>
@@ -423,7 +432,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                     <AccountSelect
                       value={form.account_id}
                       onChange={(v) => setForm({ ...form, account_id: v })}
-                      accounts={accounts}
+                      accounts={transactionAccounts}
                     />
                   </div>
                   <div className="min-w-0">
@@ -431,7 +440,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
                     <AccountSelect
                       value={form.to_account_id}
                       onChange={(v) => setForm({ ...form, to_account_id: v })}
-                      accounts={accounts}
+                      accounts={transactionAccounts}
                     />
                   </div>
                 </div>

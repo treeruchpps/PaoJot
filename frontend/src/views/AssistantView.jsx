@@ -10,6 +10,7 @@ import {
   notifications as notiApi, aiSummary as aiSummaryApi 
 } from '../services/api';
 import { fmt } from '../constants/data';
+import { getTransactionAccounts } from '../utils/accountFilters';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const messageId = () => crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
@@ -25,6 +26,13 @@ const firstBotMessage = (mode) => ({
   role: 'bot',
   text: `ยินดีต้อนรับเข้าสู่ช่องทางผู้ช่วยส่วนตัวครับ พิมพ์รายการเพื่อจดบันทึก หรือส่งรูปภาพสลิป/ใบเสร็จเพื่อจำแนกสแกนได้เลยครับ`,
 });
+
+const closeChoiceMessages = (messages, targetId = null) =>
+  messages.map((msg) => (
+    msg.choiceActive && (!targetId || msg.id === targetId)
+      ? { ...msg, choiceActive: false }
+      : msg
+  ));
 
 // Component: Budget Impact progress bar overlay
 function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [] }) {
@@ -123,7 +131,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   // AI Summary state
   const [aiLoading, setAiLoading] = useState(false);
 
-  const assetAccounts = useMemo(() => accounts.filter((a) => a.type === 'asset' && a.kind !== 'savings_goal'), [accounts]);
+  const assetAccounts = useMemo(() => getTransactionAccounts(accounts), [accounts]);
   const modeCategories = useMemo(() => categories.filter((c) => c.type === mode), [categories, mode]);
   const selectedAccount = assetAccounts.find((a) => a.id === accountId);
   const selectedGoal = goals.find((g) => g.id === goalId);
@@ -282,8 +290,28 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     });
   };
 
+  const addChoiceMessage = (message) => {
+    setMessages((prev) => {
+      const next = [
+        ...closeChoiceMessages(prev),
+        { id: messageId(), role: 'bot', choiceActive: true, ...message },
+      ];
+      saveChatLog(next);
+      return next;
+    });
+  };
+
+  const closeActiveChoices = (targetId = null) => {
+    setMessages((prev) => {
+      const next = closeChoiceMessages(prev, targetId);
+      saveChatLog(next);
+      return next;
+    });
+  };
+
   const changeMode = (nextMode) => {
     if (nextMode === mode) return;
+    closeActiveChoices();
     setMode(nextMode);
     setInput('');
     setAccountId('');
@@ -306,8 +334,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   // Ask for confirmation inputs
   const askAccount = (textToContinue, list = assetAccounts, context = {}) => {
     setPendingText(textToContinue);
-    addMessage({
-      role: 'bot',
+    addChoiceMessage({
+      choiceType: 'account',
       text: mode === 'saving' ? 'เลือกบัญชีที่ต้องการถอนเงินออม:' : 'เลือกบัญชีที่จะใช้จ่าย/รับเงิน:',
       actions: list.map((account) => ({
         label: `${account.name} (฿${fmt(account.balance)})`,
@@ -320,8 +348,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     const list = mode === 'saving' && selectedGoal?.account_id
       ? assetAccounts.filter((a) => a.id !== selectedGoal.account_id)
       : assetAccounts;
-    addMessage({
-      role: 'bot',
+    addChoiceMessage({
+      choiceType: 'account',
       text: mode === 'saving' ? 'จะออมจากบัญชีไหนดีครับ?' : 'จะบันทึกเงินเข้า/ออกจากบัญชีไหนดี?',
       actions: list.map((account) => ({
         label: `${account.name} (฿${fmt(account.balance)})`,
@@ -331,11 +359,12 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               role: 'bot',
               text: `ยอดเงินในบัญชี "${account.name}" ไม่เพียงพอครับ (ยอดคงเหลือ ฿${fmt(account.balance)}) ไม่สามารถเลือกบัญชีนี้สำหรับยอดเงิน ฿${fmt(result.amount)} ได้ กรุณาเลือกบัญชีอื่นหรือพิมพ์รายการใหม่ครับ`
             });
-            return;
+            return false;
           }
           setAccountId(account.id);
           addMessage({ role: 'user', text: account.name });
           showPreview(result, categoryId, { accountId: account.id, goalId });
+          return true;
         },
       })),
     });
@@ -343,8 +372,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
   const askGoal = (textToContinue, context = {}) => {
     setPendingText(textToContinue);
-    addMessage({
-      role: 'bot',
+    addChoiceMessage({
+      choiceType: 'goal',
       text: 'เลือกเป้าหมายการออมที่ต้องการเก็บเงินเข้า:',
       actions: goals.map((goal) => ({
         label: goal.name,
@@ -354,8 +383,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   };
 
   const askCategory = (result) => {
-    addMessage({
-      role: 'bot',
+    addChoiceMessage({
+      choiceType: 'category',
       text: 'กรุณาเลือกหมวดหมู่ให้รายการนี้ด้วยครับ:',
       actions: modeCategories.map((cat) => ({
         label: cat.name,
@@ -401,6 +430,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     const text = input.trim();
     if (!text || parsing || saving || !chatLoaded) return;
     setInput('');
+    closeActiveChoices();
 
     // Handle slash or text commands for summaries
     if (text === 'สรุปรายสัปดาห์' || text === 'สรุปการเงินรายสัปดาห์') {
@@ -521,7 +551,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
   const handleCancelPreview = (msgId, title, amount) => {
     setMessages((prev) => {
-      const filtered = prev.filter((m) => m.id !== msgId);
+      const filtered = closeChoiceMessages(prev).filter((m) => m.id !== msgId);
       const next = [
         ...filtered,
         {
@@ -579,7 +609,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       }
 
       setMessages((prev) => {
-        const updated = prev.map((m) => {
+        const updated = closeChoiceMessages(prev).map((m) => {
           if (m.role === 'preview' && !m.readonly) {
             return { ...m, readonly: true };
           }
@@ -968,17 +998,27 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               <CheckCircle2 size={16} color="#10b981" className="mt-0.5 flex-shrink-0" />
             )}
           </div>
-          {message.actions && (
+          {message.actions && message.choiceActive !== false && (
             <div className="mt-3 flex flex-wrap gap-1.5 pl-7">
               {message.actions.map((action) => (
                 <button
                   key={action.label}
-                  onClick={action.onClick}
+                  onClick={() => {
+                    const shouldClose = action.onClick?.();
+                    if (shouldClose !== false) closeActiveChoices(message.id);
+                  }}
                   className="px-3 py-1.5 rounded-xl bg-[#EAF3F7] hover:bg-[#DCE8EE] dark:bg-slate-700/80 dark:hover:bg-slate-650 text-[#2C6488] dark:text-[#4da2db] text-xs font-bold border border-[#DCE8EE]/50 dark:border-slate-600 transition-colors"
                 >
                   {action.label}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => closeActiveChoices(message.id)}
+                className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/80 dark:hover:bg-slate-650 text-slate-500 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-600 transition-colors"
+              >
+                ปิด
+              </button>
             </div>
           )}
         </div>
@@ -998,7 +1038,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               <MessageCircle size={20} className="text-[#2C6488] dark:text-[#4da2db]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">แชทPaoJot</h3>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">แชท PaoJot</h3>
               <p className="text-[11px] text-slate-400">ผู้ช่วยจัดการการเงิน วิเคราะห์ OCR และคำนวณงบประมาณในช่องแชทเดียว</p>
             </div>
           </div>
@@ -1082,10 +1122,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             onClick={() => changeMode('expense')}
             className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               mode === 'expense'
-                ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-655 dark:text-red-400 font-extrabold'
-                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-655 dark:text-slate-455 hover:bg-slate-100'
+                ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
             }`}
           >
+            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'expense' ? 'bg-red-200' : 'bg-red-400'}`} />
             <span>จดรายจ่าย</span>
           </button>
 
@@ -1093,10 +1134,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             onClick={() => changeMode('income')}
             className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               mode === 'income'
-                ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-655 dark:text-emerald-455 hover:bg-slate-100'
-                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-655 dark:text-slate-455 hover:bg-slate-100'
+                ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
             }`}
           >
+            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'income' ? 'bg-emerald-200' : 'bg-emerald-400'}`} />
             <span>จดรายรับ</span>
           </button>
 
@@ -1104,10 +1146,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             onClick={() => changeMode('saving')}
             className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               mode === 'saving'
-                ? 'bg-[#EAF3F7] dark:bg-slate-800/40 border-[#DCE8EE] dark:border-slate-700/60 text-[#2C6488] dark:text-[#4da2db] font-extrabold'
-                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-655 dark:text-slate-455 hover:bg-slate-100'
+                ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
             }`}
           >
+            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'saving' ? 'bg-[#BFD8E4]' : 'bg-[#2C6488]'}`} />
             <span>บันทึกการออม</span>
           </button>
 

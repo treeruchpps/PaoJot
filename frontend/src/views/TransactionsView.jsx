@@ -7,6 +7,7 @@ import { transactions as txApi, slipJobs as slipJobsApi, receiptJobs as receiptJ
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
+import { getTransactionAccounts } from '../utils/accountFilters';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน', adjustment: 'ปรับยอด' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2563eb', adjustment: '#f59e0b' };
@@ -369,6 +370,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const today     = new Date().toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
   const thisYear  = today.slice(0, 4);
+  const transactionAccounts = getTransactionAccounts(accounts || []);
+  const defaultAccountId = transactionAccounts[0]?.id || '';
+  const defaultToAccountId = transactionAccounts[1]?.id || transactionAccounts[0]?.id || '';
+  const transactionAccountIds = new Set(transactionAccounts.map((a) => a.id));
   const weekStartDate = (() => {
     const d = new Date();
     const day = d.getDay();
@@ -381,7 +386,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     d.setDate(d.getDate() + 6);
     return d.toISOString().slice(0, 10);
   })();
-  const hasAccounts = (accounts || []).length > 0;
+  const hasAccounts = transactionAccounts.length > 0;
 
   const [txList,       setTxList]       = useState([]);
   const [txMeta,       setTxMeta]       = useState({ total: 0, total_income: 0, total_expense: 0 });
@@ -417,9 +422,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   };
   const [form, setForm] = useState({
     name: '', amount: '', note: '', category_id: '',
-    account_id:       accounts[0]?.id || '',
-    from_account_id:  accounts[0]?.id || '',
-    to_account_id:    accounts[1]?.id || accounts[0]?.id || '',
+    account_id:       defaultAccountId,
+    from_account_id:  defaultAccountId,
+    to_account_id:    defaultToAccountId,
     transaction_date: today,
   });
   const [saving, setSaving] = useState(false);
@@ -616,7 +621,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setOcrData(d);
     setOcrPreview(preview || (result.image_path ? `http://localhost:8080${result.image_path}` : ''));
     setOcrDate(d.date || today);
-    setOcrAccount(accounts[0]?.id || '');
+    setOcrAccount(defaultAccountId);
     setOcrVatAmount(d.vat?.amount > 0 ? String(d.vat.amount) : '');
     setOcrVatMode(d.vat?.mode === 'exclude' ? 'exclude' : 'include');
     setOcrDiscountAmount(d.discount?.amount > 0 ? String(d.discount.amount) : '');
@@ -752,7 +757,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     if (selected.some((it) => !it.category_id)) { setOcrError('กรุณาเลือกหมวดหมู่ให้ครบทุกรายการ'); return; }
     const total = selected.reduce((sum, it) => sum + Number(it.finalAmount || 0), 0);
     if (total <= 0) { setOcrError('ยอดสุทธิต้องมากกว่า 0 บาท'); return; }
-    const account = accounts.find((a) => a.id === ocrAccount);
+    const account = transactionAccounts.find((a) => a.id === ocrAccount);
+    if (!account) { setOcrError('กรุณาเลือกบัญชีที่ใช้บันทึกรายจ่าย'); return; }
     if (total > Number(account?.balance || 0)) {
       setOcrError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(account?.balance || 0)}`);
       return;
@@ -870,7 +876,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               const expCat = expCats[0];
             next[r.id] = {
               tx_type: 'expense',
-              account_id: accounts[0]?.id || '',
+              account_id: defaultAccountId,
               category_id: expCat?.id || '',
               name: r.receiver || r.sender || '',
               note: '',
@@ -957,7 +963,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                     : '';
                 next[r.id] = {
                   tx_type:          'expense',
-                  account_id:       accounts[0]?.id || '',
+                  account_id:       defaultAccountId,
                   category_id:      expCat?.id || '',
                   name:             autoName,
                   note:             '',
@@ -988,9 +994,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     if (!rv) return;
     if (!rv.amount || parseFloat(rv.amount) <= 0) { setSlipError('กรุณาใส่จำนวนเงิน'); return; }
     if (!rv.account_id) { setSlipError('กรุณาเลือกบัญชี'); return; }
+    if (!transactionAccountIds.has(rv.account_id)) { setSlipError('กรุณาเลือกบัญชีที่ใช้บันทึกรายการได้'); return; }
     if (!rv.category_id) { setSlipError('กรุณาเลือกหมวดหมู่'); return; }
     if ((rv.tx_type || 'expense') === 'expense') {
-      const account = accounts.find((a) => a.id === rv.account_id);
+      const account = transactionAccounts.find((a) => a.id === rv.account_id);
       if (parseFloat(rv.amount) > Number(account?.balance || 0)) {
         setSlipError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(account?.balance || 0)}`);
         return;
@@ -1207,9 +1214,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setForm({
       name: '', amount: '', note: '',
       category_id:      cats[0]?.id || '',
-      account_id:       accounts[0]?.id || '',
-      from_account_id:  accounts[0]?.id || '',
-      to_account_id:    accounts[1]?.id || accounts[0]?.id || '',
+      account_id:       defaultAccountId,
+      from_account_id:  defaultAccountId,
+      to_account_id:    defaultToAccountId,
       transaction_date: today,
     });
     setShowModal(true);
@@ -1232,9 +1239,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       amount:           String(tx.amount),
       note:             tx.note  || '',
       category_id:      tx.category_id      || cats[0]?.id || '',
-      account_id:       tx.account_id       || accounts[0]?.id || '',
-      from_account_id:  tx.account_id       || accounts[0]?.id || '',
-      to_account_id:    tx.to_account_id    || accounts[1]?.id || accounts[0]?.id || '',
+      account_id:       tx.account_id       || defaultAccountId,
+      from_account_id:  tx.account_id       || defaultAccountId,
+      to_account_id:    tx.to_account_id    || defaultToAccountId,
       transaction_date: tx.transaction_date?.slice(0, 10) || today,
     });
     setShowModal(true);
@@ -1245,6 +1252,15 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     const amount = parseFloat(form.amount);
     if (!form.amount || amount <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
     if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
+    if (txType === 'transfer') {
+      if (!transactionAccountIds.has(form.from_account_id) || !transactionAccountIds.has(form.to_account_id)) {
+        setError('กรุณาเลือกบัญชีที่ใช้บันทึกรายการได้');
+        return;
+      }
+    } else if (!transactionAccountIds.has(form.account_id)) {
+      setError('กรุณาเลือกบัญชีที่ใช้บันทึกรายการได้');
+      return;
+    }
     if (txType === 'transfer' && form.from_account_id === form.to_account_id) {
       setError('บัญชีต้นทางและปลายทางต้องไม่ใช่บัญชีเดียวกัน');
       return;
@@ -1823,7 +1839,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 <AccSelect
                   value={form.account_id}
                   onChange={(v) => setForm({ ...form, account_id: v })}
-                  accounts={accounts}
+                  accounts={transactionAccounts}
                 />
               </div>
             ) : (
@@ -1833,7 +1849,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   <AccSelect
                     value={form.from_account_id}
                     onChange={(v) => setForm({ ...form, from_account_id: v })}
-                    accounts={accounts}
+                    accounts={transactionAccounts}
                   />
                 </div>
                 <div>
@@ -1841,7 +1857,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   <AccSelect
                     value={form.to_account_id}
                     onChange={(v) => setForm({ ...form, to_account_id: v })}
-                    accounts={accounts}
+                    accounts={transactionAccounts}
                   />
                 </div>
               </div>
@@ -2125,7 +2141,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 mb-1 block">บัญชี</label>
-                    <AccSelect value={ocrAccount} onChange={setOcrAccount} accounts={accounts} />
+                    <AccSelect value={ocrAccount} onChange={setOcrAccount} accounts={transactionAccounts} />
                   </div>
                 </div>
 
@@ -2603,7 +2619,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                                 <AccSelect
                                   value={rv.account_id}
                                   onChange={(v) => setSlipReview((p) => ({ ...p, [slip.id]: { ...p[slip.id], account_id: v } }))}
-                                  accounts={accounts}
+                                  accounts={transactionAccounts}
                                 />
                               </div>
 
