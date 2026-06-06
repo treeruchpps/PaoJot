@@ -34,7 +34,7 @@ func NewQuickEntryHandler(db *pgxpool.Pool, cfg *config.Config) *QuickEntryHandl
 }
 
 type quickEntryParseRequest struct {
-	Mode string `json:"mode" binding:"required,oneof=income expense saving"`
+	Mode string `json:"mode" binding:"required,oneof=income expense saving transfer"`
 	Text string `json:"text" binding:"required"`
 }
 
@@ -83,7 +83,7 @@ func ensureQuickEntryChatLogsTable(db *pgxpool.Pool) error {
 		CREATE TABLE IF NOT EXISTS quick_entry_chat_logs (
 			id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'chat')),
+			mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'transfer', 'chat')),
 			messages   JSONB       NOT NULL DEFAULT '[]'::jsonb,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -92,14 +92,14 @@ func ensureQuickEntryChatLogsTable(db *pgxpool.Pool) error {
 		ALTER TABLE quick_entry_chat_logs DROP CONSTRAINT IF EXISTS quick_entry_chat_logs_mode_check;
 		ALTER TABLE quick_entry_chat_logs
 			ADD CONSTRAINT quick_entry_chat_logs_mode_check
-			CHECK (mode IN ('income', 'expense', 'saving', 'chat'));
+			CHECK (mode IN ('income', 'expense', 'saving', 'transfer', 'chat'));
 		CREATE INDEX IF NOT EXISTS idx_quick_entry_chat_logs_user ON quick_entry_chat_logs(user_id, mode);
 	`)
 	return err
 }
 
 func validQuickEntryMode(mode string) bool {
-	return mode == "income" || mode == "expense" || mode == "saving" || mode == "chat"
+	return mode == "income" || mode == "expense" || mode == "saving" || mode == "transfer" || mode == "chat"
 }
 
 func normalizeQuickEntryMessages(raw json.RawMessage) (json.RawMessage, error) {
@@ -206,9 +206,12 @@ func validateQuickEntryInput(mode, text string) string {
 	titleText := strings.TrimSpace(text[:last[0]] + " " + text[last[1]:])
 	titleText = strings.TrimSpace(strings.ReplaceAll(titleText, "บาท", ""))
 	if mode != "saving" {
-		for _, word := range []string{"รายรับ", "รายจ่าย", "จ่าย", "รับ"} {
+		for _, word := range []string{"รายรับ", "รายจ่าย", "จ่าย", "รับ", "โอนเงิน", "โอน"} {
 			titleText = strings.TrimSpace(strings.TrimPrefix(titleText, word))
 		}
+	}
+	if mode == "transfer" && strings.TrimSpace(titleText) == "" {
+		return ""
 	}
 	if !quickEntryMeaningfulText.MatchString(titleText) {
 		return "ยังไม่พบชื่อรายการครับ ลองพิมพ์เป็น \"กาแฟ 50\" หรือ \"เงินเดือน 30000\""
@@ -283,7 +286,7 @@ func (h *QuickEntryHandler) Parse(c *gin.Context) {
 		CategoryID:   categoryID,
 		CategoryName: categoryName,
 		Confidence:   result.Confidence,
-		NeedsReview:  result.Confidence < 0.75 || (req.Mode != "saving" && categoryID == nil),
+		NeedsReview:  result.Confidence < 0.75 || ((req.Mode == "income" || req.Mode == "expense") && categoryID == nil),
 	})
 }
 
@@ -342,7 +345,7 @@ func (h *QuickEntryHandler) parseQuickEntryWithLLM(mode, text string, categories
 กฎ:
 - amount ต้องเป็นตัวเลขบวกเท่านั้น ไม่มี comma
 - title ให้ตัดจำนวนเงินและคำว่า บาท ออก
-- ถ้า mode เป็น saving ให้ category_name=null
+- ถ้า mode เป็น saving หรือ transfer ให้ category_name=null
 - ถ้า mode เป็น income หรือ expense ให้เลือก category_name จากหมวดหมู่ที่ให้มาเท่านั้น
 - ถ้าไม่มั่นใจหมวดหมู่ ให้ category_name=null และ confidence ต่ำกว่า 0.75`
 
@@ -415,7 +418,7 @@ func parseQuickEntryFallback(mode, text string) *quickEntryLLMResult {
 		title = strings.TrimSpace(strings.Replace(title, amountText, "", 1))
 	}
 	title = strings.TrimSpace(strings.ReplaceAll(title, "บาท", ""))
-	for _, word := range []string{"รายรับ", "รายจ่าย", "จ่าย", "รับ", "ออมเงิน", "ออม"} {
+	for _, word := range []string{"รายรับ", "รายจ่าย", "จ่าย", "รับ", "ออมเงิน", "ออม", "โอนเงิน", "โอน"} {
 		title = strings.TrimSpace(strings.TrimPrefix(title, word))
 	}
 	if title == "" {
@@ -423,6 +426,8 @@ func parseQuickEntryFallback(mode, text string) *quickEntryLLMResult {
 			title = "รายรับ"
 		} else if mode == "saving" {
 			title = "ออมเงิน"
+		} else if mode == "transfer" {
+			title = "โอนเงิน"
 		} else {
 			title = "รายจ่าย"
 		}

@@ -3,7 +3,7 @@ import { ArrowUp, ArrowDown, ArrowLeftRight, Trash2, Edit, Search, X, Download, 
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
-import { transactions as txApi, slipJobs as slipJobsApi, receiptJobs as receiptJobsApi } from '../services/api';
+import { transactions as txApi, slipJobs as slipJobsApi, receiptJobs as receiptJobsApi, scanJobs as scanJobsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
@@ -24,7 +24,7 @@ const isOcrJobHandled = (job, key) => {
   return results.length > 0 && results.every(isOcrResultHandled);
 };
 const RECEIPT_BLOCKED_STATUSES = ['rejected', 'error'];
-const OCR_ACTIONABLE_STATUSES = ['queued', 'ocr', 'parsing', 'done'];
+const OCR_ACTIONABLE_STATUSES = ['queued', 'ocr', 'classifying', 'parsing', 'done'];
 const receiptBlockedResults = (job) => (job?.receipts || []).filter((r) => RECEIPT_BLOCKED_STATUSES.includes(r.status));
 const receiptWasCancelled = (job) => job?.status === 'cancelled' || (job?.receipts || []).some((r) => r.status === 'cancelled');
 const hasOnlyBlockedOcrResults = (job, key) => {
@@ -462,6 +462,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const activeReceiptIdRef = useRef(null);
   const [receiptJobsList, setReceiptJobsList] = useState([]);
   const [slipJobsList, setSlipJobsList] = useState([]);
+  const [scanJobsList, setScanJobsList] = useState([]);
+  const [ocrSource, setOcrSource] = useState('receipt'); // receipt | scan
   const [ocrCancelling, setOcrCancelling] = useState({});
   const [ocrSkipping, setOcrSkipping] = useState({});
   const ocrJobsPollRef = useRef(null);
@@ -488,16 +490,81 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     return 'text-[#2C6488]';
   };
 
+  const scanToReceiptJob = (job) => ({
+    ...job,
+    receipts: (job?.results || [])
+      .filter((r) => r.document_type !== 'slip')
+      .map((r) => ({
+        id: r.id,
+        job_id: r.job_id,
+        status: r.status,
+        image_path: r.image_path,
+        filename: r.filename,
+        data: r.data,
+        error_msg: r.error_msg,
+        created_at: r.created_at,
+      })),
+  });
+
+  const scanToSlipJob = (job) => ({
+    ...job,
+    slips: (job?.results || [])
+      .filter((r) => r.document_type === 'slip')
+      .map((r) => ({
+        id: r.id,
+        job_id: r.job_id,
+        status: r.status,
+        filename: r.filename,
+        image_path: r.image_path,
+        bank: r.slip?.bank || null,
+        amount: r.slip?.amount || 0,
+        transaction_date: r.slip?.date || null,
+        transaction_time: r.slip?.time || null,
+        sender: r.slip?.sender || null,
+        receiver: r.slip?.receiver || null,
+        ref_no: r.slip?.ref_no || null,
+        is_duplicate: !!r.is_duplicate,
+        error_msg: r.error_msg,
+        created_at: r.created_at,
+      })),
+  });
+
+  const isScanJobHandled = (job) => {
+    const results = job?.results || [];
+    if (job?.status === 'cancelled') return true;
+    return results.length > 0 && results.every(isOcrResultHandled);
+  };
+
+  const scanStatusText = (job) => {
+    const results = job?.results || [];
+    if (job?.status === 'cancelled') return 'ยกเลิกแล้ว';
+    if (results.some((r) => r.status === 'done')) return 'สแกนเสร็จแล้ว รอตรวจ';
+    if (results.some((r) => r.status === 'rejected' || r.status === 'error')) return 'มีรูปที่สแกนไม่สำเร็จ';
+    if (job?.status === 'done') return 'สแกนเสร็จแล้ว';
+    return 'กำลังสแกนเอกสาร';
+  };
+
+  const scanStatusColor = (job) => {
+    const results = job?.results || [];
+    if (job?.status === 'cancelled') return 'text-slate-500';
+    if (results.some((r) => r.status === 'rejected' || r.status === 'error')) return 'text-red-500';
+    if (results.some((r) => r.status === 'done') || job?.status === 'done') return 'text-emerald-600';
+    return 'text-[#2C6488]';
+  };
+
   const openOcrModal = (type) => {
     if (!hasAccounts) return;
+    const pendingScan = scanJobsList[0];
     const pendingReceipt = receiptJobsList[0];
     const pendingSlip = slipJobsList[0];
-    if (pendingReceipt || pendingSlip) {
+    if (pendingScan || pendingReceipt || pendingSlip) {
       setOcrError('มีรายการที่สแกนยังไม่ได้จัดการ กรุณาตรวจสอบหรือยกเลิกก่อนเริ่มสแกนใหม่');
-      if (pendingReceipt) openReceiptJob(pendingReceipt.id);
+      if (pendingScan) openScanJob(pendingScan.id);
+      else if (pendingReceipt) openReceiptJob(pendingReceipt.id);
       else openSlipJob(pendingSlip.id);
       return;
     }
+    setOcrSource('scan');
     setOcrModal(type); setOcrStep('upload'); setOcrFiles([]); setOcrPreviews([]);
     setOcrPreview(''); setOcrError(''); setOcrData(null); setReceiptJob(null); setActiveReceipt(null);
     setOcrNote(''); setOcrVatAmount(''); setOcrVatMode('include'); setOcrDiscountAmount(''); setOcrDiscountMode('prorate');
@@ -505,9 +572,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
   const clearBlockedReceiptResults = async (job = receiptJob) => {
     if (!job?.id || !hasOnlyBlockedOcrResults(job, 'receipts')) return;
+    const skipApi = ocrSource === 'scan' ? scanJobsApi.skip : receiptJobsApi.skip;
     await Promise.all((job.receipts || [])
       .filter((result) => RECEIPT_BLOCKED_STATUSES.includes(result.status))
-      .map((result) => receiptJobsApi.skip(job.id, result.id).catch(() => null)));
+      .map((result) => skipApi(job.id, result.id).catch(() => null)));
     await refreshOcrJobs();
   };
 
@@ -685,14 +753,26 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     try {
       if (ocrModal === 'receipt') {
         // ── Async receipt job ──────────────────────────────────────────────
-        const res = await receiptJobsApi.create(ocrFiles);
+        const res = ocrSource === 'scan'
+          ? await scanJobsApi.create(ocrFiles)
+          : await receiptJobsApi.create(ocrFiles);
         const jobId = res.job_id;
         setOcrStep('processing'); // ขั้นตอนกลาง: แสดง spinner ขณะรอ
 
         const poll = async () => {
           try {
-            const job = await receiptJobsApi.get(jobId);
+            const rawJob = ocrSource === 'scan' ? await scanJobsApi.get(jobId) : await receiptJobsApi.get(jobId);
+            const job = ocrSource === 'scan' ? scanToReceiptJob(rawJob) : rawJob;
             setReceiptJob(job);
+            if (ocrSource === 'scan') {
+              const slipJobFromScan = scanToSlipJob(rawJob);
+              if (slipJobFromScan.slips.some((s) => s.status === 'done') && !(job.receipts || []).some((r) => r.status === 'done')) {
+                clearInterval(receiptPollRef.current);
+                setOcrModal(null);
+                openScanJob(jobId);
+                return;
+              }
+            }
             openReadyReceiptIfIdle(job);
             if (job.status === 'done') {
               clearInterval(receiptPollRef.current);
@@ -721,6 +801,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
   const openReceiptJob = async (jobId) => {
     if (!hasAccounts) return;
+    setOcrSource('receipt');
     setOcrModal('receipt');
     setOcrStep('processing');
     setOcrError('');
@@ -733,21 +814,75 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     }
   };
 
-  const cancelReceiptJob = async (jobId) => {
-    setOcrCancelling((p) => ({ ...p, [`receipt-${jobId}`]: true }));
+  const openScanJob = async (jobId) => {
+    if (!hasAccounts) return;
+    setOcrSource('scan');
+    setOcrError('');
+    setSlipError('');
     try {
-      await receiptJobsApi.cancel(jobId);
+      const rawJob = await scanJobsApi.get(jobId);
+      const receiptJobFromScan = scanToReceiptJob(rawJob);
+      const slipJobFromScan = scanToSlipJob(rawJob);
+      const hasReceiptReady = (receiptJobFromScan.receipts || []).some((r) => r.status === 'done');
+      const hasReceiptWorking = (receiptJobFromScan.receipts || []).some((r) => ['queued', 'ocr', 'classifying', 'parsing'].includes(r.status));
+      const hasSlipAny = (slipJobFromScan.slips || []).length > 0;
+
+      if (hasReceiptReady || hasReceiptWorking || !hasSlipAny) {
+        setOcrModal('receipt');
+        setOcrStep(hasReceiptReady ? 'result' : 'processing');
+        setReceiptJob(receiptJobFromScan);
+        setActiveReceipt(null);
+        showReceiptJobOutcome(receiptJobFromScan);
+        return;
+      }
+
+      setSlipSource('scan');
+      setShowSlipScanner(true);
+      setSlipJobId(rawJob.id);
+      setSlipJob(slipJobFromScan);
+      setSlipFiles([]);
+      setSlipPreviews([]);
+      setSlipReview((prev) => {
+        const next = { ...prev };
+        (slipJobFromScan.slips || []).forEach((r) => {
+          if (r.status === 'done' && !next[r.id]) {
+            const expCat = expCats[0];
+            next[r.id] = {
+              tx_type: 'expense',
+              account_id: defaultAccountId,
+              category_id: expCat?.id || '',
+              name: r.receiver || r.sender || '',
+              note: '',
+              amount: Number(r.amount || 0).toFixed(2),
+              transaction_date: r.transaction_date || today,
+            };
+          }
+        });
+        return next;
+      });
+    } catch (err) {
+      setOcrModal('receipt');
+      setOcrStep('processing');
+      setOcrError(err.message || 'โหลดรายการที่สแกนไม่สำเร็จ');
+    }
+  };
+
+  const cancelReceiptJob = async (jobId) => {
+    const cancelKey = ocrSource === 'scan' ? `scan-${jobId}` : `receipt-${jobId}`;
+    setOcrCancelling((p) => ({ ...p, [cancelKey]: true }));
+    try {
+      await (ocrSource === 'scan' ? scanJobsApi.cancel(jobId) : receiptJobsApi.cancel(jobId));
       if (receiptPollRef.current) clearInterval(receiptPollRef.current);
       if (receiptJob?.id === jobId) {
-        const job = await receiptJobsApi.get(jobId).catch(() => null);
-        if (job) setReceiptJob(job);
+        const rawJob = await (ocrSource === 'scan' ? scanJobsApi.get(jobId) : receiptJobsApi.get(jobId)).catch(() => null);
+        if (rawJob) setReceiptJob(ocrSource === 'scan' ? scanToReceiptJob(rawJob) : rawJob);
         setOcrStep('processing');
       }
       await refreshOcrJobs();
     } catch (err) {
       setOcrError(err.message || 'ยกเลิกสแกนไม่สำเร็จ');
     } finally {
-      setOcrCancelling((p) => ({ ...p, [`receipt-${jobId}`]: false }));
+      setOcrCancelling((p) => ({ ...p, [cancelKey]: false }));
     }
   };
 
@@ -777,15 +912,19 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         })
       ));
       if (receiptJob?.id && activeReceiptId) {
-        await receiptJobsApi.save(receiptJob.id, activeReceiptId);
+        await (ocrSource === 'scan' ? scanJobsApi.save(receiptJob.id, activeReceiptId) : receiptJobsApi.save(receiptJob.id, activeReceiptId));
       }
       await Promise.all([fetchTx(), onRefreshAccounts?.(), onNotificationRefresh?.()]);
       if (receiptJob?.id) {
-        const updatedJob = await receiptJobsApi.get(receiptJob.id);
+        const rawUpdatedJob = await (ocrSource === 'scan' ? scanJobsApi.get(receiptJob.id) : receiptJobsApi.get(receiptJob.id));
+        const updatedJob = ocrSource === 'scan' ? scanToReceiptJob(rawUpdatedJob) : rawUpdatedJob;
         setReceiptJob(updatedJob);
         const nextResult = (updatedJob.receipts || []).find((r) => r.status === 'done');
         if (nextResult) {
           applyReceiptResult(nextResult);
+        } else if (ocrSource === 'scan' && scanToSlipJob(rawUpdatedJob).slips.some((s) => s.status === 'done')) {
+          closeOcr();
+          openScanJob(rawUpdatedJob.id);
         } else if (isOcrJobHandled(updatedJob, 'receipts')) {
           closeOcr();
         } else if (receiptBlockedResults(updatedJob).length > 0 || updatedJob.status === 'done') {
@@ -809,12 +948,16 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setOcrSkipping((p) => ({ ...p, [`receipt-${activeReceiptId}`]: true }));
     setOcrError('');
     try {
-      await receiptJobsApi.skip(receiptJob.id, activeReceiptId);
-      const updatedJob = await receiptJobsApi.get(receiptJob.id);
+      await (ocrSource === 'scan' ? scanJobsApi.skip(receiptJob.id, activeReceiptId) : receiptJobsApi.skip(receiptJob.id, activeReceiptId));
+      const rawUpdatedJob = await (ocrSource === 'scan' ? scanJobsApi.get(receiptJob.id) : receiptJobsApi.get(receiptJob.id));
+      const updatedJob = ocrSource === 'scan' ? scanToReceiptJob(rawUpdatedJob) : rawUpdatedJob;
       setReceiptJob(updatedJob);
       const nextResult = (updatedJob.receipts || []).find((r) => r.status === 'done');
       if (nextResult) {
         applyReceiptResult(nextResult);
+      } else if (ocrSource === 'scan' && scanToSlipJob(rawUpdatedJob).slips.some((s) => s.status === 'done')) {
+        closeOcr();
+        openScanJob(rawUpdatedJob.id);
       } else if (isOcrJobHandled(updatedJob, 'receipts')) {
         closeOcr();
       } else if (receiptBlockedResults(updatedJob).length > 0 || updatedJob.status === 'done') {
@@ -844,25 +987,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const [slipSaved,       setSlipSaved]       = useState({});
   const [slipReview,      setSlipReview]      = useState({});
   const [slipZoomImg,     setSlipZoomImg]     = useState(null); // URL | null
-
-  const openSlipScanner = () => {
-    if (!hasAccounts) return;
-    const pendingReceipt = receiptJobsList[0];
-    const pendingSlip = slipJobsList[0];
-    if (pendingReceipt || pendingSlip) {
-      setSlipError('มีรายการที่สแกนยังไม่ได้จัดการ กรุณาตรวจสอบหรือยกเลิกก่อนเริ่มสแกนใหม่');
-      if (pendingSlip) openSlipJob(pendingSlip.id);
-      else openReceiptJob(pendingReceipt.id);
-      return;
-    }
-    if (slipPollRef.current) clearInterval(slipPollRef.current);
-    setSlipFiles([]); setSlipPreviews([]); setSlipJobId(null); setSlipJob(null);
-    setSlipUploading(false); setSlipError(''); setSlipSaving({}); setSlipSaved({}); setSlipReview({});
-    setShowSlipScanner(true);
-  };
+  const [slipSource,      setSlipSource]      = useState('slip'); // slip | scan
 
   const openSlipJob = async (jobId) => {
     if (!hasAccounts) return;
+    setSlipSource('slip');
     setShowSlipScanner(true);
     setSlipJobId(jobId);
     setSlipFiles([]); setSlipPreviews([]); setSlipError('');
@@ -895,9 +1024,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const clearBlockedSlipResults = async (job = slipJob) => {
     const jobId = job?.id || slipJobId;
     if (!jobId || !hasOnlyBlockedOcrResults(job, 'slips')) return;
+    const skipApi = slipSource === 'scan' ? scanJobsApi.skip : slipJobsApi.skip;
     await Promise.all((job.slips || [])
       .filter((result) => RECEIPT_BLOCKED_STATUSES.includes(result.status))
-      .map((result) => slipJobsApi.skip(jobId, result.id).catch(() => null)));
+      .map((result) => skipApi(jobId, result.id).catch(() => null)));
     await refreshOcrJobs();
   };
 
@@ -1006,7 +1136,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setSlipSaving((p) => ({ ...p, [slip.id]: true }));
     setSlipError('');
     try {
-      await slipJobsApi.save(slipJobId, slip.id, {
+      const saveApi = slipSource === 'scan' ? scanJobsApi.saveSlip : slipJobsApi.save;
+      await saveApi(slipJobId, slip.id, {
         tx_type:          rv.tx_type || 'expense',
         account_id:       rv.account_id,
         category_id:      rv.category_id,
@@ -1019,9 +1150,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       });
       setSlipSaved((p) => ({ ...p, [slip.id]: true }));
       await Promise.all([onRefreshAccounts?.(), fetchTx(), onNotificationRefresh?.()]);
-      const job = await slipJobsApi.get(slipJobId);
+      const rawJob = await (slipSource === 'scan' ? scanJobsApi.get(slipJobId) : slipJobsApi.get(slipJobId));
+      const job = slipSource === 'scan' ? scanToSlipJob(rawJob) : rawJob;
       setSlipJob(job);
-      if (isOcrJobHandled(job, 'slips')) {
+      if (slipSource === 'scan' ? isScanJobHandled(rawJob) : isOcrJobHandled(job, 'slips')) {
         closeSlipScanner();
       }
       await refreshOcrJobs();
@@ -1037,10 +1169,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setOcrSkipping((p) => ({ ...p, [`slip-${slip.id}`]: true }));
     setSlipError('');
     try {
-      await slipJobsApi.skip(slipJobId, slip.id);
-      const job = await slipJobsApi.get(slipJobId);
+      await (slipSource === 'scan' ? scanJobsApi.skip(slipJobId, slip.id) : slipJobsApi.skip(slipJobId, slip.id));
+      const rawJob = await (slipSource === 'scan' ? scanJobsApi.get(slipJobId) : slipJobsApi.get(slipJobId));
+      const job = slipSource === 'scan' ? scanToSlipJob(rawJob) : rawJob;
       setSlipJob(job);
-      if (isOcrJobHandled(job, 'slips')) {
+      if (slipSource === 'scan' ? isScanJobHandled(rawJob) : isOcrJobHandled(job, 'slips')) {
         closeSlipScanner();
       }
       await refreshOcrJobs();
@@ -1052,32 +1185,36 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   };
 
   const cancelSlipJob = async (jobId) => {
-    setOcrCancelling((p) => ({ ...p, [`slip-${jobId}`]: true }));
+    const cancelKey = slipSource === 'scan' ? `scan-${jobId}` : `slip-${jobId}`;
+    setOcrCancelling((p) => ({ ...p, [cancelKey]: true }));
     try {
-      await slipJobsApi.cancel(jobId);
+      await (slipSource === 'scan' ? scanJobsApi.cancel(jobId) : slipJobsApi.cancel(jobId));
       if (slipPollRef.current) clearInterval(slipPollRef.current);
       if (slipJobId === jobId) {
-        const job = await slipJobsApi.get(jobId).catch(() => null);
-        if (job) setSlipJob(job);
+        const rawJob = await (slipSource === 'scan' ? scanJobsApi.get(jobId) : slipJobsApi.get(jobId)).catch(() => null);
+        if (rawJob) setSlipJob(slipSource === 'scan' ? scanToSlipJob(rawJob) : rawJob);
       }
       await refreshOcrJobs();
     } catch (err) {
       setSlipError(err.message || 'ยกเลิกสแกนไม่สำเร็จ');
     } finally {
-      setOcrCancelling((p) => ({ ...p, [`slip-${jobId}`]: false }));
+      setOcrCancelling((p) => ({ ...p, [cancelKey]: false }));
     }
   };
 
   const refreshOcrJobs = useCallback(async () => {
     try {
-      const [receiptList, slipList] = await Promise.all([
+      const [scanList, receiptList, slipList] = await Promise.all([
+        scanJobsApi.list(),
         receiptJobsApi.list(),
         slipJobsApi.list(),
       ]);
-      const [receiptDetails, slipDetails] = await Promise.all([
+      const [scanDetails, receiptDetails, slipDetails] = await Promise.all([
+        Promise.all((scanList || []).map((job) => scanJobsApi.get(job.id).catch(() => job))),
         Promise.all((receiptList || []).map((job) => receiptJobsApi.get(job.id).catch(() => job))),
         Promise.all((slipList || []).map((job) => slipJobsApi.get(job.id).catch(() => job))),
       ]);
+      setScanJobsList(scanDetails.filter((job) => !isScanJobHandled(job)));
       setReceiptJobsList(receiptDetails.filter((job) => !isOcrJobHandled(job, 'receipts')));
       setSlipJobsList(slipDetails.filter((job) => !isOcrJobHandled(job, 'slips')));
     } catch {
@@ -1479,19 +1616,14 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             )}
           </div>
 
-          {/* OCR ปุ่มแยก 2 ปุ่ม */}
+          {/* Unified scan upload */}
           <input ref={ocrFileRef} type="file" accept="image/*,.heic,.heif" multiple className="hidden"
             onChange={(e) => { handleOcrFileSelect(e.target.files); e.target.value = ''; }} />
 
           <button onClick={() => openOcrModal('receipt')} disabled={!hasAccounts} title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
             className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white hover:bg-[#25536F] hover:border-[#25536F] transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-[#2C6488] hover:border-[#2C6488]' : ''}`}>
             <ScanLine size={13} color="#ffffff" />
-            สแกนใบเสร็จ
-          </button>
-          <button onClick={openSlipScanner} disabled={!hasAccounts} title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
-            className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white hover:bg-[#25536F] hover:border-[#25536F] transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-[#2C6488] hover:border-[#2C6488]' : ''}`}>
-            <ScanLine size={13} color="#ffffff" />
-            สแกนสลิป
+            สแกนเอกสาร
           </button>
 
           {/* Export CSV */}
@@ -1524,7 +1656,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       )}
 
       {/* ── Filters ───────────────────────────────────────────────────────── */}
-      {hasAccounts && [...receiptJobsList, ...slipJobsList].length > 0 && (
+      {hasAccounts && [...scanJobsList, ...receiptJobsList, ...slipJobsList].length > 0 && (
         <div className="rounded-xl border border-[#DCE8EE] bg-white px-3 py-2 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -1534,6 +1666,18 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             <button onClick={refreshOcrJobs} className="text-[11px] font-medium text-[#2C6488] hover:underline">รีเฟรช</button>
           </div>
           <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+            {scanJobsList.slice(0, 3).map((job) => (
+              <button key={`scan-${job.id}`} onClick={() => openScanJob(job.id)}
+                className="text-left rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 hover:bg-[#EAF3F7] transition-colors w-full">
+                <div className="flex items-center justify-between gap-2 text-xs mb-1">
+                  <span className="font-semibold text-slate-700">เอกสาร {job.done_count}/{job.total_count}</span>
+                  <span className={`${scanStatusColor(job)} whitespace-nowrap`}>{scanStatusText(job)}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="h-full bg-[#2C6488]" style={{ width: `${job.total_count ? (job.done_count / job.total_count) * 100 : 0}%` }} />
+                </div>
+              </button>
+            ))}
             {receiptJobsList.slice(0, 3).map((job) => (
               <button key={`receipt-${job.id}`} onClick={() => openReceiptJob(job.id)}
                 className="text-left rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 hover:bg-[#EAF3F7] transition-colors w-full">
@@ -1930,9 +2074,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         </Modal>
       )}
 
-      {/* ── Modal: OCR ใบเสร็จ ───────────────────────────────────────────────── */}
+      {/* ── Modal: Unified document scan ─────────────────────────────────────── */}
       {ocrModal === 'receipt' && (
-        <Modal title="สแกนใบเสร็จ" onClose={closeOcr} size="lg">
+        <Modal title="สแกนเอกสาร" onClose={closeOcr} size="lg">
           <div className="space-y-4">
             {ocrError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{ocrError}</p>}
 
@@ -1952,10 +2096,10 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 )}
                 <div className="text-center">
                   <p className="text-sm font-medium text-slate-700">
-                    {receiptWasCancelled(receiptJob) ? 'ยกเลิกสแกนแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'สแกนใบเสร็จไม่สำเร็จ' : 'กำลังสแกนใบเสร็จ...'}
+                    {receiptWasCancelled(receiptJob) ? 'ยกเลิกสแกนแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'สแกนเอกสารไม่สำเร็จ' : 'กำลังสแกนเอกสาร...'}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
-                    {receiptWasCancelled(receiptJob) ? 'รายการที่สแกนนี้ถูกยกเลิกแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'ตรวจสอบข้อความด้านล่าง หรือเลือกเมนูสแกนที่ถูกต้อง' : 'ระบบกำลังดึงวันที่ รายการ และราคา อาจใช้เวลา 10–30 วินาที'}
+                    {receiptWasCancelled(receiptJob) ? 'รายการที่สแกนนี้ถูกยกเลิกแล้ว' : receiptBlockedResults(receiptJob).length > 0 ? 'ตรวจสอบเหตุผลด้านล่าง แล้วอัปโหลดรูปที่ชัดเจนอีกครั้ง' : 'ระบบกำลังอ่านและแยกประเภทเอกสาร อาจใช้เวลา 10–30 วินาที'}
                   </p>
                 </div>
                 {receiptWasCancelled(receiptJob) && (
@@ -1966,7 +2110,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 )}
                 {receiptBlockedResults(receiptJob).length > 0 && (
                   <div className="w-full rounded-xl border border-red-100 bg-red-50 px-3 py-3 text-left">
-                    <p className="text-sm font-semibold text-red-600">ไม่ใช่ใบเสร็จ</p>
+                    <p className="text-sm font-semibold text-red-600">ไม่สามารถอ่านเอกสารนี้ได้</p>
                     <p className="text-xs text-red-500 mt-1">{receiptBlockedMessage(receiptJob)}</p>
                     <div className="mt-3 space-y-2">
                       {receiptBlockedResults(receiptJob).map((result, i) => (
@@ -2022,9 +2166,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 )}
                 <div className="flex items-center justify-center gap-3">
                   {receiptJob?.id && receiptJob.status !== 'done' && receiptJob.status !== 'cancelled' && (
-                    <button onClick={() => cancelReceiptJob(receiptJob.id)} disabled={ocrCancelling[`receipt-${receiptJob.id}`]}
+                    <button onClick={() => cancelReceiptJob(receiptJob.id)} disabled={ocrCancelling[`${ocrSource === 'scan' ? 'scan' : 'receipt'}-${receiptJob.id}`]}
                       className="px-4 py-2 rounded-xl text-sm font-semibold text-red-500 bg-red-50 hover:bg-red-100 disabled:opacity-50">
-                      {ocrCancelling[`receipt-${receiptJob.id}`] ? 'กำลังยกเลิกสแกน...' : 'ยกเลิกสแกน'}
+                      {ocrCancelling[`${ocrSource === 'scan' ? 'scan' : 'receipt'}-${receiptJob.id}`] ? 'กำลังยกเลิกสแกน...' : 'ยกเลิกสแกน'}
                     </button>
                   )}
                   <button onClick={closeOcr}
@@ -2039,12 +2183,12 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             {ocrStep === 'upload' && (
               <>
                 <div className="rounded-2xl border border-[#BFD8E4] bg-[#EAF3F7] px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-800">อัปโหลดรูปใบเสร็จ</p>
+                  <p className="text-sm font-semibold text-slate-800">อัปโหลดรูปเอกสารทางการเงิน</p>
                   <p className="text-xs text-slate-600 mt-1">
-                    ระบบจะอ่านวันที่ รายการสินค้า และราคาให้ก่อนนำไปบันทึกเป็นรายจ่าย
+                    ระบบจะแยกให้อัตโนมัติว่าเป็นใบเสร็จหรือสลิป แล้วให้ตรวจสอบก่อนบันทึก
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    รองรับ JPG, PNG, HEIC สูงสุด 5 รูปต่อครั้ง ควรถ่ายให้เห็นวันที่ รายการ และยอดเงินชัดเจน
+                    รองรับ JPG, PNG, HEIC สูงสุด 5 รูปต่อครั้ง ควรถ่ายให้เห็นวันที่ รายการ ยอดเงิน หรือข้อมูลโอนเงินให้ชัดเจน
                   </p>
                 </div>
                 <div
@@ -2076,14 +2220,14 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   ) : (
                     <div className="flex flex-col items-center justify-center gap-2 py-12 text-[#2C6488]">
                       <ScanLine size={36} color="#2C6488" />
-                      <p className="text-sm font-medium text-[#2C6488]">คลิกหรือลากวางรูปใบเสร็จ</p>
+                      <p className="text-sm font-medium text-[#2C6488]">คลิกหรือลากวางรูปเอกสาร</p>
                       <p className="text-xs text-slate-400">สูงสุด 5 ใบ · JPG, PNG, HEIC</p>
                     </div>
                   )}
                 </div>
 
-                <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl border border-amber-100">
-                  ระบบจะอ่านเฉพาะใบเสร็จรายจ่าย หากเป็นสลิปโอนเงินให้ใช้เมนูสแกนสลิป
+                <p className="text-xs text-[#2C6488] bg-[#EAF3F7] px-3 py-2 rounded-xl border border-[#BFD8E4]">
+                  อัปโหลดได้ทั้งใบเสร็จและสลิปในครั้งเดียว ระบบจะแยกประเภทและพาไปหน้าตรวจสอบที่เหมาะสม
                 </p>
 
                 <div className="flex gap-3">
@@ -2316,7 +2460,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
       {/* ── Modal: Batch Slip Scanner ────────────────────────────────────────── */}
       {showSlipScanner && (
-        <Modal title={slipJob ? `สแกนสลิป — ${slipJob.done_count}/${slipJob.total_count} เสร็จ` : 'สแกนสลิปธนาคาร'} onClose={closeSlipScanner} size="lg">
+        <Modal title={slipJob ? `${slipSource === 'scan' ? 'ตรวจสอบสลิป' : 'สแกนสลิป'} — ${slipJob.done_count}/${slipJob.total_count} เสร็จ` : 'สแกนเอกสาร'} onClose={closeSlipScanner} size="lg">
           <div className="space-y-4">
 
             {/* ─── Phase 1: upload ─── */}
@@ -2382,8 +2526,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   )}
                 </div>
 
-                <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl border border-amber-100">
-                  ระบบจะรับเฉพาะสลิปโอนเงิน หากเป็นใบเสร็จให้ใช้เมนูสแกนใบเสร็จ
+                <p className="text-xs text-[#2C6488] bg-[#EAF3F7] px-3 py-2 rounded-xl border border-[#BFD8E4]">
+                  ระบบจะแยกประเภทเอกสารให้อัตโนมัติ หากเป็นสลิปจะเปิดหน้านี้เพื่อให้ตรวจสอบก่อนบันทึก
                 </p>
 
                 {slipError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{slipError}</p>}
@@ -2432,9 +2576,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   </div>
                   <div className="mt-3 flex items-center gap-2">
                     {slipJob.status !== 'done' && slipJob.status !== 'cancelled' && (
-                      <button onClick={() => cancelSlipJob(slipJob.id)} disabled={ocrCancelling[`slip-${slipJob.id}`]}
+                      <button onClick={() => cancelSlipJob(slipJob.id)} disabled={ocrCancelling[`${slipSource === 'scan' ? 'scan' : 'slip'}-${slipJob.id}`]}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 disabled:opacity-50">
-                        {ocrCancelling[`slip-${slipJob.id}`] ? 'กำลังยกเลิกสแกน...' : 'ยกเลิกสแกน'}
+                        {ocrCancelling[`${slipSource === 'scan' ? 'scan' : 'slip'}-${slipJob.id}`] ? 'กำลังยกเลิกสแกน...' : 'ยกเลิกสแกน'}
                       </button>
                     )}
                     <button onClick={closeSlipScanner}

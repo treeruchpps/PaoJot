@@ -19,6 +19,7 @@ const MODE_META = {
   expense: { label: 'รายจ่าย', tone: '#ef4444', bg: '#fff1f2', placeholder: 'เช่น กาแฟ 50 หรือ ข้าวกะเพรา 60' },
   income: { label: 'รายรับ', tone: '#10b981', bg: '#f0fdf4', placeholder: 'เช่น เงินเดือน 30000 หรือ ค่าขนม 500' },
   saving: { label: 'การออม', tone: '#2C6488', bg: '#EAF3F7', placeholder: 'เช่น ออม 500 หรือ หยอดกระปุก 100' },
+  transfer: { label: 'การโอน', tone: '#2563eb', bg: '#eff6ff', placeholder: 'เช่น โอน 300' },
 };
 
 const firstBotMessage = (mode) => ({
@@ -116,6 +117,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   
   // Custom transaction editing state inside preview cards
   const [accountId, setAccountId] = useState('');
+  const [toAccountId, setToAccountId] = useState('');
   const [goalId, setGoalId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [pendingText, setPendingText] = useState('');
@@ -134,6 +136,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const assetAccounts = useMemo(() => getTransactionAccounts(accounts), [accounts]);
   const modeCategories = useMemo(() => categories.filter((c) => c.type === mode), [categories, mode]);
   const selectedAccount = assetAccounts.find((a) => a.id === accountId);
+  const selectedToAccount = assetAccounts.find((a) => a.id === toAccountId);
   const selectedGoal = goals.find((g) => g.id === goalId);
 
   // Sync back chat log changes to database
@@ -153,6 +156,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               category_id: msg.result?.category_id || '',
             },
             account: msg.account ? { id: msg.account.id, name: msg.account.name } : null,
+            toAccount: msg.toAccount ? { id: msg.toAccount.id, name: msg.toAccount.name } : null,
             goal: msg.goal ? { id: msg.goal.id, name: msg.goal.name } : null,
             category: msg.category ? { id: msg.category.id, name: msg.category.name } : null,
           };
@@ -315,6 +319,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setMode(nextMode);
     setInput('');
     setAccountId('');
+    setToAccountId('');
     setGoalId('');
     setCategoryId('');
     setPendingText('');
@@ -323,6 +328,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
   const clearChatLog = () => {
     setAccountId('');
+    setToAccountId('');
     setGoalId('');
     setCategoryId('');
     setPendingText('');
@@ -336,7 +342,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setPendingText(textToContinue);
     addChoiceMessage({
       choiceType: 'account',
-      text: mode === 'saving' ? 'เลือกบัญชีที่ต้องการถอนเงินออม:' : 'เลือกบัญชีที่จะใช้จ่าย/รับเงิน:',
+      text: mode === 'saving'
+        ? 'เลือกบัญชีที่ต้องการถอนเงินออม:'
+        : mode === 'transfer'
+          ? 'เลือกบัญชีต้นทางที่จะโอนเงินออก:'
+          : 'เลือกบัญชีที่จะใช้จ่าย/รับเงิน:',
       actions: list.map((account) => ({
         label: `${account.name} (฿${fmt(account.balance)})`,
         onClick: () => selectAccount(account.id, textToContinue, context),
@@ -344,7 +354,49 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     });
   };
 
+  const askTransferDestination = (textToContinue, fromAccountId = accountId, context = {}) => {
+    const fromAccount = assetAccounts.find((a) => a.id === fromAccountId);
+    const destinationAccounts = assetAccounts.filter((a) => a.id !== fromAccountId);
+    if (destinationAccounts.length === 0) {
+      addMessage({ role: 'bot', text: 'ต้องมีอย่างน้อย 2 บัญชี ถึงจะบันทึกการโอนได้ครับ' });
+      return;
+    }
+    setPendingText(textToContinue);
+    addChoiceMessage({
+      choiceType: 'to_account',
+      text: `เลือกบัญชีปลายทางที่จะรับเงินจาก "${fromAccount?.name || 'บัญชีต้นทาง'}":`,
+      actions: destinationAccounts.map((account) => ({
+        label: `${account.name} (฿${fmt(account.balance)})`,
+        onClick: () => selectTransferDestination(account.id, textToContinue, { ...context, accountId: fromAccountId }),
+      })),
+    });
+  };
+
   const askAccountForPreview = (result) => {
+    if (mode === 'transfer') {
+      addChoiceMessage({
+        choiceType: 'account',
+        text: 'เลือกบัญชีต้นทางใหม่:',
+        actions: assetAccounts.map((account) => ({
+          label: `${account.name} (฿${fmt(account.balance)})`,
+          onClick: () => {
+            if (result.amount > account.balance) {
+              addMessage({
+                role: 'bot',
+                text: `ยอดเงินในบัญชี "${account.name}" ไม่เพียงพอครับ (ยอดคงเหลือ ฿${fmt(account.balance)}) ไม่สามารถโอน ฿${fmt(result.amount)} ได้`
+              });
+              return false;
+            }
+            setAccountId(account.id);
+            setToAccountId('');
+            addMessage({ role: 'user', text: account.name });
+            askTransferDestination(pendingText, account.id, { result });
+            return true;
+          },
+        })),
+      });
+      return;
+    }
     const list = mode === 'saving' && selectedGoal?.account_id
       ? assetAccounts.filter((a) => a.id !== selectedGoal.account_id)
       : assetAccounts;
@@ -400,12 +452,38 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setAccountId(id);
     const account = assetAccounts.find((a) => a.id === id);
     addMessage({ role: 'user', text: account?.name || 'เลือกบัญชีแล้ว' });
+    if (mode === 'transfer') {
+      setToAccountId('');
+      askTransferDestination(textToContinue, id, context);
+      return;
+    }
     const effectiveGoalId = context.goalId || goalId;
     if (mode === 'saving' && !effectiveGoalId) {
       askGoal(textToContinue, { accountId: id });
       return;
     }
     parseText(textToContinue, { accountId: id, goalId: effectiveGoalId });
+  };
+
+  const selectTransferDestination = (id, textToContinue = pendingText, context = {}) => {
+    const fromAccountId = context.accountId || accountId;
+    if (!fromAccountId) {
+      askAccount(textToContinue);
+      return;
+    }
+    if (id === fromAccountId) {
+      addMessage({ role: 'bot', text: 'บัญชีต้นทางและบัญชีปลายทางต้องไม่ใช่บัญชีเดียวกันครับ' });
+      askTransferDestination(textToContinue, fromAccountId, context);
+      return;
+    }
+    setToAccountId(id);
+    const account = assetAccounts.find((a) => a.id === id);
+    addMessage({ role: 'user', text: account?.name || 'เลือกบัญชีปลายทางแล้ว' });
+    if (context.result) {
+      showPreview(context.result, categoryId, { accountId: fromAccountId, toAccountId: id });
+      return;
+    }
+    parseText(textToContinue, { accountId: fromAccountId, toAccountId: id });
   };
 
   const selectGoal = (id, textToContinue = pendingText, context = {}) => {
@@ -450,10 +528,25 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
     addMessage({ role: 'user', text });
 
-    if (mode !== 'saving' && assetAccounts.length === 0) {
+    if ((mode === 'income' || mode === 'expense') && assetAccounts.length === 0) {
       addMessage({
         role: 'bot',
         text: 'ต้องสร้างบัญชีก่อน ถึงจะบันทึกรายรับหรือรายจ่ายได้ครับ',
+        actions: onGoAccounts ? [
+          {
+            label: 'ไปที่หน้าจัดการบัญชี',
+            onClick: onGoAccounts
+          }
+        ] : undefined
+      });
+      return;
+    }
+    if (mode === 'transfer' && assetAccounts.length < 2) {
+      addMessage({
+        role: 'bot',
+        text: assetAccounts.length === 0
+          ? 'ต้องสร้างบัญชีก่อน ถึงจะบันทึกการโอนได้ครับ'
+          : 'ต้องมีอย่างน้อย 2 บัญชี ถึงจะบันทึกการโอนได้ครับ',
         actions: onGoAccounts ? [
           {
             label: 'ไปที่หน้าจัดการบัญชี',
@@ -481,6 +574,14 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       askGoal(text);
       return;
     }
+    if (mode === 'transfer' && !accountId) {
+      askAccount(text);
+      return;
+    }
+    if (mode === 'transfer' && !toAccountId) {
+      askTransferDestination(text, accountId);
+      return;
+    }
     if (!accountId) {
       const selectableAccounts = mode === 'saving' && selectedGoal?.account_id
         ? assetAccounts.filter((a) => a.id !== selectedGoal.account_id)
@@ -503,8 +604,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       const result = await quickEntry.parse({ mode, text });
       
       const activeAccId = overrides.accountId || accountId;
+      const activeToAccId = overrides.toAccountId || toAccountId;
       const activeAcc = assetAccounts.find((a) => a.id === activeAccId);
-      if (activeAcc && (mode === 'expense' || mode === 'saving') && result.amount > activeAcc.balance) {
+      if (activeAcc && (mode === 'expense' || mode === 'saving' || mode === 'transfer') && result.amount > activeAcc.balance) {
         addMessage({
           role: 'bot',
           text: `ยอดเงินในบัญชี "${activeAcc.name}" ไม่เพียงพอครับ (ยอดคงเหลือ ฿${fmt(activeAcc.balance)}) แต่คุณระบุจำนวนเงิน ฿${fmt(result.amount)} กรุณากรอกจำนวนเงินใหม่ให้ถูกต้อง`
@@ -513,11 +615,26 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         setPendingText('');
         return;
       }
+      if (mode === 'transfer') {
+        if (!activeAccId) {
+          askAccount(text);
+          return;
+        }
+        if (!activeToAccId) {
+          askTransferDestination(text, activeAccId);
+          return;
+        }
+        if (activeAccId === activeToAccId) {
+          addMessage({ role: 'bot', text: 'บัญชีต้นทางและบัญชีปลายทางต้องไม่ใช่บัญชีเดียวกันครับ' });
+          askTransferDestination(text, activeAccId);
+          return;
+        }
+      }
 
       setParsed(result);
       const nextCategoryId = result.category_id || '';
       setCategoryId(nextCategoryId);
-      if (mode !== 'saving' && !nextCategoryId) {
+      if (mode !== 'saving' && mode !== 'transfer' && !nextCategoryId) {
         askCategory(result);
       } else {
         showPreview(result, nextCategoryId, overrides);
@@ -534,8 +651,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setParsed(result);
     setCategoryId(nextCategoryId || '');
     const previewAccountId = overrides.accountId || accountId;
+    const previewToAccountId = overrides.toAccountId || toAccountId;
     const previewGoalId = overrides.goalId || goalId;
     const previewAccount = assetAccounts.find((a) => a.id === previewAccountId);
+    const previewToAccount = assetAccounts.find((a) => a.id === previewToAccountId);
     const previewGoal = goals.find((g) => g.id === previewGoalId);
     const previewCategory = categories.find((c) => c.id === nextCategoryId);
 
@@ -543,6 +662,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       role: 'preview',
       result,
       account: previewAccount,
+      toAccount: previewToAccount,
       goal: previewGoal,
       category: previewCategory,
       mode,
@@ -592,6 +712,22 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           note: parsed.title || 'ออมเงินผ่านแชทผู้ช่วย',
           date: todayStr(),
         });
+      } else if (mode === 'transfer') {
+        if (!accountId) throw new Error('กรุณาเลือกบัญชีต้นทาง');
+        if (!toAccountId) throw new Error('กรุณาเลือกบัญชีปลายทาง');
+        if (accountId === toAccountId) throw new Error('บัญชีต้นทางและบัญชีปลายทางต้องไม่ใช่บัญชีเดียวกัน');
+        if (!selectedToAccount) throw new Error('ไม่พบบัญชีปลายทางที่เลือก');
+        if (selectedAccount && amount > Number(selectedAccount.balance || 0)) {
+          throw new Error(`ยอดเงินในบัญชีต้นทางไม่พอ คงเหลือ ฿${fmt(selectedAccount.balance || 0)}`);
+        }
+        await transactions.create({
+          type: 'transfer',
+          account_id: accountId,
+          to_account_id: toAccountId,
+          amount,
+          name: parsed.title || pendingText || 'โอนเงินผ่านผู้ช่วย',
+          transaction_date: todayStr(),
+        });
       } else {
         if (!accountId) throw new Error('กรุณาเลือกบัญชี');
         if (!categoryId) throw new Error('กรุณาเลือกหมวดหมู่');
@@ -629,6 +765,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       });
       setParsed(null);
       setPendingText('');
+      setToAccountId('');
       
       // Refresh views
       await onRefresh?.();
@@ -765,7 +902,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{message.result.title}</p>
-                {message.mode !== 'saving' && (
+                {(message.mode === 'income' || message.mode === 'expense') && (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     หมวดหมู่: <span className="font-semibold text-slate-700 dark:text-slate-200">{message.category?.name || 'ไม่ได้เลือก'}</span>
                   </p>
@@ -775,9 +912,20 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     เป้าหมายการออม: <span className="font-semibold text-slate-700 dark:text-slate-200">{message.goal?.name || '-'}</span>
                   </p>
                 )}
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  กระเป๋าเงินบัญชี: <span className="font-semibold text-slate-700 dark:text-slate-200">{message.account?.name || '-'}</span>
-                </p>
+                {message.mode === 'transfer' ? (
+                  <>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      จากบัญชี: <span className="font-semibold text-slate-700 dark:text-slate-200">{message.account?.name || '-'}</span>
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      ไปบัญชี: <span className="font-semibold text-slate-700 dark:text-slate-200">{message.toAccount?.name || '-'}</span>
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    กระเป๋าเงินบัญชี: <span className="font-semibold text-slate-700 dark:text-slate-200">{message.account?.name || '-'}</span>
+                  </p>
+                )}
               </div>
               <p className="text-xl font-bold whitespace-nowrap" style={{ color: meta.tone }}>
                 ฿{fmt(message.result.amount)}
@@ -805,7 +953,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     <span>{saving ? 'กำลังบันทึก...' : 'บันทึกธุรกรรม'}</span>
                   </span>
                 </button>
-                {message.mode !== 'saving' && (
+                {(message.mode === 'income' || message.mode === 'expense') && (
                   <button
                     onClick={() => askCategory(message.result)}
                     className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-600 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-600 transition-colors"
@@ -822,7 +970,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 >
                   <span className="flex items-center gap-1.5">
                     <CreditCard size={13} />
-                    <span>เปลี่ยนบัญชี</span>
+                    <span>{message.mode === 'transfer' ? 'เปลี่ยนบัญชีโอน' : 'เปลี่ยนบัญชี'}</span>
                   </span>
                 </button>
                 <button
@@ -1074,6 +1222,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                   <li><strong>รายจ่าย</strong>: พิมพ์ "ข้าวแกง 50"</li>
                   <li><strong>รายรับ</strong>: พิมพ์ "เงินเดือน 30000"</li>
                   <li><strong>การออม</strong>: พิมพ์ "ออม 500"</li>
+                  <li><strong>การโอน</strong>: พิมพ์ "โอน 300"</li>
                 </ul>
               </div>
 
@@ -1152,6 +1301,18 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           >
             <span className={`w-1.5 h-1.5 rounded-full ${mode === 'saving' ? 'bg-[#BFD8E4]' : 'bg-[#2C6488]'}`} />
             <span>บันทึกการออม</span>
+          </button>
+
+          <button
+            onClick={() => changeMode('transfer')}
+            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              mode === 'transfer'
+                ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'transfer' ? 'bg-blue-200' : 'bg-blue-500'}`} />
+            <span>บันทึกการโอน</span>
           </button>
 
           <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 self-center" />

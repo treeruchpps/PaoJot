@@ -255,6 +255,36 @@ CREATE TABLE receipt_results (
 );
 
 -- ============================================================
+-- Unified scan jobs (receipt/slip auto classification)
+-- ============================================================
+CREATE TABLE scan_jobs (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+    total_count INT NOT NULL DEFAULT 0,
+    done_count  INT NOT NULL DEFAULT 0,
+    error_msg   TEXT,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE scan_results (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id         UUID NOT NULL REFERENCES scan_jobs(id) ON DELETE CASCADE,
+    user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status         VARCHAR(20) NOT NULL DEFAULT 'queued',
+    document_type  VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    filename       VARCHAR(255),
+    image_path     TEXT,
+    ocr_text       TEXT,
+    result_json    JSONB,
+    is_duplicate   BOOLEAN NOT NULL DEFAULT FALSE,
+    error_msg      TEXT,
+    created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- ตาราง ai_summaries (cache สรุปการเงินจาก LLM)
 -- ============================================================
 CREATE TABLE ai_summaries (
@@ -278,7 +308,7 @@ CREATE TABLE ai_summaries (
 CREATE TABLE quick_entry_chat_logs (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'chat')),
+    mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'transfer', 'chat')),
     messages   JSONB       NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -307,6 +337,8 @@ CREATE INDEX idx_notifications_is_read       ON notifications(user_id, is_read);
 CREATE INDEX idx_notifications_type          ON notifications(user_id, notification_type, created_at);
 CREATE INDEX idx_receipt_jobs_user_id         ON receipt_jobs(user_id);
 CREATE INDEX idx_receipt_results_job_id       ON receipt_results(job_id);
+CREATE INDEX idx_scan_jobs_user_id            ON scan_jobs(user_id);
+CREATE INDEX idx_scan_results_job_id          ON scan_results(job_id);
 CREATE INDEX idx_slip_jobs_user_id           ON slip_jobs(user_id);
 CREATE INDEX idx_slip_results_job_id         ON slip_results(job_id);
 CREATE INDEX idx_slip_ref_log_user           ON slip_ref_log(user_id, ref_no);

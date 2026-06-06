@@ -221,6 +221,28 @@ export const slipJobs = {
 };
 
 // ====================================================
+// UNIFIED DOCUMENT SCANNING (receipt/slip auto classify)
+// ====================================================
+export const scanJobs = {
+  create: (files) => {
+    const form = new FormData();
+    const list = Array.isArray(files) ? files : [files];
+    list.forEach((f) => form.append('files', f));
+    return request('/scan-jobs', { method: 'POST', body: form }, true, true);
+  },
+  get: (jobId) => request(`/scan-jobs/${jobId}`),
+  list: () => request('/scan-jobs'),
+  cancel: (jobId) => request(`/scan-jobs/${jobId}/cancel`, { method: 'POST' }),
+  save: (jobId, resultId) => request(`/scan-jobs/${jobId}/results/${resultId}/save`, { method: 'POST' }),
+  saveSlip: (jobId, resultId, body) =>
+    request(`/scan-jobs/${jobId}/results/${resultId}/save-slip`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  skip: (jobId, resultId) => request(`/scan-jobs/${jobId}/results/${resultId}/skip`, { method: 'POST' }),
+};
+
+// ====================================================
 // NOTIFICATIONS
 // ====================================================
 export const notifications = {

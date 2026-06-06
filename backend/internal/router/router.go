@@ -37,6 +37,7 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	notiH := handlers.NewNotificationHandler(db)
 	slipH := handlers.NewSlipHandler(db, cfg)
 	receiptH := handlers.NewReceiptHandler(db, cfg)
+	scanH := handlers.NewScanHandler(db, cfg, receiptH, slipH)
 	aiSummaryH := handlers.NewAISummaryHandler(db, cfg)
 	quickEntryH := handlers.NewQuickEntryHandler(db, cfg)
 
@@ -122,6 +123,15 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		protected.PUT("/quick-entry/chat-log", quickEntryH.SaveChatLog)
 		protected.DELETE("/quick-entry/chat-log", quickEntryH.ClearChatLog)
 		protected.POST("/quick-entry/parse", quickEntryH.Parse)
+
+		// Unified document scanning (receipt/slip auto classification)
+		protected.GET("/scan-jobs", scanH.ListJobs)
+		protected.POST("/scan-jobs", scanH.CreateJob)
+		protected.GET("/scan-jobs/:id", scanH.GetJob)
+		protected.POST("/scan-jobs/:id/cancel", scanH.CancelJob)
+		protected.POST("/scan-jobs/:id/results/:result_id/save", scanH.MarkResultSaved)
+		protected.POST("/scan-jobs/:id/results/:result_id/save-slip", scanH.SaveSlipResult)
+		protected.POST("/scan-jobs/:id/results/:result_id/skip", scanH.SkipResult)
 
 		// Receipt scanning (async, batch job)
 		protected.GET("/receipt-jobs", receiptH.ListJobs)
