@@ -13,6 +13,7 @@ import {
 import Icon from '../components/common/Icon';
 import { fmt } from '../constants/data';
 import { getTransactionAccounts } from '../utils/accountFilters';
+import { convertHeicFilesToJpeg } from '../utils/heicToJpeg';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -729,8 +730,20 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     }
     closeActiveChoices();
     setScanUploading(true);
+    let uploadFiles = imageFiles;
+    try {
+      const converted = await convertHeicFilesToJpeg(imageFiles);
+      uploadFiles = converted.files;
+      if (converted.convertedCount > 0) {
+        addMessage({ role: 'bot', text: `แปลงรูป HEIC เป็น JPEG แล้ว ${converted.convertedCount} รูปครับ` });
+      }
+    } catch (err) {
+      setScanUploading(false);
+      addMessage({ role: 'bot', text: err.message || 'แปลงรูป HEIC ไม่สำเร็จ กรุณาแปลงเป็น JPG/PNG ก่อนอัปโหลดครับ' });
+      return;
+    }
     const userImageMessageId = messageId();
-    const localImages = imageFiles.map((file) => {
+    const localImages = uploadFiles.map((file) => {
       const name = file.name || 'image';
       const lowerName = name.toLowerCase();
       const canPreview = !lowerName.endsWith('.heic') && !lowerName.endsWith('.heif');
@@ -755,7 +768,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         {
           id: userImageMessageId,
           role: 'user_images',
-          text: `ส่งรูป ${imageFiles.length} รูป`,
+          text: `ส่งรูป ${uploadFiles.length} รูป`,
           upload_status: 'uploading',
           images: localImages,
         },
@@ -782,7 +795,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       return next;
     });
     try {
-      const res = await scanJobsApi.create(imageFiles);
+      const res = await scanJobsApi.create(uploadFiles);
       const job = await scanJobsApi.get(res.job_id);
       const serverImages = (job.results || []).map((result, index) => ({
         id: result.id || localImages[index]?.id || messageId(),
@@ -797,7 +810,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           if (msg.id === userImageMessageId) {
             return {
               ...msg,
-              text: `ส่งรูป ${serverImages.length || imageFiles.length} รูป`,
+              text: `ส่งรูป ${serverImages.length || uploadFiles.length} รูป`,
               job_id: job.id,
               upload_status: 'done',
               images: serverImages.length > 0 ? serverImages : msg.images,

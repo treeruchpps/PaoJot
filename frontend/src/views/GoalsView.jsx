@@ -3,7 +3,7 @@ import { useSnackbar } from '../contexts/SnackbarContext';
 import Icon from '../components/common/Icon';
 import {
   Plus, Edit, Trash2, Calendar, CheckCircle, PiggyBank,
-  ImageIcon, Trophy, AlertCircle, ArrowRightLeft, Upload, X, ArrowDownToLine
+  ImageIcon, Trophy, AlertCircle, Upload, X, ArrowDownToLine
 } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';

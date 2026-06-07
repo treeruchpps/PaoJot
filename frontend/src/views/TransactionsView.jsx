@@ -9,6 +9,7 @@ import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
 import { getTransactionAccounts } from '../utils/accountFilters';
+import { convertHeicFilesToJpeg } from '../utils/heicToJpeg';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน', adjustment: 'ปรับยอด' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2563eb', adjustment: '#f59e0b' };
@@ -570,7 +571,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setOcrVatAmount(''); setOcrVatMode('include'); setOcrDiscountAmount(''); setOcrDiscountMode('prorate');
   };
 
-  const handleOcrFileSelect = (fileList) => {
+  const handleOcrFileSelect = async (fileList) => {
     const fileArr = Array.isArray(fileList) ? fileList : Array.from(fileList?.length ? fileList : [fileList]).filter(Boolean);
     if (fileArr.length === 0) return;
     const slots = Math.max(0, 5 - ocrFiles.length);
@@ -578,7 +579,13 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       showError('เพิ่มรูปได้สูงสุด 5 รูปต่อครั้ง');
       return;
     }
-    const selected = fileArr.slice(0, slots);
+    let selected = fileArr.slice(0, slots);
+    try {
+      selected = (await convertHeicFilesToJpeg(selected)).files;
+    } catch (err) {
+      showError(err.message || 'แปลงรูป HEIC ไม่สำเร็จ กรุณาแปลงเป็น JPG/PNG ก่อนอัปโหลด');
+      return;
+    }
     setOcrFiles((prev) => [...prev, ...selected]);
     if (fileArr.length > slots) showError('เพิ่มได้สูงสุด 5 รูปต่อครั้ง ระบบเพิ่มให้เท่าที่เหลือแล้ว');
     const previews = new Array(selected.length).fill('');
@@ -957,7 +964,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     setShowSlipScanner(false);
   };
 
-  const handleSlipFilesSelect = (fileList) => {
+  const handleSlipFilesSelect = async (fileList) => {
     const fileArr = Array.from(fileList || []).filter(Boolean);
     if (fileArr.length === 0) return;
     const slots = Math.max(0, 5 - slipFiles.length);
@@ -965,7 +972,13 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
       showError('เพิ่มรูปได้สูงสุด 5 รูปต่อครั้ง');
       return;
     }
-    const selected = fileArr.slice(0, slots);
+    let selected = fileArr.slice(0, slots);
+    try {
+      selected = (await convertHeicFilesToJpeg(selected)).files;
+    } catch (err) {
+      showError(err.message || 'แปลงรูป HEIC ไม่สำเร็จ กรุณาแปลงเป็น JPG/PNG ก่อนอัปโหลด');
+      return;
+    }
     setSlipFiles((prev) => [...prev, ...selected]);
     if (fileArr.length > slots) showError('เพิ่มได้สูงสุด 5 รูปต่อครั้ง ระบบเพิ่มให้เท่าที่เหลือแล้ว');
     const previews = new Array(selected.length).fill('');

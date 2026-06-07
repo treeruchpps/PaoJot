@@ -74,7 +74,7 @@ export default function ProfileView() {
         setLoadingProfile(false);
       }
     })();
-  }, []);
+  }, [showError]);
 
   const initials = (profileData?.display_name || user?.username || '?').slice(0, 2).toUpperCase();
   const hasBasicProfileChanges =
