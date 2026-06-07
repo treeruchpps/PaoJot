@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2 } from 'lucide-react';
-import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi, savingsGoals as goalsApi } from '../services/api';
+import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2, Target, ChevronRight } from 'lucide-react';
+import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi, savingsGoals as goalsApi, budgets as budgetsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
 
@@ -20,7 +20,6 @@ const PERIOD_CONFIG = [
   { id: 'month', label: 'เดือนนี้',   icon: 'BarChart2', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
   { id: 'year',  label: 'ปีนี้',      icon: 'TrendingUp', color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
 ];
-const DONUT_PERIOD_OPTIONS = [{ id: 'all', label: 'ทั้งหมด' }, ...PERIOD_CONFIG];
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -239,6 +238,37 @@ function TrendLineChart({ data, isDarkMode }) {
     const savingGradient = ctx.createLinearGradient(0, 0, 0, 260);
     savingGradient.addColorStop(0, 'rgba(14, 165, 233, 0.16)');
     savingGradient.addColorStop(1, 'rgba(14, 165, 233, 0.02)');
+    const expenseGradient = ctx.createLinearGradient(0, 0, 0, 260);
+    expenseGradient.addColorStop(0, 'rgba(251, 113, 133, 0.16)');
+    expenseGradient.addColorStop(1, 'rgba(251, 113, 133, 0.02)');
+
+    const crosshairPlugin = {
+      id: 'crosshair',
+      afterDraw(chart) {
+        const active = (chart.tooltip && chart.tooltip.getActiveElements && chart.tooltip.getActiveElements()) || [];
+        if (!active.length) return;
+        const x = active[0].element.x;
+        const { top, bottom } = chart.chartArea;
+        const c = chart.ctx;
+        c.save();
+        c.beginPath();
+        c.setLineDash([5, 5]);
+        c.moveTo(x, top);
+        c.lineTo(x, bottom);
+        c.lineWidth = 1;
+        c.strokeStyle = isDarkMode ? 'rgba(148,163,184,0.55)' : 'rgba(100,116,139,0.45)';
+        c.stroke();
+        c.setLineDash([]);
+        c.beginPath();
+        c.arc(x, top, 9, 0, Math.PI * 2);
+        c.fillStyle = isDarkMode ? '#0b0f19' : '#ffffff';
+        c.fill();
+        c.lineWidth = 2.5;
+        c.strokeStyle = isDarkMode ? '#e5e7eb' : '#1f2937';
+        c.stroke();
+        c.restore();
+      },
+    };
 
     chartRef.current = new C(canvasRef.current, {
       type: 'line',
@@ -254,19 +284,19 @@ function TrendLineChart({ data, isDarkMode }) {
             fill: true,
             tension: 0.42,
             pointRadius: 0,
-            pointHoverRadius: 4,
+            pointHoverRadius: 0,
             pointHitRadius: 14,
           },
           {
             label: 'รายจ่าย',
             data: data.map((d) => d.expense),
             borderColor: '#fb7185',
-            backgroundColor: 'rgba(251, 113, 133, 0.04)',
+            backgroundColor: expenseGradient,
             borderWidth: 3,
-            fill: false,
+            fill: true,
             tension: 0.42,
             pointRadius: 0,
-            pointHoverRadius: 4,
+            pointHoverRadius: 0,
             pointHitRadius: 14,
           },
           {
@@ -278,7 +308,7 @@ function TrendLineChart({ data, isDarkMode }) {
             fill: true,
             tension: 0.42,
             pointRadius: 0,
-            pointHoverRadius: 4,
+            pointHoverRadius: 0,
             pointHitRadius: 14,
           },
         ],
@@ -287,6 +317,8 @@ function TrendLineChart({ data, isDarkMode }) {
         responsive:          true,
         maintainAspectRatio: false,
         animation:           false,
+        layout: { padding: { top: 14 } },
+        interaction: { mode: 'index', intersect: false },
         plugins: {
           legend:  { display: false },
           tooltip: {
@@ -318,11 +350,12 @@ function TrendLineChart({ data, isDarkMode }) {
               font:     { size: 12 },
               color:    isDarkMode ? '#9ca3af' : '#4b5563',
               padding:   10,
-              callback: (v) => v >= 1000 ? `฿${(v / 1000).toFixed(0)}K` : `฿${v}`,
+              callback: (v) => v >= 1000 ? `฿${Math.round(v / 1000)}k` : `฿${v === 0 ? '0k' : v}`,
             },
           },
         },
       },
+      plugins: [crosshairPlugin],
     });
 
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
@@ -353,15 +386,16 @@ function getYearCashflowTrend(txs, savingAccountIds) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 
-export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, isDarkMode }) {
-  const [period,       setPeriod]       = useState('all');
+export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, onGoBudgets, onGoGoals, isDarkMode }) {
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [donutMonth,   setDonutMonth]   = useState(0); // 0 = ทั้งปี, 1-12 = เดือน
   const [weekStartDay, setWeekStartDay] = useState(1); // 0=Sun 1=Mon 6=Sat
   const [periodStats,  setPeriodStats]  = useState({});   // { today:{inc,exp}, week:…, month:…, year:… }
-  const [txList,       setTxList]       = useState([]);
   const [allTxList,    setAllTxList]    = useState([]);
   const [goals,        setGoals]        = useState([]);
+  const [budgets,      setBudgets]      = useState([]);
   const [loading,      setLoading]      = useState(true);
-  const [barData,      setBarData]      = useState([]);
   const [aiPeriod,     setAiPeriod]     = useState('monthly');
   const [aiState,      setAiState]      = useState(null);
   const [aiError,      setAiError]      = useState('');
@@ -383,6 +417,8 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       const activeGoals = (goalsList || []).filter((goal) => goal.status !== 'cancelled');
       const savingAccountIds = new Set(activeGoals.map((goal) => goal.account_id).filter(Boolean));
       setGoals(activeGoals);
+      const budgetsList = await budgetsApi.list().catch(() => []);
+      setBudgets(budgetsList || []);
 
       // 1. Fetch all 4 period summaries in parallel
       const summaryResults = await Promise.all(
@@ -402,37 +438,11 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       const allResult = await txApi.list({ limit: 10000 });
       const allData = allResult?.data || [];
       setAllTxList(allData);
-
-      // 2. 6-month bar data
-      const now  = new Date();
-      const bars = [];
-      for (let i = 5; i >= 0; i--) {
-        const d  = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const yy = d.getFullYear();
-        const mm = pad(d.getMonth() + 1);
-        const f  = `${yy}-${mm}-01`;
-        const l  = new Date(yy, d.getMonth() + 1, 0).getDate();
-        const t  = `${yy}-${mm}-${pad(l)}`;
-        const r  = await txApi.list({ date_from: f, date_to: t, limit: 500 });
-        const ds = r?.data || [];
-        const inc = ds.filter((x) => x.type === 'income').reduce((s, x)  => s + x.amount, 0);
-        const exp = ds.filter((x) => x.type === 'expense').reduce((s, x) => s + x.amount, 0);
-        const sav = ds.filter((x) => isSavingTransfer(x, savingAccountIds)).reduce((s, x) => s + x.amount, 0);
-        bars.push({ month: MONTH_LABELS[d.getMonth()], income: inc, expense: exp, saving: sav });
-      }
-      setBarData(bars);
-
-      // 3. Set txList for the donut chart filter.
-      setPeriod((prev) => {
-        setTxList(prev === 'all' ? allData : (stats[prev]?.data || []));
-        return prev;
-      });
     } catch {
       setPeriodStats({});
-      setTxList([]);
       setAllTxList([]);
       setGoals([]);
-      setBarData([]);
+      setBudgets([]);
     } finally {
       setLoading(false);
     }
@@ -453,26 +463,41 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   useEffect(() => { loadAiSummary(aiPeriod); }, [aiPeriod, weekStartDay, loadAiSummary]);
 
 
-  const handleDonutPeriodSelect = (id) => {
-    setPeriod(id);
-    setTxList(id === 'all' ? allTxList : (periodStats[id]?.data || []));
-  };
-
   // ── Computed ──────────────────────────────────────────────────────────────
   const totalAssets = accounts.filter((a) => a.type === 'asset').reduce((s, a)     => s + a.balance, 0);
-  const totalIncome = allTxList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const totalExpense = allTxList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const activeSavingAccountIds = new Set((goals || []).map((goal) => goal.account_id).filter(Boolean));
-  const totalSaving = goals.reduce((sum, goal) => sum + Number(goal.current_amount || 0), 0);
 
-  const income = txList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const yearTrendData = getYearCashflowTrend(periodStats.year?.data || [], activeSavingAccountIds);
-  const selectedPeriodLabel = DONUT_PERIOD_OPTIONS.find((p) => p.id === period)?.label || 'ทั้งหมด';
-  const barIncomeTotal = barData.reduce((sum, item) => sum + Number(item.income || 0), 0);
-  const barExpenseTotal = barData.reduce((sum, item) => sum + Number(item.expense || 0), 0);
-  const barSavingTotal = barData.reduce((sum, item) => sum + Number(item.saving || 0), 0);
-  const spendRate = income > 0 ? Math.min((expense / income) * 100, 999) : 0;
+  // ── Year-scoped data (drives overview + all charts) ──────────────────────
+  const availableYears = (() => {
+    const years = new Set([currentYear]);
+    (allTxList || []).forEach((t) => {
+      if (t.transaction_date) {
+        const y = parseInt(t.transaction_date.slice(0, 4), 10);
+        if (y) years.add(y);
+      }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  })();
+  const yearTx = (allTxList || []).filter(
+    (t) => t.transaction_date && t.transaction_date.slice(0, 4) === String(selectedYear)
+  );
+  const yearIncome = yearTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const yearExpense = yearTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const yearSaving = yearTx.filter((t) => isSavingTransfer(t, activeSavingAccountIds)).reduce((s, t) => s + t.amount, 0);
+  const yearNetCashflow = yearIncome - yearExpense;
+  const yearMonthly = getYearCashflowTrend(yearTx, activeSavingAccountIds);
+  const barData = yearMonthly;
+  const yearTrendData = yearMonthly;
+  const barIncomeTotal = yearIncome;
+  const barExpenseTotal = yearExpense;
+  const barSavingTotal = yearSaving;
+  const donutTx = donutMonth === 0
+    ? yearTx
+    : yearTx.filter((t) => parseInt((t.transaction_date || '').slice(5, 7), 10) === donutMonth);
+  const donutExpense = donutTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const donutPeriodLabel = donutMonth === 0
+    ? `ทั้งปี ${selectedYear}`
+    : `${MONTH_LABELS[donutMonth - 1]} ${selectedYear}`;
   const aiSummary = aiState?.summary;
   const hasAiSummary = !!aiSummary;
   const aiConsentEnabled = aiState?.ai_consent !== false;
@@ -493,7 +518,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   };
 
   const expByCat = {};
-  txList.filter((t) => t.type === 'expense').forEach((t) => {
+  donutTx.filter((t) => t.type === 'expense').forEach((t) => {
     const key = t.category_id || '__other__';
     expByCat[key] = (expByCat[key] || 0) + t.amount;
   });
@@ -503,6 +528,30 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       return { label: cat.name, value, color: cat.color };
     })
     .sort((a, b) => b.value - a.value);
+  const dashToday = new Date().toISOString().slice(0, 10);
+  const activeBudgets = (budgets || [])
+    .filter((b) => b.is_active && (!b.end_date || b.end_date >= dashToday))
+    .map((b) => {
+      const limit = Number(b.amount || 0);
+      const spent = Number(b.spent || 0);
+      const pct = limit > 0 ? (spent / limit) * 100 : 0;
+      return { ...b, limit, spent, pct };
+    })
+    .sort((a, b) => b.pct - a.pct);
+  const topBudgets = activeBudgets.slice(0, 4);
+  const budgetTotalLimit = activeBudgets.reduce((s, b) => s + b.limit, 0);
+  const budgetTotalSpent = activeBudgets.reduce((s, b) => s + b.spent, 0);
+  const budgetTotalPct = budgetTotalLimit > 0 ? Math.min(999, Math.round((budgetTotalSpent / budgetTotalLimit) * 100)) : 0;
+  const inProgressGoals = (goals || [])
+    .filter((g) => g.status === 'in_progress')
+    .map((g) => {
+      const target = Number(g.target_amount || 0);
+      const current = Number(g.current_amount || 0);
+      const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+      return { ...g, target, current, pct, remaining: Math.max(0, target - current) };
+    })
+    .sort((a, b) => b.pct - a.pct);
+  const topGoals = inProgressGoals.slice(0, 3);
   return (
     <div className="p-6 space-y-5">
 
@@ -512,39 +561,47 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold mb-2 text-[#2C6488]">ภาพรวมการเงิน</p>
-              <h2 className="text-sm text-slate-500 mb-1">เงินทั้งหมด</h2>
-              <p className="text-4xl font-bold text-[#2C6488]">
-                ฿{fmt(totalAssets)}
+              <h2 className="text-sm text-slate-500 mb-1">กระแสเงินสุทธิ · ปี {selectedYear}</h2>
+              <p className="text-4xl font-bold" style={{ color: yearNetCashflow >= 0 ? '#15803d' : '#dc2626' }}>
+                {yearNetCashflow >= 0 ? '+' : '−'}฿{fmt(Math.abs(yearNetCashflow))}
               </p>
               <p className="text-xs text-slate-400 mt-2">
-                รวมยอดเงินจากทุกบัญชีที่ผู้ใช้สร้างไว้
+                ยอดเงินปัจจุบันรวม ฿{fmt(totalAssets)} · {accounts.filter((a) => a.type === 'asset').length} บัญชี
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onGoAccounts}
-              title="ไปหน้าบัญชี"
-              className="w-12 h-12 rounded-2xl flex items-center justify-center border border-white bg-white/80 hover:bg-white hover:border-[#BFD8E4] transition-colors"
-            >
-              <Wallet size={24} color="#2C6488" />
-            </button>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                title="เลือกปี"
+                className="h-10 rounded-xl border border-white bg-white/80 px-3 text-sm font-semibold text-[#2C6488] outline-none hover:bg-white focus:border-[#BFD8E4] cursor-pointer"
+              >
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>ปี {y}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={onGoAccounts}
+                title="ไปหน้าบัญชี"
+                className="w-10 h-10 rounded-2xl flex items-center justify-center border border-white bg-white/80 hover:bg-white hover:border-[#BFD8E4] transition-colors flex-shrink-0"
+              >
+                <Wallet size={20} color="#2C6488" />
+              </button>
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1">บัญชีทั้งหมด</p>
-              <p className="text-lg font-bold text-[#2C6488]">{accounts.filter((a) => a.type === 'asset').length} บัญชี</p>
+              <p className="text-xs text-slate-500 mb-1 truncate">รายรับ ปี {selectedYear}</p>
+              <p className="text-lg font-bold text-emerald-600">฿{fmt(yearIncome)}</p>
             </div>
             <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">รายรับทั้งหมด</p>
-              <p className="text-lg font-bold text-emerald-600">฿{fmt(totalIncome)}</p>
+              <p className="text-xs text-slate-500 mb-1 truncate">รายจ่าย ปี {selectedYear}</p>
+              <p className="text-lg font-bold text-red-500">฿{fmt(yearExpense)}</p>
             </div>
             <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">รายจ่ายทั้งหมด</p>
-              <p className="text-lg font-bold text-red-500">฿{fmt(totalExpense)}</p>
-            </div>
-            <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">การออมทั้งหมด</p>
-              <p className="text-lg font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(totalSaving)}</p>
+              <p className="text-xs text-slate-500 mb-1 truncate">การออม ปี {selectedYear}</p>
+              <p className="text-lg font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(yearSaving)}</p>
             </div>
           </div>
           {showAiConsentNotice && (
@@ -735,37 +792,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
           </div>
         )}
 
-        {false && hasAiSummary && (
-          <div className="col-span-12 lg:col-span-5 rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertCircle size={16} color="#2C6488" />
-            <h3 className="text-sm font-semibold text-slate-700">วันนี้ควรรู้</h3>
-          </div>
-          <div className="space-y-3">
-            <div className="rounded-xl bg-slate-50 px-3 py-3">
-              <p className="text-xs text-slate-400 mb-1">{selectedPeriodLabel} ใช้ไปเทียบกับรายรับ</p>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${Math.min(spendRate, 100)}%`, background: spendRate > 100 ? '#ef4444' : '#2C6488' }} />
-                </div>
-                <span className={`text-xs font-bold ${spendRate > 100 ? 'text-red-500' : 'text-[#2C6488]'}`}>
-                  {income > 0 ? `${spendRate.toFixed(0)}%` : 'ไม่มีรายรับ'}
-                </span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-emerald-50 px-3 py-3">
-                <p className="text-xs text-slate-500 mb-1">รายรับ</p>
-                <p className="text-sm font-bold text-emerald-600">+฿{fmt(income)}</p>
-              </div>
-              <div className="rounded-xl bg-red-50 px-3 py-3">
-                <p className="text-xs text-slate-500 mb-1">รายจ่าย</p>
-                <p className="text-sm font-bold text-red-500">-฿{fmt(expense)}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
+
       </div>
 
       {/* ── Period Cards ────────────────────────────────────────────────────── */}
@@ -837,6 +864,149 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
         })}
       </div>
 
+      {/* ── Budgets & Goals ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Budget card */}
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center">
+                <Wallet size={16} className="text-[#2C6488]" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-700">งบประมาณที่กำลังใช้</h3>
+            </div>
+            <button
+              onClick={onGoBudgets}
+              className="text-xs font-semibold text-[#2C6488] hover:underline flex items-center gap-0.5"
+            >
+              ดูทั้งหมด <ChevronRight size={13} />
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-1.5">
+                  <div className="h-3 bg-slate-100 rounded-lg animate-pulse w-2/3" />
+                  <div className="h-2 bg-slate-100 rounded-full animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : topBudgets.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-xs text-slate-400 mb-3">ยังไม่มีงบประมาณที่ใช้งานอยู่</p>
+              <button
+                onClick={onGoBudgets}
+                className="text-xs font-semibold px-3 py-2 rounded-xl bg-[#EAF3F7] text-[#2C6488] border border-[#DCE8EE] hover:bg-[#DCE8EE] transition-colors"
+              >
+                ตั้งงบประมาณ
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3.5">
+                {topBudgets.map((b) => {
+                  const cat = getCatInfo(b.category_id);
+                  const over = b.spent > b.limit;
+                  const color = over ? '#ef4444' : b.pct >= 80 ? '#f59e0b' : '#10b981';
+                  return (
+                    <div key={b.id}>
+                      <div className="flex items-center justify-between mb-1.5 gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cat.color }} />
+                          <span className="text-xs font-medium text-slate-600 truncate">{cat.name}</span>
+                        </div>
+                        <span className="text-xs font-semibold flex-shrink-0" style={{ color }}>
+                          ฿{fmt(b.spent)} / {fmt(b.limit)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(100, b.pct)}%`, background: color }}
+                        />
+                      </div>
+                      {over && (
+                        <p className="mt-1 text-[10px] font-medium text-red-500">เกินงบ ฿{fmt(b.spent - b.limit)}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="text-slate-400">ใช้ไปรวม</span>
+                <span className="font-semibold text-slate-600">
+                  ฿{fmt(budgetTotalSpent)} / {fmt(budgetTotalLimit)}
+                  <span className="text-slate-400 font-normal"> ({budgetTotalPct}%)</span>
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Savings goals card */}
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center">
+                <Target size={16} className="text-[#2C6488]" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-700">เป้าหมายการออม</h3>
+            </div>
+            <button
+              onClick={onGoGoals}
+              className="text-xs font-semibold text-[#2C6488] hover:underline flex items-center gap-0.5"
+            >
+              ดูทั้งหมด <ChevronRight size={13} />
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-1.5">
+                  <div className="h-3 bg-slate-100 rounded-lg animate-pulse w-2/3" />
+                  <div className="h-2 bg-slate-100 rounded-full animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : topGoals.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-xs text-slate-400 mb-3">ยังไม่มีเป้าหมายการออมที่กำลังทำอยู่</p>
+              <button
+                onClick={onGoGoals}
+                className="text-xs font-semibold px-3 py-2 rounded-xl bg-[#EAF3F7] text-[#2C6488] border border-[#DCE8EE] hover:bg-[#DCE8EE] transition-colors"
+              >
+                สร้างเป้าหมาย
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {topGoals.map((g) => (
+                <div key={g.id}>
+                  <div className="flex items-center justify-between mb-1.5 gap-2">
+                    <span className="text-xs font-medium text-slate-600 truncate">{g.name}</span>
+                    <span className="text-xs font-semibold flex-shrink-0" style={{ color: SAVING_COLOR }}>{Math.round(g.pct)}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${g.pct}%`, background: SAVING_COLOR }}
+                    />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
+                    <span>฿{fmt(g.current)} / {fmt(g.target)}</span>
+                    <span>เหลืออีก ฿{fmt(g.remaining)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+
       {/* ── Charts ──────────────────────────────────────────────────────────── */}
       {loading ? (
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลดข้อมูล...</div>
@@ -849,17 +1019,18 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
                   <p className="text-xs text-slate-400">
-                    {selectedPeriodLabel}
-                    {' · '}฿{fmt(expense)}
+                    {donutPeriodLabel}
+                    {' · '}฿{fmt(donutExpense)}
                   </p>
                 </div>
                 <select
-                  value={period}
-                  onChange={(e) => handleDonutPeriodSelect(e.target.value)}
+                  value={donutMonth}
+                  onChange={(e) => setDonutMonth(Number(e.target.value))}
                   className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-[#2C6488] focus:ring-2 focus:ring-[#EAF3F7]"
                 >
-                  {DONUT_PERIOD_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
+                  <option value={0}>ทั้งปี</option>
+                  {MONTH_LABELS.map((m, i) => (
+                    <option key={i} value={i + 1}>{m}</option>
                   ))}
                 </select>
               </div>
@@ -892,8 +1063,8 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                     <h3 className="text-sm font-semibold text-slate-700">แนวโน้มการเงิน</h3>
                     <p className="text-xs text-slate-400 mt-1">
                       {chartTab === 'compare'
-                        ? 'เปรียบเทียบย้อนหลัง 6 เดือน'
-                        : 'รายรับ รายจ่าย และการออมรายเดือนของปีนี้'}
+                        ? `เปรียบเทียบรายเดือน ปี ${selectedYear}`
+                        : `รายรับ รายจ่าย และการออมรายเดือน ปี ${selectedYear}`}
                     </p>
                   </div>
                   <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
@@ -917,7 +1088,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                           : 'text-slate-500 hover:text-[#2C6488]'
                       }`}
                     >
-                      6 เดือน
+                      รายเดือน
                     </button>
                   </div>
                 </div>

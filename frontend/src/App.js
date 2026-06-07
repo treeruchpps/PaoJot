@@ -185,6 +185,8 @@ function AppShell() {
                 categories={categories}
                 onGoProfile={() => setView('profile')}
                 onGoAccounts={() => setView('accounts')}
+                onGoBudgets={() => setView('budgets')}
+                onGoGoals={() => setView('goals')}
                 isDarkMode={isDarkMode}
               />
             )}

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { 
-  MessageCircle, Send, Sparkles, AlertCircle, CheckCircle2,
+  MessageCircle, Sparkles, AlertCircle, CheckCircle2,
   Repeat2, PiggyBank, RefreshCw, HelpCircle,
   Lightbulb, BarChart2, ArrowRight, Check, Edit3,
   CreditCard, TrendingUp, AlertTriangle, Info, Calendar, ImagePlus,
-  ChevronDown, Trash2
+  ChevronDown, Trash2, ArrowUp, ArrowDown, ArrowLeftRight, Plus
 } from 'lucide-react';
 import { 
   quickEntry, savingsGoals, transactions, budgets as budgetsApi, 
@@ -38,14 +38,14 @@ const scanImageSrc = (image) => {
 const MODE_META = {
   expense: { label: 'รายจ่าย', tone: '#ef4444', bg: '#fff1f2', placeholder: 'เช่น กาแฟ 50 หรือ ข้าวกะเพรา 60' },
   income: { label: 'รายรับ', tone: '#10b981', bg: '#f0fdf4', placeholder: 'เช่น เงินเดือน 30000 หรือ ค่าขนม 500' },
-  saving: { label: 'การออม', tone: '#2C6488', bg: '#EAF3F7', placeholder: 'เช่น ออม 500 หรือ หยอดกระปุก 100' },
+  saving: { label: 'การออม', tone: '#0ea5e9', bg: '#e0f2fe', placeholder: 'เช่น ออม 500 หรือ หยอดกระปุก 100' },
   transfer: { label: 'การโอน', tone: '#2563eb', bg: '#eff6ff', placeholder: 'เช่น โอน 300' },
 };
 
 const firstBotMessage = (mode) => ({
   id: messageId(),
   role: 'bot',
-  text: `ยินดีต้อนรับเข้าสู่ช่องทางผู้ช่วยส่วนตัวครับ พิมพ์รายการเพื่อจดบันทึก หรือส่งรูปภาพสลิป/ใบเสร็จเพื่อจำแนกสแกนได้เลยครับ`,
+  text: `ยินดีต้อนรับเข้าสู่แชท PaoJot ครับ พิมพ์รายการเพื่อจดบันทึก หรือส่งรูปภาพสลิป/ใบเสร็จเพื่อจำแนกสแกนได้เลยครับ`,
 });
 
 const closeChoiceMessages = (messages, targetId = null) =>
@@ -298,12 +298,50 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const [scanItemState, setScanItemState] = useState({}); // key: `${resultId}-${itemIdx}`, val: 'saving'|'saved'|'skipped'
   const [scanImageViewer, setScanImageViewer] = useState(null);
 
+  // Composer (input bar) UI state
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const attachMenuRef = useRef(null);
+  const inputTextareaRef = useRef(null);
+
   useEffect(() => {
     return () => {
       scanPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       scanPreviewUrlsRef.current = [];
     };
   }, []);
+
+  // Close the attach (+) menu when clicking outside
+  useEffect(() => {
+    if (!showAttachMenu) return undefined;
+    const handler = (e) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target)) {
+        setShowAttachMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showAttachMenu]);
+
+  // Auto-grow the composer textarea so the composer itself expands instead of scrolling inside.
+  useEffect(() => {
+    const el = inputTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 48)}px`;
+  }, [input]);
+
+  // Paste image files (e.g. screenshot) directly into the composer to scan them
+  const handleComposerPaste = (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const files = items
+      .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+      .map((it) => it.getAsFile())
+      .filter(Boolean);
+    if (files.length === 0) return;
+    e.preventDefault();
+    if (requireAccountBeforeScanUpload()) handleScanFiles(files);
+  };
 
   const assetAccounts = useMemo(() => getTransactionAccounts(accounts), [accounts]);
   const modeCategories = useMemo(() => categories.filter((c) => c.type === mode), [categories, mode]);
@@ -589,7 +627,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     const summary = summarizeScanJob(job);
     const jobResults = job.results || [];
     const allResultsHandled = jobResults.length > 0
-      && jobResults.every((result) => ['saved', 'skipped', 'rejected', 'error'].includes(result.status));
+      && jobResults.every((result) => ['saved', 'skipped', 'cancelled'].includes(result.status));
     setScanJobDetails((prev) => ({ ...prev, [job.id]: job }));
     setMessages((prev) => {
       let changed = false;
@@ -898,6 +936,31 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       } catch {}
     });
   }, [chatLoaded, messages, scanJobDetails, ensureScanReview]);
+
+  useEffect(() => {
+    if (!chatLoaded) return;
+    const doneResults = messages.filter((m) =>
+      m.role === 'scan_result' &&
+      m.result_id &&
+      m.status === 'done' &&
+      !scanReview[m.result_id]
+    );
+    if (doneResults.length === 0) return;
+    setScanReview((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      doneResults.forEach((msg) => {
+        if (next[msg.result_id]) return;
+        next[msg.result_id] = buildScanReviewValue({
+          document_type: msg.document_type,
+          slip: msg.slip,
+          data: msg.data,
+        });
+        changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [chatLoaded, messages, scanReview, buildScanReviewValue]);
 
   const changeMode = (nextMode) => {
     if (nextMode === mode) return;
@@ -1680,10 +1743,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           : message.text;
 
       return (
-        <div key={message.id} className="flex justify-end animate-fade-in">
-          <div className="max-w-[86%] md:max-w-[70%] space-y-1">
+        <div key={message.id} className="flex justify-end animate-message-right">
+          <div className="max-w-[86%] md:max-w-[70%] space-y-0.5">
             <div className={`rounded-2xl rounded-br-md bg-[#2C6488] p-1 shadow-sm ${
-              isSingle ? 'w-fit' : 'w-[260px] sm:w-[300px]'
+              isSingle ? 'w-fit' : 'w-[238px] sm:w-[280px]'
             }`}>
               <div className={`grid gap-1 overflow-hidden rounded-[14px] ${
                 isSingle ? 'grid-cols-1' : 'grid-cols-2'
@@ -1708,7 +1771,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                       disabled={!hasPreview}
                       title={hasPreview ? 'กดเพื่อดูรูปใหญ่' : imageTitle}
                       className={`relative overflow-hidden bg-[#EAF3F7] text-left ${
-                        isSingle ? 'w-[220px] sm:w-[280px] h-[220px]' : 'aspect-square'
+                        isSingle ? 'w-[190px] sm:w-[240px] h-[190px]' : 'aspect-square'
                       } ${hasPreview ? 'cursor-zoom-in hover:brightness-95 transition' : 'cursor-default'}`}
                     >
                       {hasPreview ? (
@@ -1848,11 +1911,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
       const staggerDelay = `${(message.image_index ?? 0) * 140}ms`;
       return (
-        <div key={message.id} className="flex justify-start opacity-0 animate-fade-in" style={{ animationDelay: staggerDelay }}>
-          <div className="w-[21.5rem] sm:w-[24rem] rounded-3xl bg-white dark:bg-slate-800 border border-[#DCE8EE] dark:border-slate-700/60 shadow-sm">
+        <div key={message.id} className="flex justify-start animate-message-left" style={{ animationDelay: staggerDelay }}>
+          <div className="w-[20.5rem] sm:w-[23rem] rounded-2xl bg-white dark:bg-slate-800 border border-[#DCE8EE] dark:border-slate-700/60 shadow-sm">
 
             {/* ── Header ── */}
-            <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3 bg-[#F6FAFC] border-b border-[#EAF3F7] rounded-t-3xl">
+            <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-2.5 bg-[#F6FAFC] border-b border-[#EAF3F7] rounded-t-2xl">
               <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full inline-flex items-center gap-1.5 ${
                 isSlip || isReceipt ? 'bg-white text-[#2C6488] border border-[#DCE8EE]' : 'bg-slate-100 text-slate-500 border border-slate-200'
               }`}>
@@ -1864,7 +1927,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
             {/* ── Scanning ── */}
             {isScanning && (
-              <div className="flex items-center gap-3 px-4 py-4">
+              <div className="flex items-center gap-3 px-3 py-3">
                 <div className="w-9 h-9 rounded-2xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
                   <RefreshCw size={13} className="animate-spin text-[#2C6488]" />
                 </div>
@@ -1877,7 +1940,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
             {/* ── Error ── */}
             {isError && (
-              <div className="px-4 py-4 space-y-3">
+              <div className="px-3 py-3 space-y-2">
                 <div className="rounded-2xl bg-red-50 border border-red-100 px-3 py-2.5">
                   <p className="text-xs font-semibold text-red-500">
                     {message.status === 'rejected'
@@ -1893,8 +1956,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
             {/* ── SLIP ── */}
             {isSlip && (isDone || isSaved || isSkipped) && review && (
-              <div className="p-4 pt-3 space-y-3">
-                <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] px-3.5 py-3 space-y-3">
+              <div className="p-3 space-y-2.5">
+                <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] px-3 py-2.5 space-y-2.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 mb-1">
@@ -1918,7 +1981,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
                       <p className="text-[10px] font-semibold text-slate-400">วันที่</p>
                       <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate">{fmtDate(review.transaction_date)}</p>
@@ -1963,7 +2026,17 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                   </div>
                 )}
                 {isDone && isEditing && (
-                  <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] p-3 space-y-3">
+                  <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] p-2.5 space-y-2.5">
+                    {/* ชื่อรายการ */}
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-medium mb-1">ชื่อรายการ</p>
+                      <input
+                        value={review.name || ''}
+                        onChange={(e) => updateScanReview(resultId, { name: e.target.value })}
+                        className={`w-full ${fieldClass}`}
+                        placeholder={slip.receiver || slip.sender || 'สลิปโอนเงิน'}
+                      />
+                    </div>
                     {/* วันที่ */}
                     <div>
                       <p className="text-[10px] text-slate-400 font-medium mb-1">วันที่</p>
@@ -2064,7 +2137,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 return itemStatus === 'saved' || itemStatus === 'skipped';
               });
               return (
-                <div className="p-4 pt-3 space-y-3">
+                <div className="p-3 space-y-2.5">
                   {/* Merchant */}
                   <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] px-3.5 py-3">
                     <div className="flex items-start justify-between gap-3">
@@ -2106,7 +2179,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                             }`}
                           >
                             {isEditing && isActiveItem ? (
-                              <div className="p-2.5 space-y-2 bg-[#F6FAFC]">
+                              <div className="p-2 space-y-1.5 bg-[#F6FAFC]">
                                 <div className="flex gap-1.5">
                                   <input
                                     value={item.name || ''}
@@ -2161,7 +2234,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                                 <span className="text-[10px] text-slate-400 flex-shrink-0">ไม่บันทึก</span>
                               </div>
                             ) : (
-                              <div className="p-2.5 space-y-2">
+                              <div className="p-2 space-y-1.5">
                                 <div className="flex items-baseline gap-2">
                                   <div className="flex-1 min-w-0">
                                     <span className="block truncate text-slate-700 font-semibold">{item.name || `รายการ ${itemIdx + 1}`}</span>
@@ -2219,7 +2292,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
                   {/* VAT + Discount */}
                   {isDone && !allReceiptItemsHandled && (
-                    <div className="bg-[#F6FAFC] border border-[#EAF3F7] rounded-2xl p-2.5 space-y-1.5">
+                    <div className="bg-[#F6FAFC] border border-[#EAF3F7] rounded-2xl p-2 space-y-1.5">
                       <p className="text-[10px] font-semibold text-slate-400 mb-0.5">VAT และส่วนลด</p>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-slate-500 w-14 flex-shrink-0">VAT (฿)</span>
@@ -2266,7 +2339,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
                   {/* Account + actions */}
                   {isDone && !allReceiptItemsHandled && (
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <ScanAccSelect
                         value={review.account_id || ''}
                         onChange={(v) => updateScanReview(resultId, { account_id: v })}
@@ -2289,7 +2362,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                         </button>
                       </div>
                       {isEditing && (
-                        <div className="pt-2 space-y-2 border-t border-[#EAF3F7]">
+                        <div className="pt-1.5 space-y-1.5 border-t border-[#EAF3F7]">
                           <div>
                             <p className="text-[10px] text-slate-400 font-medium mb-1">วันที่</p>
                             <input
@@ -2341,8 +2414,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       ].filter(Boolean);
 
       return (
-        <div key={message.id} className="flex justify-start animate-fade-in">
-          <div className="max-w-[86%] md:max-w-[72%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-sm px-4 py-3 space-y-2">
+        <div key={message.id} className="flex justify-start animate-message-left">
+          <div className="max-w-[86%] md:max-w-[72%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-sm px-3 py-2.5 space-y-1.5">
             {isCancelled ? (
               <p className="text-xs text-slate-400 flex items-center gap-1.5">
                 <AlertCircle size={13} className="text-red-400" />
@@ -2391,9 +2464,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     if (message.role === 'preview') {
       const meta = MODE_META[message.mode];
       return (
-        <div key={message.id} className="flex justify-start animate-fade-in">
-          <div className="max-w-[90%] md:max-w-[75%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-md p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-700/50 pb-2">
+        <div key={message.id} className="flex justify-start animate-message-left">
+          <div className="max-w-[90%] md:max-w-[75%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-md p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-700/50 pb-1.5">
               <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: meta.tone, background: meta.bg }}>
                 {meta.label}
               </span>
@@ -2515,9 +2588,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       }
 
       return (
-        <div key={message.id} className="flex justify-start animate-fade-in">
-          <div className="max-w-[90%] md:max-w-[75%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-md p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-700/50 pb-2">
+        <div key={message.id} className="flex justify-start animate-message-left">
+          <div className="max-w-[90%] md:max-w-[75%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-md p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-700/50 pb-1.5">
               <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeBg}`}>
                 {iconElement}
                 <span>{label}</span>
@@ -2569,9 +2642,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       const summary = message.summary || {};
       const isWeekly = message.period === 'weekly';
       return (
-        <div key={message.id} className="flex justify-start animate-fade-in w-full">
-          <div className="w-full max-w-[95%] md:max-w-[85%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-md p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-700/50 pb-2.5">
+        <div key={message.id} className="flex justify-start animate-message-left w-full">
+          <div className="w-full max-w-[95%] md:max-w-[85%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-md p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-700/50 pb-2">
               <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-yellow-50 dark:bg-slate-750 text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
                 <Sparkles size={12} className="text-yellow-500" />
                 <span>วิเคราะห์การเงินราย{isWeekly ? 'สัปดาห์' : 'เดือน'}ด้วย AI</span>
@@ -2632,7 +2705,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
     const isUser = message.role === 'user';
     return (
-      <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+      <div key={message.id} className={`flex ${isUser ? 'justify-end animate-message-right' : 'justify-start animate-message-left'}`}>
         <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
             ? 'rounded-br-none bg-[#2C6488] text-white shadow-sm'
@@ -2704,27 +2777,24 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
   return (
     <>
-    <div className="p-4 md:p-6 w-full max-w-5xl mx-auto flex-1 flex flex-col min-h-0 relative">
-      {/* Main Single Chat Card Container */}
-      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm h-full">
+    <div className="p-3 md:p-4 w-full max-w-5xl mx-auto flex-1 flex flex-col min-h-0 relative">
+      {/* Main Single Chat Container (frameless) */}
+      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden h-full">
         
-        {/* Header */}
-        <div className="bg-white dark:bg-slate-800 px-5 py-4 border-b border-slate-100 dark:border-slate-700/60 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#EAF3F7] dark:bg-slate-700 flex items-center justify-center">
-              <MessageCircle size={20} className="text-[#2C6488] dark:text-[#4da2db]" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">แชท PaoJot</h3>
-              <p className="text-[11px] text-slate-400">ผู้ช่วยจัดการการเงิน วิเคราะห์ OCR และคำนวณงบประมาณในช่องแชทเดียว</p>
-            </div>
-          </div>
-          <button 
+        {/* Header (centered minimal) */}
+        <div className="relative px-5 pt-1 pb-1.5 flex flex-col items-center text-center flex-shrink-0 border-b border-slate-200/70 dark:border-slate-800">
+          <button
             onClick={clearChatLog}
-            className="text-xs font-semibold text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            title="ล้างประวัติแชท"
+            aria-label="ล้างประวัติแชท"
+            className="absolute right-4 top-2 w-9 h-9 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
           >
-            ล้างประวัติแชท
+            <Trash2 size={16} />
           </button>
+          <div className="w-9 h-9 rounded-full bg-[#EAF3F7] dark:bg-slate-700 flex items-center justify-center mb-1">
+            <MessageCircle size={18} className="text-[#2C6488] dark:text-[#4da2db]" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">แชท PaoJot</h3>
         </div>
 
 
@@ -2732,16 +2802,16 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         {/* Scrollable Chat Area */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto p-5 space-y-4"
+          className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"
         >
           {/* Welcome User Guide Card */}
-          <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 rounded-2xl p-5 mb-4 space-y-4 shadow-sm">
-            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-700/50 pb-2.5">
+          <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 rounded-2xl p-3.5 mb-3 space-y-3 shadow-sm">
+            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-700/50 pb-2">
               <MessageCircle className="text-[#2C6488] dark:text-[#4da2db]" size={18} />
               <span className="text-sm font-bold text-slate-800 dark:text-slate-200">คู่มือและวิธีการกรอกข้อมูลในช่องแชท</span>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div className="space-y-1.5">
                 <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
                   <Edit3 size={13} />
@@ -2782,10 +2852,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           {messages.map(renderMsg)}
           
           {parsing && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-none bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 px-4 py-2.5 text-sm text-slate-500 shadow-sm flex items-center gap-2 animate-fade-in">
-                <RefreshCw size={14} className="animate-spin text-[#2C6488]" />
-                กำลังตีความรายละเอียดธุรกรรม...
+            <div className="flex justify-start animate-message-left">
+              <div className="rounded-2xl rounded-bl-none bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 px-3 py-2 text-xs text-slate-500 shadow-sm flex items-center gap-2">
+                <span className="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                <span>กำลังตีความรายละเอียดธุรกรรม...</span>
               </div>
             </div>
           )}
@@ -2793,10 +2863,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
 
           {aiLoading && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-none bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 px-4 py-2.5 text-sm text-slate-500 shadow-sm flex items-center gap-2 animate-fade-in">
-                <RefreshCw size={14} className="animate-spin text-[#2C6488]" />
-                AI กำลังประมวลผลข้อมูลบทวิเคราะห์ภาพรวมการเงิน...
+            <div className="flex justify-start animate-message-left">
+              <div className="rounded-2xl rounded-bl-none bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 px-3 py-2 text-xs text-slate-500 shadow-sm flex items-center gap-2">
+                <span className="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                <span>AI กำลังประมวลผลข้อมูลบทวิเคราะห์ภาพรวมการเงิน...</span>
               </div>
             </div>
           )}
@@ -2807,53 +2877,53 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         </div>
 
         {/* Quick Action Chips Bar */}
-        <div className="px-4 py-2 bg-slate-50 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 flex-shrink-0">
+        <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-1.5 flex-shrink-0">
           <button 
             onClick={() => changeMode('expense')}
-            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               mode === 'expense'
                 ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
                 : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
             }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'expense' ? 'bg-red-200' : 'bg-red-400'}`} />
+            <ArrowDown size={13} strokeWidth={2.6} className={mode === 'expense' ? 'text-white' : 'text-red-500'} />
             <span>จดรายจ่าย</span>
           </button>
 
           <button 
             onClick={() => changeMode('income')}
-            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               mode === 'income'
                 ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
                 : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
             }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'income' ? 'bg-emerald-200' : 'bg-emerald-400'}`} />
+            <ArrowUp size={13} strokeWidth={2.6} className={mode === 'income' ? 'text-white' : 'text-emerald-500'} />
             <span>จดรายรับ</span>
-          </button>
-
-          <button 
-            onClick={() => changeMode('saving')}
-            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
-              mode === 'saving'
-                ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
-                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'saving' ? 'bg-[#BFD8E4]' : 'bg-[#2C6488]'}`} />
-            <span>บันทึกการออม</span>
           </button>
 
           <button
             onClick={() => changeMode('transfer')}
-            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               mode === 'transfer'
                 ? 'bg-[#2C6488] border-[#2C6488] text-white font-extrabold hover:bg-[#25536F]'
                 : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
             }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${mode === 'transfer' ? 'bg-blue-200' : 'bg-blue-500'}`} />
+            <ArrowLeftRight size={13} strokeWidth={2.5} className={mode === 'transfer' ? 'text-white' : 'text-blue-600'} />
             <span>บันทึกการโอน</span>
+          </button>
+
+          <button
+            onClick={() => changeMode('saving')}
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              mode === 'saving'
+                ? 'bg-sky-500 border-sky-500 text-white font-extrabold hover:bg-sky-600'
+                : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+            }`}
+          >
+            <PiggyBank size={13} strokeWidth={2.5} className={mode === 'saving' ? 'text-white' : 'text-sky-500'} />
+            <span>บันทึกการออม</span>
           </button>
 
           <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 self-center" />
@@ -2861,34 +2931,45 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           <button 
             onClick={() => handleGenerateSummaryInline('weekly')}
             disabled={aiLoading}
-            className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
+            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
           >
-            <Sparkles size={13} className="text-yellow-500" />
+            <Sparkles size={12} className="text-yellow-500" />
             <span>สร้างสรุปรายสัปดาห์</span>
           </button>
           
           <button 
             onClick={() => handleGenerateSummaryInline('monthly')}
             disabled={aiLoading}
-            className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
+            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
           >
-            <Calendar size={13} className="text-blue-500" />
+            <Calendar size={12} className="text-blue-500" />
             <span>สร้างสรุปรายเดือน</span>
           </button>
 
           <button 
             onClick={handleGuideScroll}
-            className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-xs font-bold text-slate-500 dark:text-slate-455 hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-slate-500 dark:text-slate-455 hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm"
           >
-            <HelpCircle size={13} />
+            <HelpCircle size={12} />
             <span>ดูคู่มือใช้งาน</span>
           </button>
         </div>
 
         {/* Chat Text Input Bar & Upload triggers */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
-          <div className="max-w-4xl mx-auto flex items-center gap-2 bg-white dark:bg-slate-800 p-2.5 rounded-2xl shadow-md border border-slate-150 dark:border-slate-700/60 focus-within:ring-2 focus-within:ring-[#2C6488]/30 transition-all">
-
+        <div className="p-3 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+            onPaste={handleComposerPaste}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+              const files = Array.from(e.dataTransfer.files || []);
+              if (files.length && requireAccountBeforeScanUpload()) handleScanFiles(files);
+            }}
+            className="relative max-w-4xl mx-auto overflow-visible rounded-2xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800 p-2 shadow-md transition-all focus-within:border-[#2C6488] focus-within:ring-2 focus-within:ring-[#2C6488]/25"
+          >
             {/* Hidden file input for scan upload */}
             <input
               ref={scanFileRef}
@@ -2904,51 +2985,97 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               }}
             />
 
-            {/* Active Mode Indicator Badge */}
-            <span 
-              className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all select-none flex-shrink-0"
-              style={{ 
-                color: MODE_META[mode].tone, 
-                backgroundColor: mode === 'saving' ? '#EAF3F7' : MODE_META[mode].bg
-              }}
-            >
-              <span>{MODE_META[mode].label}</span>
-            </span>
-
-            {/* Main Input Text Field */}
-            <input
+            {/* Main Input Text Field (multiline, auto-grow) */}
+            <textarea
+              ref={inputTextareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-              placeholder={MODE_META[mode].placeholder}
-              disabled={!chatLoaded || parsing || aiLoading}
-              className="flex-1 min-w-0 px-2 py-2 text-sm bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-            />
-            
-            {/* Upload Image Button */}
-            <button
-              onClick={() => {
-                if (requireAccountBeforeScanUpload()) {
-                  scanFileRef.current?.click();
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
                 }
               }}
-              disabled={scanUploading}
-              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors disabled:opacity-60 flex-shrink-0"
-              title={assetAccounts.length === 0 ? 'ต้องสร้างบัญชีก่อน' : 'สแกนใบเสร็จ / สลิป'}
-            >
-              <ImagePlus size={18} />
-            </button>
+              placeholder={MODE_META[mode].placeholder}
+              disabled={!chatLoaded || parsing || aiLoading}
+              rows={1}
+              className="block w-full resize-none overflow-hidden border-none bg-transparent px-1.5 py-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-60"
+              style={{ minHeight: '48px' }}
+            />
 
-            {/* Send Button */}
-            <button
-              onClick={handleSend}
-              disabled={parsing || saving || aiLoading || !chatLoaded}
-              className="w-10 h-10 rounded-xl bg-[#2C6488] hover:bg-[#25536F] text-white flex items-center justify-center transition-colors disabled:opacity-60 flex-shrink-0"
-            >
-              <Send size={16} />
-            </button>
+            {/* Toolbar Row */}
+            <div className="mt-1 flex items-center gap-1">
+              {/* Attach (+) menu */}
+              <div className="relative" ref={attachMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowAttachMenu((o) => !o)}
+                  disabled={scanUploading}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-60 ${
+                    showAttachMenu
+                      ? 'bg-[#2C6488]/10 text-[#2C6488] dark:text-[#4da2db]'
+                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                  aria-label="แนบไฟล์"
+                  title="แนบรูปใบเสร็จ / สลิป"
+                >
+                  <Plus size={18} style={{ transform: showAttachMenu ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }} />
+                </button>
+                {showAttachMenu && (
+                  <div className="absolute bottom-11 left-0 z-50 w-60 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1.5 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAttachMenu(false);
+                        if (requireAccountBeforeScanUpload()) scanFileRef.current?.click();
+                      }}
+                      className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      <ImagePlus size={16} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
+                      <span>สแกนใบเสร็จ / สลิป</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
-          </div>
+              {/* Active Mode Indicator Badge */}
+              <span
+                className="text-[11px] font-extrabold px-2 py-1 rounded-xl flex items-center gap-1.5 transition-all select-none flex-shrink-0"
+                style={{
+                  color: MODE_META[mode].tone,
+                  backgroundColor: MODE_META[mode].bg,
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: MODE_META[mode].tone }} />
+                <span>{MODE_META[mode].label}</span>
+              </span>
+
+
+              <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+                {/* Send Button */}
+                <button
+                  type="submit"
+                  disabled={parsing || saving || aiLoading || !chatLoaded || !input.trim()}
+                  className="w-8 h-8 rounded-lg bg-[#2C6488] hover:bg-[#25536F] text-white flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="ส่งข้อความ"
+                >
+                  <ArrowUp size={17} />
+                </button>
+              </div>
+            </div>
+
+            {/* Drag & Drop Overlay */}
+            <div
+              className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-[#2C6488] bg-[#EAF3F7]/90 dark:bg-slate-800/90 text-sm font-semibold text-[#2C6488] dark:text-[#4da2db] transition-opacity duration-200 ${
+                isDragOver ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <ImagePlus size={18} />
+                วางรูปที่นี่เพื่อสแกนใบเสร็จ / สลิป
+              </span>
+            </div>
+          </form>
         </div>
 
       </div>

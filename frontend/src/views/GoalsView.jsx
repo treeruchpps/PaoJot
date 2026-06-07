@@ -146,6 +146,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
     const targetAmount = parseFloat(form.target_amount);
     if (targetAmount <= 0) { showError('เป้าหมายต้องมากกว่า 0'); return; }
     if (!form.start_date) { showError('กรุณาเลือกวันที่เริ่มต้น'); return; }
+    if (!form.deadline) { showError('กรุณาเลือกวันที่สิ้นสุด'); return; }
     if (form.deadline && new Date(form.deadline) < new Date(form.start_date)) {
       showError('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น');
       return;
@@ -157,7 +158,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
         image_url: form.image_url || null,
         target_amount: targetAmount,
         start_date: form.start_date || today,
-        deadline: form.deadline || null,
+        deadline: form.deadline,
       };
       if (editId) await goalsApi.update(editId, body);
       else await goalsApi.create(body);
