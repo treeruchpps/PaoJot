@@ -52,14 +52,12 @@ type ScanJobResp struct {
 }
 
 type ScanHandler struct {
-	db       *pgxpool.Pool
-	cfg      *config.Config
-	receiptH *ReceiptHandler
-	slipH    *SlipHandler
+	db  *pgxpool.Pool
+	cfg *config.Config
 }
 
-func NewScanHandler(db *pgxpool.Pool, cfg *config.Config, receiptH *ReceiptHandler, slipH *SlipHandler) *ScanHandler {
-	h := &ScanHandler{db: db, cfg: cfg, receiptH: receiptH, slipH: slipH}
+func NewScanHandler(db *pgxpool.Pool, cfg *config.Config) *ScanHandler {
+	h := &ScanHandler{db: db, cfg: cfg}
 	_ = h.ensureSchema(context.Background())
 	return h
 }
@@ -520,7 +518,7 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 	docType := classifyOCRDocument(ocrText)
 	if hasStrongSlipEvidence(ocrText) {
 		docType = ocrDocSlip
-	} else if classified, confidence, err := h.receiptH.callOCRDocumentClassifier(ocrText); err == nil && confidence >= 0.6 {
+	} else if classified, confidence, err := h.callOCRDocumentClassifier(ocrText); err == nil && confidence >= 0.6 {
 		docType = classified
 	}
 
@@ -530,7 +528,7 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 	parseSlip := func() {
 		h.db.Exec(ctx, `UPDATE scan_results SET status='parsing', document_type=$1, updated_at=NOW() WHERE id=$2`, string(ocrDocSlip), resultID)
 
-		parsed, err := h.slipH.callTyphoonParser(ocrText)
+		parsed, err := h.callTyphoonParser(ocrText)
 		if err != nil {
 			fail(fmt.Sprintf("แปลงผลสลิปไม่สำเร็จ: %v", err))
 			return
@@ -554,7 +552,7 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 
 	switch docType {
 	case ocrDocReceipt:
-		parsed, err := h.receiptH.callReceiptParser(ocrText)
+		parsed, err := h.callReceiptParser(ocrText)
 		if err != nil {
 			fail(fmt.Sprintf("แปลงผลใบเสร็จไม่สำเร็จ: %v", err))
 			return
@@ -638,4 +636,194 @@ func (h *ScanHandler) callFinancialOCR(imageBytes []byte, mimeType string) (stri
 		}
 	}
 	return "", fmt.Errorf("ไม่ได้ข้อความกลับมา")
+}
+
+func (h *ScanHandler) callOCRDocumentClassifier(ocrText string) (ocrDocType, float64, error) {
+	if err := waitTyphoonLLM(context.Background()); err != nil {
+		return ocrDocUnknown, 0, err
+	}
+
+	payload := llmChatReq{
+		Model: h.cfg.Typhoon.ExtractModel,
+		Messages: []llmChatMsg{
+			{Role: "system", Content: ocrDocumentClassifierPrompt},
+			{Role: "user", Content: "ข้อความ OCR:\n\n" + ocrText},
+		},
+		MaxTokens:   120,
+		Temperature: 0,
+		TopP:        0.4,
+	}
+
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", h.cfg.Typhoon.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return ocrDocUnknown, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+h.cfg.Typhoon.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ocrDocUnknown, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return ocrDocUnknown, 0, fmt.Errorf("Typhoon classifier %d: %s", resp.StatusCode, string(b))
+	}
+
+	var llmResp llmChatResp
+	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
+		return ocrDocUnknown, 0, fmt.Errorf("decode classifier response: %v", err)
+	}
+	if len(llmResp.Choices) == 0 {
+		return ocrDocUnknown, 0, fmt.Errorf("classifier ไม่มีผลลัพธ์กลับมา")
+	}
+
+	content := strings.TrimSpace(llmResp.Choices[0].Message.Content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result ocrDocumentClassification
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return ocrDocUnknown, 0, fmt.Errorf("parse classifier JSON ไม่ได้: %v | content: %s", err, content)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(result.Type)) {
+	case string(ocrDocReceipt):
+		return ocrDocReceipt, result.Confidence, nil
+	case string(ocrDocSlip):
+		return ocrDocSlip, result.Confidence, nil
+	default:
+		return ocrDocUnknown, result.Confidence, nil
+	}
+}
+
+func (h *ScanHandler) callReceiptParser(ocrText string) (*ReceiptData, error) {
+	if err := waitTyphoonLLM(context.Background()); err != nil {
+		return nil, err
+	}
+
+	payload := llmChatReq{
+		Model: h.cfg.Typhoon.ExtractModel,
+		Messages: []llmChatMsg{
+			{Role: "system", Content: receiptParserPrompt},
+			{Role: "user", Content: "ข้อความจาก OCR ใบเสร็จ:\n\n" + ocrText},
+		},
+		MaxTokens:   1200,
+		Temperature: 0.2,
+		TopP:        0.6,
+	}
+
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", h.cfg.Typhoon.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+h.cfg.Typhoon.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Typhoon LLM %d: %s", resp.StatusCode, string(b))
+	}
+
+	var llmResp llmChatResp
+	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
+		return nil, fmt.Errorf("decode LLM response: %v", err)
+	}
+	if len(llmResp.Choices) == 0 {
+		return nil, fmt.Errorf("LLM ไม่ได้ผลลัพธ์กลับมา")
+	}
+
+	content := llmResp.Choices[0].Message.Content
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result ReceiptData
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("parse JSON ไม่ได้: %v | content: %s", err, content)
+	}
+	if result.Items == nil {
+		result.Items = []ReceiptItem{}
+	}
+	sanitizeReceiptData(&result)
+	if result.VAT != nil && result.VAT.Amount <= 0 {
+		result.VAT = nil
+	}
+	if result.Discount != nil && result.Discount.Amount <= 0 {
+		result.Discount = nil
+	}
+	return &result, nil
+}
+
+func (h *ScanHandler) callTyphoonParser(ocrText string) (*SlipData, error) {
+	if err := waitTyphoonLLM(context.Background()); err != nil {
+		return nil, err
+	}
+
+	payload := llmChatReq{
+		Model: h.cfg.Typhoon.ExtractModel,
+		Messages: []llmChatMsg{
+			{Role: "system", Content: slipParserPrompt},
+			{Role: "user", Content: "ข้อความจาก OCR สลิปธนาคาร:\n\n" + ocrText},
+		},
+		MaxTokens:   512,
+		Temperature: 0.3,
+		TopP:        0.6,
+	}
+
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", h.cfg.Typhoon.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+h.cfg.Typhoon.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Typhoon LLM %d: %s", resp.StatusCode, string(b))
+	}
+
+	var llmResp llmChatResp
+	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
+		return nil, fmt.Errorf("decode LLM response: %v", err)
+	}
+	if len(llmResp.Choices) == 0 {
+		return nil, fmt.Errorf("LLM ไม่ได้ผลลัพธ์กลับมา")
+	}
+
+	content := llmResp.Choices[0].Message.Content
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result SlipData
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("parse JSON ไม่ได้: %v | content: %s", err, content)
+	}
+	normalizeSlipOCRDate(&result, ocrText)
+	return &result, nil
 }

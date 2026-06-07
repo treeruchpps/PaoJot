@@ -77,7 +77,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 func (h *NotificationHandler) generateRecurringNotifications(ctx context.Context, userID string, today time.Time) {
 	rows, err := h.db.Query(ctx,
 		`SELECT id, user_id, account_id, to_account_id, category_id, type, amount,
-		        name, note, frequency, day_of_month, day_of_week, next_due_date, is_active
+		        name, note, frequency, next_due_date, is_active
 		 FROM recurring_transactions
 		 WHERE user_id = $1 AND is_active = TRUE AND next_due_date <= $2`,
 		userID, today,
@@ -90,7 +90,7 @@ func (h *NotificationHandler) generateRecurringNotifications(ctx context.Context
 			if err := rows.Scan(
 				&r.ID, &r.UserID, &r.AccountID, &r.ToAccountID, &r.CategoryID,
 				&r.Type, &r.Amount, &r.Name, &r.Note,
-				&r.Frequency, &r.DayOfMonth, &r.DayOfWeek,
+				&r.Frequency,
 				&nextDue, &r.IsActive,
 			); err != nil {
 				continue

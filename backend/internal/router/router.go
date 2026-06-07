@@ -35,9 +35,7 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	budgetH := handlers.NewBudgetHandler(db)
 	recurH := handlers.NewRecurringHandler(db)
 	notiH := handlers.NewNotificationHandler(db)
-	slipH := handlers.NewSlipHandler(db, cfg)
-	receiptH := handlers.NewReceiptHandler(db, cfg)
-	scanH := handlers.NewScanHandler(db, cfg, receiptH, slipH)
+	scanH := handlers.NewScanHandler(db, cfg)
 	aiSummaryH := handlers.NewAISummaryHandler(db, cfg)
 	quickEntryH := handlers.NewQuickEntryHandler(db, cfg)
 
@@ -134,21 +132,6 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		protected.POST("/scan-jobs/:id/results/:result_id/save-slip", scanH.SaveSlipResult)
 		protected.POST("/scan-jobs/:id/results/:result_id/skip", scanH.SkipResult)
 
-		// Receipt scanning (async, batch job)
-		protected.GET("/receipt-jobs", receiptH.ListJobs)
-		protected.POST("/receipt-jobs", receiptH.CreateJob)
-		protected.GET("/receipt-jobs/:id", receiptH.GetJob)
-		protected.POST("/receipt-jobs/:id/cancel", receiptH.CancelJob)
-		protected.POST("/receipt-jobs/:id/results/:result_id/save", receiptH.MarkResultSaved)
-		protected.POST("/receipt-jobs/:id/results/:result_id/skip", receiptH.SkipResult)
-
-		// Slip scanning (batch job)
-		protected.GET("/slip-jobs", slipH.ListJobs)
-		protected.POST("/slip-jobs", slipH.CreateJob)
-		protected.GET("/slip-jobs/:id", slipH.GetJob)
-		protected.POST("/slip-jobs/:id/cancel", slipH.CancelJob)
-		protected.POST("/slip-jobs/:id/results/:result_id/save", slipH.SaveResult)
-		protected.POST("/slip-jobs/:id/results/:result_id/skip", slipH.SkipResult)
 	}
 
 	return r

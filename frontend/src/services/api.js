@@ -176,52 +176,6 @@ export const recurring = {
 };
 
 // ====================================================
-// RECEIPT SCANNING (async, single file)
-// ====================================================
-export const receiptJobs = {
-  // อัปโหลดใบเสร็จ 1 ใบ → สร้าง job + background OCR/parse
-  create: (files) => {
-    const form = new FormData();
-    const list = Array.isArray(files) ? files : [files];
-    list.forEach((f) => form.append('files', f));
-    return request('/receipt-jobs', { method: 'POST', body: form }, true, true);
-  },
-  // poll สถานะ + ผลลัพธ์
-  get: (jobId) => request(`/receipt-jobs/${jobId}`),
-  list: () => request('/receipt-jobs'),
-  cancel: (jobId) => request(`/receipt-jobs/${jobId}/cancel`, { method: 'POST' }),
-  save: (jobId, resultId) => request(`/receipt-jobs/${jobId}/results/${resultId}/save`, { method: 'POST' }),
-  skip: (jobId, resultId) => request(`/receipt-jobs/${jobId}/results/${resultId}/skip`, { method: 'POST' }),
-};
-
-// ====================================================
-// SLIP SCANNING (batch job)
-// ====================================================
-export const slipJobs = {
-  // Upload 1-5 slip images → creates a job and starts background processing
-  create: (files) => {
-    const form = new FormData();
-    files.forEach((f) => form.append('files', f));
-    return request('/slip-jobs', { method: 'POST', body: form }, true, true);
-  },
-
-  // Poll job status + all slip results
-  get: (jobId) => request(`/slip-jobs/${jobId}`),
-
-  // List recent jobs
-  list: () => request('/slip-jobs'),
-  cancel: (jobId) => request(`/slip-jobs/${jobId}/cancel`, { method: 'POST' }),
-  skip: (jobId, resultId) => request(`/slip-jobs/${jobId}/results/${resultId}/skip`, { method: 'POST' }),
-
-  // Confirm a slip result → create transaction
-  save: (jobId, resultId, body) =>
-    request(`/slip-jobs/${jobId}/results/${resultId}/save`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-};
-
-// ====================================================
 // UNIFIED DOCUMENT SCANNING (receipt/slip auto classify)
 // ====================================================
 export const scanJobs = {

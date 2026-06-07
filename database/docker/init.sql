@@ -147,8 +147,6 @@ CREATE TABLE recurring_transactions (
     name           VARCHAR(100),
     note           TEXT,
     frequency      recur_frequency  NOT NULL DEFAULT 'monthly',
-    day_of_month   SMALLINT,        -- สำหรับ monthly: 1-31
-    day_of_week    SMALLINT,        -- สำหรับ weekly: 0=อาทิตย์ 6=เสาร์
     next_due_date  DATE             NOT NULL,
     is_active      BOOLEAN          NOT NULL DEFAULT TRUE,
     created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -172,43 +170,6 @@ CREATE TABLE notifications (
 );
 
 -- ============================================================
--- ตาราง slip_jobs (batch OCR jobs)
--- ============================================================
-CREATE TABLE slip_jobs (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status      VARCHAR(20) NOT NULL DEFAULT 'pending',
-    total_count INT  NOT NULL DEFAULT 0,
-    done_count  INT  NOT NULL DEFAULT 0,
-    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- ตาราง slip_results (each slip in a job)
--- ============================================================
-CREATE TABLE slip_results (
-    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    job_id           UUID NOT NULL REFERENCES slip_jobs(id) ON DELETE CASCADE,
-    user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status           VARCHAR(20) NOT NULL DEFAULT 'queued',
-    filename         VARCHAR(255),
-    image_path       TEXT,
-    ocr_text         TEXT,
-    bank             VARCHAR(100),
-    amount           NUMERIC(15,2) DEFAULT 0,
-    transaction_date DATE,
-    transaction_time VARCHAR(10),
-    sender           VARCHAR(255),
-    receiver         VARCHAR(255),
-    ref_no           VARCHAR(255),
-    is_duplicate     BOOLEAN NOT NULL DEFAULT FALSE,
-    error_msg        TEXT,
-    created_at       TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
 -- ตาราง slip_ref_log (duplicate ref_no detection)
 -- ============================================================
 CREATE TABLE slip_ref_log (
@@ -222,37 +183,6 @@ CREATE TABLE slip_ref_log (
 
 -- image_path บน transactions (เก็บ path รูปสลิปที่แนบมา)
 ALTER TABLE transactions ADD COLUMN image_path TEXT;
-
--- ============================================================
--- ตาราง receipt_jobs (async OCR สำหรับใบเสร็จแบบ batch)
--- ============================================================
-CREATE TABLE receipt_jobs (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status      VARCHAR(20) NOT NULL DEFAULT 'pending',
-    total_count INT NOT NULL DEFAULT 0,
-    done_count  INT NOT NULL DEFAULT 0,
-    filename    VARCHAR(255),
-    image_path  TEXT,
-    result_json TEXT,
-    error_msg   TEXT,
-    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE receipt_results (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    job_id      UUID NOT NULL REFERENCES receipt_jobs(id) ON DELETE CASCADE,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status      VARCHAR(20) NOT NULL DEFAULT 'queued',
-    filename    VARCHAR(255),
-    image_path  TEXT,
-    ocr_text    TEXT,
-    result_json TEXT,
-    error_msg   TEXT,
-    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
 
 -- ============================================================
 -- Unified scan jobs (receipt/slip auto classification)
@@ -335,12 +265,8 @@ CREATE INDEX idx_recurring_next_due          ON recurring_transactions(next_due_
 CREATE INDEX idx_notifications_user_id       ON notifications(user_id);
 CREATE INDEX idx_notifications_is_read       ON notifications(user_id, is_read);
 CREATE INDEX idx_notifications_type          ON notifications(user_id, notification_type, created_at);
-CREATE INDEX idx_receipt_jobs_user_id         ON receipt_jobs(user_id);
-CREATE INDEX idx_receipt_results_job_id       ON receipt_results(job_id);
 CREATE INDEX idx_scan_jobs_user_id            ON scan_jobs(user_id);
 CREATE INDEX idx_scan_results_job_id          ON scan_results(job_id);
-CREATE INDEX idx_slip_jobs_user_id           ON slip_jobs(user_id);
-CREATE INDEX idx_slip_results_job_id         ON slip_results(job_id);
 CREATE INDEX idx_slip_ref_log_user           ON slip_ref_log(user_id, ref_no);
 CREATE INDEX idx_ai_summaries_user_period    ON ai_summaries(user_id, period_type, period_start, period_end);
 CREATE INDEX idx_quick_entry_chat_logs_user  ON quick_entry_chat_logs(user_id, mode);
@@ -370,22 +296,6 @@ CREATE TRIGGER trg_accounts_updated_at
 
 CREATE TRIGGER trg_transactions_updated_at
     BEFORE UPDATE ON transactions
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_receipt_jobs_updated_at
-    BEFORE UPDATE ON receipt_jobs
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_receipt_results_updated_at
-    BEFORE UPDATE ON receipt_results
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_slip_jobs_updated_at
-    BEFORE UPDATE ON slip_jobs
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_slip_results_updated_at
-    BEFORE UPDATE ON slip_results
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER trg_ai_summaries_updated_at

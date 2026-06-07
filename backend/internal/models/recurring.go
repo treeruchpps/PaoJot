@@ -13,8 +13,6 @@ type RecurringTransaction struct {
 	Name        *string   `json:"name"`
 	Note        *string   `json:"note"`
 	Frequency   string    `json:"frequency"`
-	DayOfMonth  *int      `json:"day_of_month"`
-	DayOfWeek   *int      `json:"day_of_week"`
 	NextDueDate string    `json:"next_due_date"`
 	IsActive    bool      `json:"is_active"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -30,8 +28,6 @@ type CreateRecurringRequest struct {
 	Name        *string `json:"name"`
 	Note        *string `json:"note"`
 	Frequency   string  `json:"frequency"    binding:"required"`
-	DayOfMonth  *int    `json:"day_of_month"`
-	DayOfWeek   *int    `json:"day_of_week"`
 	NextDueDate string  `json:"next_due_date" binding:"required"`
 }
 
@@ -41,8 +37,6 @@ type UpdateRecurringRequest struct {
 	Name        *string  `json:"name"`
 	Note        *string  `json:"note"`
 	Frequency   *string  `json:"frequency"`
-	DayOfMonth  *int     `json:"day_of_month"`
-	DayOfWeek   *int     `json:"day_of_week"`
 	NextDueDate *string  `json:"next_due_date"`
 	IsActive    *bool    `json:"is_active"`
 }

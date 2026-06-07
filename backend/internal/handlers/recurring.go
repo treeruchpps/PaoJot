@@ -25,7 +25,7 @@ func (h *RecurringHandler) List(c *gin.Context) {
 
 	rows, err := h.db.Query(context.Background(),
 		`SELECT id, user_id, account_id, to_account_id, category_id, type, amount,
-		        name, note, frequency, day_of_month, day_of_week, next_due_date,
+		        name, note, frequency, next_due_date,
 		        is_active, created_at, updated_at
 		 FROM recurring_transactions
 		 WHERE user_id = $1
@@ -45,7 +45,7 @@ func (h *RecurringHandler) List(c *gin.Context) {
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.AccountID, &r.ToAccountID, &r.CategoryID,
 			&r.Type, &r.Amount, &r.Name, &r.Note,
-			&r.Frequency, &r.DayOfMonth, &r.DayOfWeek,
+			&r.Frequency,
 			&nextDue, &r.IsActive, &r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
 			continue
@@ -78,17 +78,17 @@ func (h *RecurringHandler) Create(c *gin.Context) {
 	err = h.db.QueryRow(context.Background(),
 		`INSERT INTO recurring_transactions
 		   (user_id, account_id, to_account_id, category_id, type, amount,
-		    name, note, frequency, day_of_month, day_of_week, next_due_date)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		    name, note, frequency, next_due_date)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		 RETURNING id, user_id, account_id, to_account_id, category_id, type, amount,
-		           name, note, frequency, day_of_month, day_of_week, next_due_date,
+		           name, note, frequency, next_due_date,
 		           is_active, created_at, updated_at`,
 		userID, req.AccountID, req.ToAccountID, req.CategoryID, req.Type, req.Amount,
-		req.Name, req.Note, req.Frequency, req.DayOfMonth, req.DayOfWeek, nextDue,
+		req.Name, req.Note, req.Frequency, nextDue,
 	).Scan(
 		&r.ID, &r.UserID, &r.AccountID, &r.ToAccountID, &r.CategoryID,
 		&r.Type, &r.Amount, &r.Name, &r.Note,
-		&r.Frequency, &r.DayOfMonth, &r.DayOfWeek,
+		&r.Frequency,
 		&nextDueOut, &r.IsActive, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
@@ -129,21 +129,18 @@ func (h *RecurringHandler) Update(c *gin.Context) {
 		     name         = COALESCE($3, name),
 		     note         = COALESCE($4, note),
 		     frequency    = COALESCE($5, frequency),
-		     day_of_month = COALESCE($6, day_of_month),
-		     day_of_week  = COALESCE($7, day_of_week),
-		     next_due_date= COALESCE($8, next_due_date),
-		     is_active    = COALESCE($9, is_active)
-		 WHERE id = $10 AND user_id = $11
+		     next_due_date= COALESCE($6, next_due_date),
+		     is_active    = COALESCE($7, is_active)
+		 WHERE id = $8 AND user_id = $9
 		 RETURNING id, user_id, account_id, to_account_id, category_id, type, amount,
-		           name, note, frequency, day_of_month, day_of_week, next_due_date,
+		           name, note, frequency, next_due_date,
 		           is_active, created_at, updated_at`,
 		req.CategoryID, req.Amount, req.Name, req.Note,
-		req.Frequency, req.DayOfMonth, req.DayOfWeek,
-		nextDuePtr, req.IsActive, id, userID,
+		req.Frequency, nextDuePtr, req.IsActive, id, userID,
 	).Scan(
 		&r.ID, &r.UserID, &r.AccountID, &r.ToAccountID, &r.CategoryID,
 		&r.Type, &r.Amount, &r.Name, &r.Note,
-		&r.Frequency, &r.DayOfMonth, &r.DayOfWeek,
+		&r.Frequency,
 		&nextDueOut, &r.IsActive, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {

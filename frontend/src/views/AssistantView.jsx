@@ -2741,7 +2741,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               <span className="text-sm font-bold text-slate-800 dark:text-slate-200">คู่มือและวิธีการกรอกข้อมูลในช่องแชท</span>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
               <div className="space-y-1.5">
                 <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
                   <Edit3 size={13} />
@@ -2757,8 +2757,20 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
               <div className="space-y-1.5">
                 <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
+                  <ImagePlus size={13} />
+                  <span>2. อัปโหลดเอกสาร</span>
+                </h4>
+                <ul className="list-disc list-inside text-slate-500 dark:text-slate-400 space-y-1 pl-1">
+                  <li>แนบรูปใบเสร็จหรือสลิปได้จากปุ่มรูปภาพ</li>
+                  <li>ระบบจะแยกประเภทเอกสารให้อัตโนมัติ</li>
+                  <li>ตรวจสอบข้อมูล แล้วเลือกบันทึกหรือข้ามรายการ</li>
+                </ul>
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="font-bold text-[#2C6488] dark:text-[#4da2db] flex items-center gap-1.5">
                   <Sparkles size={13} className="text-yellow-500" />
-                  <span>2. ระบบแจ้งเตือน & AI</span>
+                  <span>3. ระบบแจ้งเตือน & AI</span>
                 </h4>
                 <p className="text-slate-500 dark:text-slate-400 leading-normal pl-1">
                   สัญญาณเตือนเกี่ยวกับงบประมาณ งวดโอนเงินประจำ หรือรายงานการวิเคราะห์รายสัปดาห์/เดือน จะถูกส่งเข้ามาตอบโต้ในหน้านี้โดยตรง
