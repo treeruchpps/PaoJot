@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import Icon from '../components/common/Icon';
 import { Plus, GripVertical, X } from 'lucide-react';
 import Modal from '../components/common/Modal';
@@ -9,15 +10,16 @@ import { CATEGORY_ORDER_KEY, applySavedCategoryOrder } from '../utils/categoryOr
 const ICON_OPTS  = ['UtensilsCrossed','Car','Package','ShoppingBag','Gamepad2','Home','ReceiptText','HeartPulse','Users','PawPrint','Gift','HandHeart','GraduationCap','Plane','BriefcaseBusiness','TrendingUp','CreditCard','Tv','Heart','Zap','Briefcase','Laptop','Smartphone','Shield','Monitor','Tag','Star','DollarSign','PiggyBank','Landmark','ArrowLeftRight','Wallet','Banknote'];
 const COLOR_OPTS = ['#2C6488','#10b981','#f59e0b','#2C6488','#ef4444','#ec4899','#5F9A7A','#06b6d4','#f97316','#84cc16'];
 const TAB_LABELS = { expense: 'รายจ่าย', income: 'รายรับ', transfer: 'โอนเงิน' };
+const CAT_MAX = 30;
 
 export default function CategoriesView({ onRefresh }) {
+  const { showError } = useSnackbar();
   const [tab, setTab]             = useState('expense');
   const [catList, setCatList]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm]           = useState({ name: '', icon: 'Tag', color: '#2C6488' });
   const [saving, setSaving]       = useState(false);
-  const [error, setError]         = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -103,21 +105,19 @@ export default function CategoriesView({ onRefresh }) {
 
   // ── Modal ─────────────────────────────────────────────────────────────────
   const openModal = () => {
-    setError('');
     setForm({ name: '', icon: 'Tag', color: '#2C6488' });
     setShowModal(true);
   };
 
   const save = async () => {
-    if (!form.name.trim()) { setError('กรุณาใส่ชื่อหมวดหมู่'); return; }
-    setSaving(true); setError('');
-    try {
+    if (!form.name.trim()) { showError('กรุณาใส่ชื่อหมวดหมู่'); return; }
+    setSaving(true); try {
       await categoriesApi.create({ name: form.name, type: tab, icon: form.icon, color: form.color });
       await fetchCats();
       if (onRefresh) onRefresh();
       setShowModal(false);
       setForm({ name: '', icon: 'Tag', color: '#2C6488' });
-    } catch (err) { setError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
 
@@ -145,8 +145,8 @@ export default function CategoriesView({ onRefresh }) {
             </button>
           ))}
         </div>
-        <button onClick={openModal}
-          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+        <button onClick={openModal} disabled={displayed.length >= CAT_MAX}
+          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F] disabled:opacity-50 disabled:cursor-not-allowed">
           <Plus size={13} color="#ffffff" /> เพิ่มหมวดหมู่
         </button>
       </div>
@@ -154,10 +154,16 @@ export default function CategoriesView({ onRefresh }) {
       {loading ? (
         <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลด...</div>
       ) : (
-        <div
-          className="grid grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3"
-          onDragLeave={handleDragLeave}
-        >
+        <>
+          {displayed.length >= CAT_MAX && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-100 text-xs text-amber-700 font-medium mb-2">
+              ถึงจำนวนสูงสุด {CAT_MAX} หมวดหมู่แล้ว ไม่สามารถเพิ่มได้อีก
+            </div>
+          )}
+          <div
+            className="grid grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3"
+            onDragLeave={handleDragLeave}
+          >
           {displayed.map((c, idx) => {
             const cardColor  = c.color || '#2C6488';
             const isDragging = dragIdx === idx;
@@ -212,13 +218,13 @@ export default function CategoriesView({ onRefresh }) {
             </div>
             <p className="text-xs text-slate-400">เพิ่มใหม่</p>
           </div>
-        </div>
+          </div>
+        </>
       )}
 
       {showModal && (
         <Modal title="เพิ่มหมวดหมู่ใหม่" onClose={() => setShowModal(false)}>
           <div className="space-y-4">
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อหมวดหมู่</label>

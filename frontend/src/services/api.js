@@ -150,7 +150,8 @@ export const savingsGoals = {
     return request(`/savings-goals/${id}${q}`, { method: 'DELETE' });
   },
   addInitialBalance: (id, body) => request(`/savings-goals/${id}/initial-balance`, { method: 'POST', body: JSON.stringify(body) }),
-  deposit: (id, body) => request(`/savings-goals/${id}/deposit`,{ method: 'POST',   body: JSON.stringify(body) }),
+  deposit:  (id, body) => request(`/savings-goals/${id}/deposit`, { method: 'POST', body: JSON.stringify(body) }),
+  withdraw: (id, body) => request(`/savings-goals/${id}/withdraw`,{ method: 'POST', body: JSON.stringify(body) }),
 };
 
 // ====================================================
@@ -269,10 +270,11 @@ export const aiSummary = {
 // QUICK ENTRY ASSISTANT
 // ====================================================
 export const quickEntry = {
-  parse: (body) =>
+  parse: (body, signal) =>
     request('/quick-entry/parse', {
       method: 'POST',
       body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     }),
   getChatLog: (mode) =>
     request(`/quick-entry/chat-log?mode=${encodeURIComponent(mode)}`),

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import { createPortal } from 'react-dom';
 import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown, ReceiptText, Target } from 'lucide-react';
 import Modal from '../components/common/Modal';
@@ -7,6 +8,7 @@ import { accounts as accountsApi, transactions as txApi } from '../services/api'
 import { fmt } from '../constants/data';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const ACC_PAGE_SIZE = 6;
 
 // ─── Kind metadata ────────────────────────────────────────────────────────────
 const KINDS = [
@@ -102,18 +104,17 @@ function AssetKindDropdown({ value, onChange }) {
 
 // ─── Main View ────────────────────────────────────────────────────────────────
 export default function AccountsView({ accounts, onRefresh, onGoTransactions }) {
+  const { showError } = useSnackbar();
   // Add / Edit account modal
   const [showModal, setShowModal]             = useState(false);
   const [editId, setEditId]                   = useState(null);
   const [form, setForm]                       = useState(emptyForm());
   const [saving, setSaving]                   = useState(false);
-  const [error, setError]                     = useState('');
 
   // Pool-add modal
   const [showPoolAdd, setShowPoolAdd]       = useState(false);
   const [poolAddRows, setPoolAddRows]       = useState([newPoolRow()]);
   const [poolAddSaving, setPoolAddSaving]   = useState(false);
-  const [poolAddError, setPoolAddError]     = useState('');
 
   // Distribute modal
   const [showDist, setShowDist]       = useState(false);
@@ -121,18 +122,22 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   const [distDate, setDistDate]       = useState(todayStr());
   const [allocations, setAllocations] = useState([]);
   const [distSaving, setDistSaving]   = useState(false);
-  const [distError, setDistError]     = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [accPage, setAccPage] = useState(1);
 
   const assetAccounts = accounts.filter((a) => a.type === 'asset');
   const regularAccounts = assetAccounts.filter((a) => a.kind !== 'savings_goal' && !a.name.startsWith('เป้าหมาย:'));
-  const goalAccounts = assetAccounts.filter((a) => a.kind === 'savings_goal' || a.name.startsWith('เป้าหมาย:'));
+  const accTotalPages = Math.max(1, Math.ceil(regularAccounts.length / ACC_PAGE_SIZE));
+  const accSafePage   = Math.min(accPage, accTotalPages);
+  const accPageNums   = Array.from({ length: accTotalPages }, (_, i) => i + 1)
+    .filter((p) => accTotalPages <= 7 || p === 1 || p === accTotalPages || Math.abs(p - accSafePage) <= 1);
+  const pagedAccounts = regularAccounts.slice((accSafePage - 1) * ACC_PAGE_SIZE, accSafePage * ACC_PAGE_SIZE);
   const totalAssets = assetAccounts.reduce((s, a) => s + a.balance, 0);
 
   // ── Pool-add helpers ───────────────────────────────────────────────────────
   const openPoolAdd = () => {
-    setPoolAddRows([newPoolRow()]); setPoolAddError(''); setShowPoolAdd(true);
+    setPoolAddRows([newPoolRow()]); setShowPoolAdd(true);
   };
   const addPoolRow    = () => setPoolAddRows((r) => [...r, newPoolRow()]);
   const removePoolRow = (id) => setPoolAddRows((r) => r.filter((x) => x.id !== id));
@@ -149,13 +154,12 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
 
   const savePoolAdd = async () => {
     const negativeRow = poolAddRows.find((r) => r.balance !== '' && parseFloat(r.balance) < 0);
-    if (negativeRow) { setPoolAddError('ยอดเงินต้องไม่ติดลบ'); return; }
+    if (negativeRow) { showError('ยอดเงินต้องไม่ติดลบ'); return; }
     const validRows = poolAddRows.filter((r) => r.name.trim());
-    if (validRows.length === 0) { setPoolAddError('กรุณาเพิ่มบัญชีอย่างน้อย 1 บัญชีและใส่ชื่อบัญชี'); return; }
+    if (validRows.length === 0) { showError('กรุณาเพิ่มบัญชีอย่างน้อย 1 บัญชีและใส่ชื่อบัญชี'); return; }
     const emptyName = poolAddRows.find((r) => (parseFloat(r.balance) || 0) > 0 && !r.name.trim());
-    if (emptyName) { setPoolAddError('กรุณาใส่ชื่อบัญชีให้ครบทุกแถว'); return; }
-    setPoolAddSaving(true); setPoolAddError('');
-    try {
+    if (emptyName) { showError('กรุณาใส่ชื่อบัญชีให้ครบทุกแถว'); return; }
+    setPoolAddSaving(true); try {
       for (const row of validRows) {
         const bal = parseFloat(row.balance) || 0;
         const created = await accountsApi.create({
@@ -169,7 +173,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         }
       }
       await onRefresh(); setShowPoolAdd(false);
-    } catch (err) { setPoolAddError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setPoolAddSaving(false); }
   };
 
@@ -180,15 +184,14 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
       name: acc.name, type: acc.type, kind: acc.kind,
       balance: String(acc.balance), currency: acc.currency,
     });
-    setError(''); setShowModal(true);
+    setShowModal(true);
   };
 
   const save = async () => {
-    if (!form.name.trim()) { setError('กรุณาใส่ชื่อบัญชี'); return; }
+    if (!form.name.trim()) { showError('กรุณาใส่ชื่อบัญชี'); return; }
     const newBalance = parseFloat(form.balance) || 0;
-    if (!editId && newBalance < 0) { setError('ยอดเงินต้องไม่ติดลบ'); return; }
-    setSaving(true); setError('');
-    try {
+    if (!editId && newBalance < 0) { showError('ยอดเงินต้องไม่ติดลบ'); return; }
+    setSaving(true); try {
       if (editId) {
         const body = {
           name: form.name, type: 'asset', kind: form.kind,
@@ -209,7 +212,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         }
       }
       await onRefresh(); setShowModal(false);
-    } catch (err) { setError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
 
@@ -226,8 +229,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
 
   // ── Distribute ─────────────────────────────────────────────────────────────
   const openDist = () => {
-    setPoolAmount(''); setDistDate(todayStr()); setDistError('');
-    setAllocations(regularAccounts.map((a) => ({ account_id: a.id, name: a.name, kind: a.kind, amount: '' })));
+    setPoolAmount(''); setDistDate(todayStr()); setAllocations(regularAccounts.map((a) => ({ account_id: a.id, name: a.name, kind: a.kind, amount: '' })));
     setShowDist(true);
   };
   const setAlloc = (idx, val) =>
@@ -239,18 +241,17 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   const distValid = pool > 0 && Math.abs(remaining) < 0.01;
 
   const saveDist = async () => {
-    if (pool <= 0)  { setDistError('กรุณาใส่ยอดเงินที่ต้องการกอง'); return; }
-    if (!distValid) { setDistError(`ยอดยังไม่ครบ: เหลืออีก ฿${fmt(Math.abs(remaining))}`); return; }
+    if (pool <= 0)  { showError('กรุณาใส่ยอดเงินที่ต้องการกอง'); return; }
+    if (!distValid) { showError(`ยอดยังไม่ครบ: เหลืออีก ฿${fmt(Math.abs(remaining))}`); return; }
     const lines = allocations.filter((a) => parseFloat(a.amount) > 0);
-    if (lines.length === 0) { setDistError('กรุณาใส่ยอดอย่างน้อย 1 บัญชี'); return; }
-    setDistSaving(true); setDistError('');
-    try {
+    if (lines.length === 0) { showError('กรุณาใส่ยอดอย่างน้อย 1 บัญชี'); return; }
+    setDistSaving(true); try {
       await Promise.all(lines.map((a) => txApi.create({
         type: 'income', amount: parseFloat(a.amount), account_id: a.account_id,
         transaction_date: distDate, note: 'กระจายเงินเข้ากระเป๋า',
       })));
       await onRefresh(); setShowDist(false);
-    } catch (err) { setDistError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setDistSaving(false); }
   };
   const fillRemaining = (idx) => {
@@ -329,46 +330,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
     );
   };
 
-  const GoalAccountCard = ({ acc }) => {
-    const k = getKind(acc.kind);
-    
-    return (
-      <div
-        className="relative rounded-2xl p-5 shadow-sm border border-slate-100 bg-slate-50/50 overflow-hidden"
-      >
-        <div className="flex items-start justify-between mb-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: k.color + '18' }}>
-              <KindIcon icon={k.icon} color={k.color} size={20} />
-            </div>
-            <div>
-              <p className="font-bold text-slate-700 tracking-tight truncate max-w-[150px]" title={acc.name}>{acc.name}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{k.label} (เป้าหมาย)</p>
-            </div>
-          </div>
-          {false && (
-          <div className="flex gap-1">
-            <button onClick={() => onGoTransactions?.(acc.id)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
-              title="ดูรายการธุรกรรม">
-              <ReceiptText size={12} className="text-slate-500" />
-            </button>
-          </div>
-          )}
-        </div>
-
-        <div className="mt-6 relative z-10">
-          <p className="text-2xl font-extrabold tracking-tight text-[#2C6488]">
-            ฿{fmt(acc.balance)}
-          </p>
-          <div className="flex items-center justify-between mt-1 border-t border-slate-200/40 pt-2">
-            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">{acc.currency}</span>
-            <span className="text-[10px] font-medium text-slate-400">ล็อกแล้ว</span>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -412,19 +373,34 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         <div>
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-3">บัญชีเงิน</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {regularAccounts.map((acc) => <AccountCard key={acc.id} acc={acc} />)}
+            {pagedAccounts.map((acc) => <AccountCard key={acc.id} acc={acc} />)}
           </div>
+          {regularAccounts.length > ACC_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 px-1 py-3 mt-2 border-t border-slate-100">
+              <p className="text-xs text-slate-500">
+                แสดง {(accSafePage - 1) * ACC_PAGE_SIZE + 1}–{Math.min(accSafePage * ACC_PAGE_SIZE, regularAccounts.length)} จาก {regularAccounts.length} บัญชี
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setAccPage((p) => Math.max(1, p - 1))} disabled={accSafePage === 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  ก่อนหน้า
+                </button>
+                {accPageNums.map((p, i) => (
+                  <button key={`${p}-${i}`} type="button" onClick={() => setAccPage(p)}
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${accSafePage === p ? 'bg-[#2C6488] border-[#2C6488] text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-[#EAF3F7]'}`}>
+                    {p}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setAccPage((p) => Math.min(accTotalPages, p + 1))} disabled={accSafePage === accTotalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  ถัดไป
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {goalAccounts.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-[#2C6488] uppercase tracking-wider mb-3">บัญชีเป้าหมายการออม</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {goalAccounts.map((acc) => <GoalAccountCard key={acc.id} acc={acc} />)}
-          </div>
-        </div>
-      )}
 
       {regularAccounts.length === 0 && (
         <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
@@ -446,7 +422,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
       {showModal && (
         <Modal title={editId ? 'แก้ไขบัญชี' : 'เพิ่มบัญชี'} onClose={() => setShowModal(false)}>
           <div className="space-y-4">
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
             {/* Kind selector */}
             <div>
@@ -503,7 +478,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
       {showPoolAdd && (
         <Modal title="เพิ่มบัญชี" size="lg" onClose={() => setShowPoolAdd(false)}>
           <div className="space-y-4">
-            {poolAddError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{poolAddError}</p>}
             <div className="rounded-2xl border border-[#DCE8EE] bg-[#EAF3F7] px-4 py-3">
               <p className="text-sm font-semibold text-[#25536F]">เพิ่มบัญชีได้ทีละบัญชีหรือหลายบัญชี</p>
               <p className="text-xs text-[#6F9DB6] mt-1">
@@ -595,7 +569,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
       {showDist && (
         <Modal title="จัดสรรเงินเข้าบัญชี" onClose={() => setShowDist(false)}>
           <div className="space-y-4">
-            {distError && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{distError}</p>}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">ยอดเงิน (฿)</label>

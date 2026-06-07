@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import './index.css';
 
 import { AuthProvider, useAuth }  from './contexts/AuthContext';
+import { SnackbarProvider }        from './contexts/SnackbarContext';
 import { accounts as accountsApi, categories as categoriesApi, notifications as notiApi, profile as profileApi, getAccessToken } from './services/api';
 
 import LoginPage        from './pages/LoginPage';
@@ -239,7 +240,9 @@ function AppShell() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppShell />
+      <SnackbarProvider>
+        <AppShell />
+      </SnackbarProvider>
     </AuthProvider>
   );
 }

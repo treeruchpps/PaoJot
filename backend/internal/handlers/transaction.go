@@ -62,6 +62,10 @@ func (h *TransactionHandler) List(c *gin.Context) {
 		where += " AND type = $" + strconv.Itoa(idx)
 		args = append(args, txType)
 		idx++
+	} else {
+		// ซ่อน goal_deposit / goal_withdrawal จากหน้ารายการธุรกรรมปกติ
+		// ใช้ type::text เพราะ type เป็น ENUM — ต้อง cast ก่อน compare string literal
+		where += " AND type::text NOT IN ('goal_deposit','goal_withdrawal')"
 	}
 	if dateFrom != "" {
 		where += " AND transaction_date >= $" + strconv.Itoa(idx)

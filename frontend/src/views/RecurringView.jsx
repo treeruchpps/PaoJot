@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import { ArrowUp, ArrowDown, ArrowLeftRight, Sun, CalendarDays, Calendar as CalendarIcon, Star, Clock, Edit, Trash2, Plus, RefreshCw } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -16,6 +17,7 @@ const TYPE_BG    = { income: '#f0fdf4', expense: '#fff1f2', transfer: '#EAF3F7' 
 const TYPE_ICON  = { income: 'ArrowUp', expense: 'ArrowDown', transfer: 'ArrowLeftRight' };
 
 const FREQ_LABEL = { daily: 'ทุกวัน', weekly: 'ทุกสัปดาห์', monthly: 'ทุกเดือน', yearly: 'ทุกปี' };
+const RECUR_PAGE_SIZE = 5;
 const FREQ_ICON  = { daily: 'Sun', weekly: 'CalendarDays', monthly: 'Calendar', yearly: 'Star' };
 const ACC_KIND_META = {
   cash:         { icon: 'DollarSign', color: '#10b981' },
@@ -44,15 +46,16 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   const transactionAccountIds = new Set(transactionAccounts.map((a) => a.id));
   const defaultAccountId = transactionAccounts[0]?.id || '';
   const defaultToAccountId = transactionAccounts[1]?.id || transactionAccounts[0]?.id || '';
+  const { showError } = useSnackbar();
   const [list,      setList]      = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editId,    setEditId]    = useState(null);
   const [form,      setForm]      = useState(emptyForm(transactionAccounts));
   const [saving,    setSaving]    = useState(false);
-  const [error,     setError]     = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [recurPage, setRecurPage] = useState(1);
 
   const expCats      = applySavedCategoryOrder('expense', (categories || []).filter((c) => c.type === 'expense'));
   const incCats      = applySavedCategoryOrder('income', (categories || []).filter((c) => c.type === 'income'));
@@ -77,7 +80,6 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
 
   const openAdd = () => {
     setEditId(null);
-    setError('');
     const f = emptyForm(transactionAccounts);
     const cats = expCats;
     setForm({ ...f, category_id: cats[0]?.id || '' });
@@ -87,7 +89,6 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   const openEdit = (r) => {
     const cats = r.type === 'income' ? incCats : r.type === 'transfer' ? transferCats : expCats;
     setEditId(r.id);
-    setError('');
     setForm({
       type:          r.type,
       amount:        String(r.amount),
@@ -108,15 +109,14 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   };
 
   const save = async () => {
-    if (!form.amount || parseFloat(form.amount) <= 0) { setError('กรุณาใส่จำนวนเงิน'); return; }
-    if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
-    if (!form.next_due_date) { setError('กรุณาเลือกวันครบกำหนดถัดไป'); return; }
+    if (!form.amount || parseFloat(form.amount) <= 0) { showError('กรุณาใส่จำนวนเงิน'); return; }
+    if (!form.category_id) { showError('กรุณาเลือกหมวดหมู่'); return; }
+    if (!form.next_due_date) { showError('กรุณาเลือกวันครบกำหนดถัดไป'); return; }
     if (!transactionAccountIds.has(form.account_id) || (form.type === 'transfer' && !transactionAccountIds.has(form.to_account_id))) {
-      setError('กรุณาเลือกบัญชีที่ใช้บันทึกรายการได้');
+      showError('กรุณาเลือกบัญชีที่ใช้บันทึกรายการได้');
       return;
     }
-    setSaving(true); setError('');
-    try {
+    setSaving(true); try {
       const body = {
         type:          form.type,
         amount:        parseFloat(form.amount),
@@ -136,7 +136,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       await fetchList();
       onNotificationRefresh?.();
       setShowModal(false);
-    } catch (err) { setError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
 
@@ -160,6 +160,14 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
 
   const active   = list.filter((r) => r.is_active);
   const inactive = list.filter((r) => !r.is_active);
+  const allRecurring   = [...active, ...inactive];
+  const recurTotalPages = Math.max(1, Math.ceil(allRecurring.length / RECUR_PAGE_SIZE));
+  const recurSafePage   = Math.min(recurPage, recurTotalPages);
+  const recurPageNums   = Array.from({ length: recurTotalPages }, (_, i) => i + 1)
+    .filter((p) => recurTotalPages <= 7 || p === 1 || p === recurTotalPages || Math.abs(p - recurSafePage) <= 1);
+  const pagedRecurring  = allRecurring.slice((recurSafePage - 1) * RECUR_PAGE_SIZE, recurSafePage * RECUR_PAGE_SIZE);
+  const pagedActive     = pagedRecurring.filter((r) => r.is_active);
+  const pagedInactive   = pagedRecurring.filter((r) => !r.is_active);
 
   const RecurCard = ({ r }) => {
     const acc   = getAcc(r.account_id);
@@ -318,25 +326,50 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
       ) : (
         <div className="space-y-6">
           {/* Active */}
-          {active.length > 0 && (
+          {pagedActive.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-3">
                 ใช้งานอยู่ ({active.length})
               </p>
               <div className="space-y-3">
-                {active.map((r) => <RecurCard key={r.id} r={r} />)}
+                {pagedActive.map((r) => <RecurCard key={r.id} r={r} />)}
               </div>
             </div>
           )}
 
           {/* Inactive */}
-          {inactive.length > 0 && (
+          {pagedInactive.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
                 หยุดชั่วคราว ({inactive.length})
               </p>
               <div className="space-y-3">
-                {inactive.map((r) => <RecurCard key={r.id} r={r} />)}
+                {pagedInactive.map((r) => <RecurCard key={r.id} r={r} />)}
+              </div>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {allRecurring.length > RECUR_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 px-1 py-3 border-t border-slate-100">
+              <p className="text-xs text-slate-500">
+                แสดง {(recurSafePage - 1) * RECUR_PAGE_SIZE + 1}–{Math.min(recurSafePage * RECUR_PAGE_SIZE, allRecurring.length)} จาก {allRecurring.length} รายการ
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setRecurPage((p) => Math.max(1, p - 1))} disabled={recurSafePage === 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  ก่อนหน้า
+                </button>
+                {recurPageNums.map((p, i) => (
+                  <button key={`${p}-${i}`} type="button" onClick={() => setRecurPage(p)}
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${recurSafePage === p ? 'bg-[#2C6488] border-[#2C6488] text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-[#EAF3F7]'}`}>
+                    {p}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setRecurPage((p) => Math.min(recurTotalPages, p + 1))} disabled={recurSafePage === recurTotalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  ถัดไป
+                </button>
               </div>
             </div>
           )}
@@ -352,7 +385,6 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
         >
           {/* Scrollable content */}
           <div className="space-y-3">
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
             {/* ประเภท */}
             <div>

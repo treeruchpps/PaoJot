@@ -11,6 +11,8 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +39,15 @@ type ReceiptData struct {
 	Items    []ReceiptItem      `json:"items"`
 	VAT      *ReceiptAdjustment `json:"vat,omitempty"`
 	Discount *ReceiptAdjustment `json:"discount,omitempty"`
+}
+
+type ocrDateCandidate struct {
+	Value      string
+	Year       int
+	Month      int
+	Day        int
+	SourceYear int
+	YearDigits int
 }
 
 type ReceiptResultResp struct {
@@ -109,6 +120,19 @@ func (h *ReceiptHandler) CreateJob(c *gin.Context) {
 	var firstFilename, firstPath string
 	for _, fh := range files {
 		mimeType := fh.Header.Get("Content-Type")
+		// Fallback: ถ้า browser ไม่ส่ง Content-Type ที่ถูกต้อง (เช่น HEIC บน Windows/Android) ให้เดาจากนามสกุล
+		if mimeType == "" || mimeType == "application/octet-stream" {
+			switch strings.ToLower(filepath.Ext(fh.Filename)) {
+			case ".jpg", ".jpeg":
+				mimeType = "image/jpeg"
+			case ".png":
+				mimeType = "image/png"
+			case ".heic":
+				mimeType = "image/heic"
+			case ".heif":
+				mimeType = "image/heif"
+			}
+		}
 		allowed := map[string]bool{
 			"image/jpeg": true, "image/jpg": true, "image/png": true, "image/heic": true, "image/heif": true,
 		}
@@ -520,6 +544,197 @@ func looksInvalidReceipt(parsed *ReceiptData) bool {
 		}
 	}
 	return positiveItems == 0
+}
+
+var (
+	ocrISODateRe      = regexp.MustCompile(`\b(\d{4})-(\d{1,2})-(\d{1,2})\b`)
+	ocrNumericDateRe  = regexp.MustCompile(`\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b`)
+	ocrThaiTextDateRe = regexp.MustCompile(`(\d{1,2})\s*([\p{L}.]+)\s*(\d{2,4})`)
+)
+
+var ocrThaiMonths = map[string]int{
+	"มค": 1, "มกราคม": 1,
+	"กพ": 2, "กุมภาพันธ์": 2,
+	"มีค": 3, "มีนาคม": 3,
+	"เมย": 4, "เมษายน": 4,
+	"พค": 5, "พฤษภาคม": 5,
+	"มิย": 6, "มิถุนายน": 6,
+	"กค": 7, "กรกฎาคม": 7,
+	"สค": 8, "สิงหาคม": 8,
+	"กย": 9, "กันยายน": 9,
+	"ตค": 10, "ตุลาคม": 10,
+	"พย": 11, "พฤศจิกายน": 11,
+	"ธค": 12, "ธันวาคม": 12,
+	"jan": 1, "january": 1,
+	"feb": 2, "february": 2,
+	"mar": 3, "march": 3,
+	"apr": 4, "april": 4,
+	"may": 5,
+	"jun": 6, "june": 6,
+	"jul": 7, "july": 7,
+	"aug": 8, "august": 8,
+	"sep": 9, "sept": 9, "september": 9,
+	"oct": 10, "october": 10,
+	"nov": 11, "november": 11,
+	"dec": 12, "december": 12,
+}
+
+func normalizeReceiptOCRDate(data *ReceiptData, ocrText string) {
+	if data == nil || data.Date == nil {
+		return
+	}
+	if normalized := normalizeFinancialOCRDate(*data.Date, ocrText); normalized != "" {
+		data.Date = &normalized
+	}
+}
+
+func normalizeSlipOCRDate(data *SlipData, ocrText string) {
+	if data == nil || data.Date == nil {
+		return
+	}
+	if normalized := normalizeFinancialOCRDate(*data.Date, ocrText); normalized != "" {
+		data.Date = &normalized
+	}
+}
+
+func normalizeFinancialOCRDate(value, ocrText string) string {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return raw
+	}
+
+	if candidate, ok := firstOCRDateCandidate(raw); ok {
+		if candidate.YearDigits == 4 && (candidate.SourceYear >= 1957 && candidate.SourceYear <= 1999 || candidate.SourceYear >= 2057 && candidate.SourceYear <= 2099) {
+			if matched, found := matchingOCRShortYearDate(ocrText, candidate.Day, candidate.Month, candidate.SourceYear%100); found {
+				return matched.Value
+			}
+		}
+		return candidate.Value
+	}
+
+	if candidate, ok := firstOCRDateCandidate(ocrText); ok {
+		return candidate.Value
+	}
+	return raw
+}
+
+func firstOCRDateCandidate(text string) (ocrDateCandidate, bool) {
+	if match := ocrISODateRe.FindStringSubmatch(text); len(match) == 4 {
+		year, _ := strconv.Atoi(match[1])
+		month, _ := strconv.Atoi(match[2])
+		day, _ := strconv.Atoi(match[3])
+		if candidate, ok := buildOCRDateCandidate(day, month, year, len(match[1])); ok {
+			return candidate, true
+		}
+	}
+
+	if match := ocrNumericDateRe.FindStringSubmatch(text); len(match) == 4 {
+		day, _ := strconv.Atoi(match[1])
+		month, _ := strconv.Atoi(match[2])
+		year, _ := strconv.Atoi(match[3])
+		if candidate, ok := buildOCRDateCandidate(day, month, year, len(match[3])); ok {
+			return candidate, true
+		}
+	}
+
+	for _, match := range ocrThaiTextDateRe.FindAllStringSubmatch(text, -1) {
+		if len(match) != 4 {
+			continue
+		}
+		monthName := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(match[2]), ".", ""))
+		month, ok := ocrThaiMonths[monthName]
+		if !ok {
+			continue
+		}
+		day, _ := strconv.Atoi(match[1])
+		year, _ := strconv.Atoi(match[3])
+		if candidate, ok := buildOCRDateCandidate(day, month, year, len(match[3])); ok {
+			return candidate, true
+		}
+	}
+
+	return ocrDateCandidate{}, false
+}
+
+func matchingOCRShortYearDate(text string, day, month, shortYear int) (ocrDateCandidate, bool) {
+	candidates := make([]ocrDateCandidate, 0)
+	for _, match := range ocrNumericDateRe.FindAllStringSubmatch(text, -1) {
+		if len(match) != 4 || len(match[3]) != 2 {
+			continue
+		}
+		d, _ := strconv.Atoi(match[1])
+		m, _ := strconv.Atoi(match[2])
+		y, _ := strconv.Atoi(match[3])
+		if candidate, ok := buildOCRDateCandidate(d, m, y, len(match[3])); ok {
+			candidates = append(candidates, candidate)
+		}
+	}
+	for _, match := range ocrThaiTextDateRe.FindAllStringSubmatch(text, -1) {
+		if len(match) != 4 || len(match[3]) != 2 {
+			continue
+		}
+		monthName := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(match[2]), ".", ""))
+		m, ok := ocrThaiMonths[monthName]
+		if !ok {
+			continue
+		}
+		d, _ := strconv.Atoi(match[1])
+		y, _ := strconv.Atoi(match[3])
+		if candidate, ok := buildOCRDateCandidate(d, m, y, len(match[3])); ok {
+			candidates = append(candidates, candidate)
+		}
+	}
+
+	for _, candidate := range candidates {
+		if candidate.Day == day && candidate.Month == month && candidate.SourceYear == shortYear {
+			return candidate, true
+		}
+	}
+	return ocrDateCandidate{}, false
+}
+
+func buildOCRDateCandidate(day, month, rawYear, yearDigits int) (ocrDateCandidate, bool) {
+	year := normalizeOCRYear(rawYear, yearDigits)
+	date := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+	if date.Year() != year || int(date.Month()) != month || date.Day() != day {
+		return ocrDateCandidate{}, false
+	}
+	return ocrDateCandidate{
+		Value:      date.Format("2006-01-02"),
+		Year:       year,
+		Month:      month,
+		Day:        day,
+		SourceYear: rawYear,
+		YearDigits: yearDigits,
+	}, true
+}
+
+func normalizeOCRYear(year, digits int) int {
+	if digits <= 2 {
+		// 2-digit Thai short year: YY means BE 25YY → CE = 1957+YY
+		if year >= 43 {
+			return year + 1957
+		}
+		return year + 2000
+	}
+	if year >= 2400 {
+		// Full BE year (e.g. 2569) → CE
+		return year - 543
+	}
+	// LLM added 1900 to a 2-digit Thai year (e.g. 69 → 1969 instead of 2026)
+	// Correct: 1957+YY is the true CE, so 1969 → 2026 (+57)
+	if year >= 1957 && year <= 1999 {
+		return year + 57
+	}
+	// LLM used BE 2400s instead of BE 2500s (e.g. 2469-543=1926 instead of 2569-543=2026)
+	// Shift forward one century to correct
+	if year >= 1857 && year <= 1956 {
+		return year + 100
+	}
+	if year >= 2057 && year <= 2099 {
+		return year - 43
+	}
+	return year
 }
 
 func sanitizeReceiptData(data *ReceiptData) {
@@ -1032,7 +1247,7 @@ var receiptParserPrompt = `คุณคือผู้ช่วยดึงข�
 - ห้ามแปลงข้อมูลสลิป เช่น ผู้โอน ผู้รับ ธนาคาร เลขบัญชี เลขอ้างอิง Transaction ID หรือยอดโอน ให้เป็นรายการสินค้า
 - ใบเสร็จต้องมีบริบทของร้านค้า บิล สินค้า/บริการ ราคา ภาษี ยอดรวม หรือแคชเชียร์ ไม่ใช่แค่เลขอ้างอิงและยอดเงิน
 - ถ้าหาไม่เจอให้ใส่ null สำหรับ merchant/date/vat/discount หรือ [] สำหรับ items
-- date: แปลงเป็น YYYY-MM-DD ถ้าวันที่เป็น พ.ศ. ให้ลบ 543
+- date: แปลงเป็น YYYY-MM-DD เสมอ ถ้าเจอปีสองหลัก เช่น 18/03/69 ให้ขยายเป็น 25YY ก่อน (69 → 2569 พ.ศ.) แล้วลบ 543 ได้ ค.ศ. (2569-543=2026) ห้ามใช้ 24YY หรือ 19YY เด็ดขาด ถ้าปีเป็นสี่หลักและ ≥ 2400 ให้ลบ 543 ถ้าน้อยกว่า 2400 ถือว่าเป็น ค.ศ. แล้ว
 - items ต้องเป็นรายการสินค้า/บริการเท่านั้น ไม่รวม subtotal, total, vat, tax, change, cash, discount เป็นสินค้า
 - amount: ราคาของรายการนั้นเป็น float ไม่มี comma และต้องไม่ติดลบ ไม่ต้องแยกจำนวนสินค้า
 - ถ้ามี VAT/ภาษีมูลค่าเพิ่ม ให้ใส่ vat.amount เป็นจำนวนภาษี และ vat.mode="include" ถ้าดูเหมือนรวมในยอดรายการ/ยอดรวมแล้ว หรือ "exclude" ถ้าดูเหมือนต้องบวกเพิ่ม

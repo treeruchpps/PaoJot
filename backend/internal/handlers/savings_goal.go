@@ -27,10 +27,15 @@ func NewSavingsGoalHandler(db *pgxpool.Pool) *SavingsGoalHandler {
 }
 
 func (h *SavingsGoalHandler) ensureSchema() {
-	_, _ = h.db.Exec(context.Background(), `
+	ctx := context.Background()
+	_, _ = h.db.Exec(ctx, `
 		ALTER TABLE savings_goals
 		ADD COLUMN IF NOT EXISTS start_date DATE NOT NULL DEFAULT CURRENT_DATE;
 	`)
+	// เพิ่ม goal_deposit / goal_withdrawal ใน transaction_type ENUM
+	// (ALTER TYPE ADD VALUE ต้องรันนอก transaction block — pgx Exec เป็น autocommit)
+	_, _ = h.db.Exec(ctx, `ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'goal_deposit'`)
+	_, _ = h.db.Exec(ctx, `ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'goal_withdrawal'`)
 }
 
 // POST /api/v1/savings-goals/images
@@ -439,7 +444,7 @@ func (h *SavingsGoalHandler) Delete(c *gin.Context) {
 		// Insert transfer transaction returning the balance
 		_, err = dbTx.Exec(ctx,
 			`INSERT INTO transactions (user_id, account_id, to_account_id, type, amount, name, note, transaction_date)
-			 VALUES ($1, $2, $3, 'transfer', $4, $5, $6, CURRENT_DATE)`,
+			 VALUES ($1, $2, $3, 'goal_withdrawal', $4, $5, $6, CURRENT_DATE)`,
 			userID, *g.AccountID, refundAccountID, g.CurrentAmount, fmt.Sprintf("คืนเงินจากเป้าหมาย: %s", g.Name), fmt.Sprintf("ลบเป้าหมายการออม: %s", g.Name),
 		)
 		if err != nil {
@@ -667,7 +672,7 @@ func (h *SavingsGoalHandler) Deposit(c *gin.Context) {
 
 	_, err = dbTx.Exec(ctx,
 		`INSERT INTO transactions (user_id, account_id, to_account_id, type, amount, name, note, transaction_date)
-		 VALUES ($1, $2, $3, 'transfer', $4, $5, $6, $7)`,
+		 VALUES ($1, $2, $3, 'goal_deposit', $4, $5, $6, $7)`,
 		userID, req.FromAccountID, *g.AccountID, req.Amount, g.Name, noteText, txDate,
 	)
 	if err != nil {
@@ -698,6 +703,121 @@ func (h *SavingsGoalHandler) Deposit(c *gin.Context) {
 	newStatus := string(g.Status)
 	if newAmount >= g.TargetAmount {
 		newStatus = "completed"
+	}
+
+	var updated models.SavingsGoal
+	err = dbTx.QueryRow(ctx,
+		`UPDATE savings_goals
+		 SET current_amount = $1, status = $2
+		 WHERE id = $3 AND user_id = $4
+		 RETURNING id, user_id, account_id, name, image_url, target_amount, current_amount, start_date, deadline, status, created_at, updated_at`,
+		newAmount, newStatus, goalID, userID,
+	).Scan(&updated.ID, &updated.UserID, &updated.AccountID, &updated.Name, &updated.ImageURL, &updated.TargetAmount,
+		&updated.CurrentAmount, &updated.StartDate, &updated.Deadline, &updated.Status, &updated.CreatedAt, &updated.UpdatedAt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update goal"})
+		return
+	}
+
+	if err := dbTx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
+}
+
+// POST /api/v1/savings-goals/:id/withdraw
+// ถอนเงินออกจากเป้าหมาย — สร้าง goal_withdrawal transaction + ลด current_amount
+func (h *SavingsGoalHandler) Withdraw(c *gin.Context) {
+	userID := c.GetString("user_id")
+	goalID := c.Param("id")
+
+	var req struct {
+		ToAccountID string  `json:"to_account_id" binding:"required"`
+		Amount      float64 `json:"amount"        binding:"required,gt=0"`
+		Note        *string `json:"note"`
+		Date        *string `json:"date"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := context.Background()
+
+	var g models.SavingsGoal
+	err := h.db.QueryRow(ctx,
+		`SELECT id, user_id, account_id, name, target_amount, current_amount, status
+		 FROM savings_goals WHERE id = $1 AND user_id = $2`,
+		goalID, userID,
+	).Scan(&g.ID, &g.UserID, &g.AccountID, &g.Name, &g.TargetAmount, &g.CurrentAmount, &g.Status)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "savings goal not found"})
+		return
+	}
+	if g.AccountID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "เป้าหมายนี้ไม่มีบัญชีเก็บออม"})
+		return
+	}
+	if req.ToAccountID == *g.AccountID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "บัญชีปลายทางต้องไม่ใช่บัญชีเก็บออมของเป้าหมาย"})
+		return
+	}
+	if req.Amount > g.CurrentAmount {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ถอนได้สูงสุด ฿%.2f (ยอดออมปัจจุบัน)", g.CurrentAmount)})
+		return
+	}
+
+	txDate := time.Now()
+	if req.Date != nil {
+		if parsed, err := time.Parse("2006-01-02", *req.Date); err == nil {
+			txDate = parsed
+		}
+	}
+	noteText := fmt.Sprintf("ถอนจากเป้าหมาย: %s", g.Name)
+	if req.Note != nil && *req.Note != "" {
+		noteText = *req.Note
+	}
+
+	dbTx, err := h.db.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		return
+	}
+	defer dbTx.Rollback(ctx)
+
+	_, err = dbTx.Exec(ctx,
+		`INSERT INTO transactions (user_id, account_id, to_account_id, type, amount, name, note, transaction_date)
+		 VALUES ($1, $2, $3, 'goal_withdrawal', $4, $5, $6, $7)`,
+		userID, *g.AccountID, req.ToAccountID, req.Amount, g.Name, noteText, txDate,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create transaction"})
+		return
+	}
+
+	if err = debitAccount(ctx, dbTx, userID, *g.AccountID, req.Amount); err != nil {
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
+		return
+	}
+	if err = creditAccount(ctx, dbTx, userID, req.ToAccountID, req.Amount); err != nil {
+		status := http.StatusInternalServerError
+		if err == errInsufficientFunds || err == errAccountNotFound {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": balanceErrorMessage(err)})
+		return
+	}
+
+	newAmount := g.CurrentAmount - req.Amount
+	newStatus := string(g.Status)
+	if newAmount < g.TargetAmount && newStatus == "completed" {
+		newStatus = "in_progress"
 	}
 
 	var updated models.SavingsGoal

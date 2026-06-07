@@ -129,6 +129,19 @@ func (h *ScanHandler) CreateJob(c *gin.Context) {
 	savedCount := 0
 	for _, fh := range files {
 		mimeType := fh.Header.Get("Content-Type")
+		// Fallback: ถ้า browser ไม่ส่ง Content-Type ที่ถูกต้อง (เช่น HEIC บน Windows/Android) ให้เดาจากนามสกุล
+		if mimeType == "" || mimeType == "application/octet-stream" {
+			switch strings.ToLower(filepath.Ext(fh.Filename)) {
+			case ".jpg", ".jpeg":
+				mimeType = "image/jpeg"
+			case ".png":
+				mimeType = "image/png"
+			case ".heic":
+				mimeType = "image/heic"
+			case ".heif":
+				mimeType = "image/heif"
+			}
+		}
 		allowed := map[string]bool{
 			"image/jpeg": true, "image/jpg": true, "image/png": true, "image/heic": true, "image/heif": true,
 		}

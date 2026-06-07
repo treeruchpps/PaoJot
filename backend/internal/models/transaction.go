@@ -5,10 +5,12 @@ import "time"
 type TransactionType string
 
 const (
-	TransactionTypeIncome     TransactionType = "income"
-	TransactionTypeExpense    TransactionType = "expense"
-	TransactionTypeTransfer   TransactionType = "transfer"
-	TransactionTypeAdjustment TransactionType = "adjustment"
+	TransactionTypeIncome         TransactionType = "income"
+	TransactionTypeExpense        TransactionType = "expense"
+	TransactionTypeTransfer       TransactionType = "transfer"
+	TransactionTypeAdjustment     TransactionType = "adjustment"
+	TransactionTypeGoalDeposit    TransactionType = "goal_deposit"
+	TransactionTypeGoalWithdrawal TransactionType = "goal_withdrawal"
 )
 
 type Transaction struct {

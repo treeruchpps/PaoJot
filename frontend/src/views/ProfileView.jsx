@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import { Camera, X, User, Lock, LogOut, Settings, Sparkles, ShieldCheck, ShieldOff, CalendarDays, KeyRound, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profile as profileApi, auth as authApi } from '../services/api';
@@ -18,6 +19,7 @@ const WEEK_START_OPTS = [
 const accent = '#2C6488';
 
 export default function ProfileView() {
+  const { showError, showSuccess } = useSnackbar();
   const { user, logout } = useAuth();
 
   const [profileData, setProfileData] = useState(null);
@@ -27,16 +29,12 @@ export default function ProfileView() {
   const [weekStartDay, setWeekStartDay] = useState(1);
   const [aiSummaryEnabled, setAiSummaryEnabled] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [profileMsg, setProfileMsg] = useState('');
-  const [profileErr, setProfileErr] = useState('');
   const fileInputRef = useRef(null);
 
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
   const [showPwForm, setShowPwForm] = useState(false);
   const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false });
   const [savingPw, setSavingPw] = useState(false);
-  const [pwMsg, setPwMsg] = useState('');
-  const [pwErr, setPwErr] = useState('');
 
   const [confirmAction, setConfirmAction] = useState(null);
 
@@ -71,7 +69,7 @@ export default function ProfileView() {
         setWeekStartDay(data.week_start_day ?? 1);
         setAiSummaryEnabled(!!data.ai_summary_enabled);
       } catch {
-        setProfileErr('โหลดข้อมูลโปรไฟล์ไม่สำเร็จ');
+        showError('โหลดข้อมูลโปรไฟล์ไม่สำเร็จ');
       } finally {
         setLoadingProfile(false);
       }
@@ -88,34 +86,34 @@ export default function ProfileView() {
   const resetProfileDraft = () => {
     setDisplayName(profileData?.display_name || '');
     setAvatarUrl(profileData?.avatar_url || '');
-    setProfileMsg('');
-    setProfileErr('');
+    showSuccess('');
+    showError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const requestSaveProfile = () => {
-    setProfileMsg('');
-    setProfileErr('');
+    showSuccess('');
+    showError('');
     setConfirmAction({ type: 'save-profile' });
   };
 
   const resetSystemSettingsDraft = () => {
     setWeekStartDay(profileData?.week_start_day ?? 1);
-    setProfileMsg('');
-    setProfileErr('');
+    showSuccess('');
+    showError('');
   };
 
   const requestSaveSystemSettings = () => {
-    setProfileMsg('');
-    setProfileErr('');
+    showSuccess('');
+    showError('');
     setConfirmAction({ type: 'save-settings' });
   };
 
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) { setProfileErr('กรุณาเลือกไฟล์รูปภาพ'); return; }
-    if (file.size > 2 * 1024 * 1024) { setProfileErr('ขนาดไฟล์ต้องไม่เกิน 2MB'); return; }
+    if (!file.type.startsWith('image/')) { showError('กรุณาเลือกไฟล์รูปภาพ'); return; }
+    if (file.size > 2 * 1024 * 1024) { showError('ขนาดไฟล์ต้องไม่เกิน 2MB'); return; }
     const reader = new FileReader();
     reader.onload = (ev) => setAvatarUrl(ev.target.result);
     reader.readAsDataURL(file);
@@ -127,8 +125,8 @@ export default function ProfileView() {
     const nextWeekStartDay = overrides.weekStartDay ?? weekStartDay;
     const nextAiEnabled = overrides.aiSummaryEnabled ?? aiSummaryEnabled;
     setSavingProfile(true);
-    setProfileMsg('');
-    setProfileErr('');
+    showSuccess('');
+    showError('');
     try {
       const updated = await profileApi.update({
         display_name: nextDisplayName.trim() || null,
@@ -146,10 +144,10 @@ export default function ProfileView() {
       }
       setAiSummaryEnabled(!!updated.ai_summary_enabled);
       if (!options.preserveProfileDraft && fileInputRef.current) fileInputRef.current.value = '';
-      setProfileMsg(options.successMessage || 'บันทึกการตั้งค่าสำเร็จ');
+      showSuccess(options.successMessage || 'บันทึกการตั้งค่าสำเร็จ');
       return true;
     } catch (err) {
-      setProfileErr(err.message);
+      showError(err.message);
       return false;
     } finally {
       setSavingProfile(false);
@@ -214,25 +212,25 @@ export default function ProfileView() {
   const closePasswordForm = () => {
     setShowPwForm(false);
     setPwForm({ current: '', next: '', confirm: '' });
-    setPwMsg('');
-    setPwErr('');
+    showSuccess('');
+    showError('');
     setShowPw({ current: false, next: false, confirm: false });
   };
 
   const changePassword = async () => {
-    setPwMsg('');
-    setPwErr('');
-    if (!pwForm.current || !pwForm.next) { setPwErr('กรุณากรอกรหัสผ่านให้ครบ'); return; }
-    if (pwForm.next.length < 8) { setPwErr('รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
-    if (pwForm.next !== pwForm.confirm) { setPwErr('รหัสผ่านใหม่ไม่ตรงกัน'); return; }
+    showSuccess('');
+    showError('');
+    if (!pwForm.current || !pwForm.next) { showError('กรุณากรอกรหัสผ่านให้ครบ'); return; }
+    if (pwForm.next.length < 8) { showError('รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
+    if (pwForm.next !== pwForm.confirm) { showError('รหัสผ่านใหม่ไม่ตรงกัน'); return; }
     setSavingPw(true);
     try {
       await authApi.changePassword({ current_password: pwForm.current, new_password: pwForm.next });
-      setPwMsg('เปลี่ยนรหัสผ่านสำเร็จ');
+      showSuccess('เปลี่ยนรหัสผ่านสำเร็จ');
       setPwForm({ current: '', next: '', confirm: '' });
       setShowPwForm(false);
     } catch (err) {
-      setPwErr(err.message);
+      showError(err.message);
     } finally {
       setSavingPw(false);
     }
@@ -441,7 +439,7 @@ export default function ProfileView() {
               {!showPwForm && (
                 <button
                   type="button"
-                  onClick={() => { setShowPwForm(true); setPwMsg(''); setPwErr(''); }}
+                  onClick={() => { setShowPwForm(true); showSuccess(''); showError(''); }}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white flex-shrink-0"
                   style={{ background: accent }}
                 >
@@ -450,9 +448,6 @@ export default function ProfileView() {
                 </button>
               )}
             </div>
-
-            {pwMsg && <p className="text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl">{pwMsg}</p>}
-            {pwErr && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{pwErr}</p>}
 
             {showPwForm && (
               <div className="space-y-4 pt-2">
@@ -584,9 +579,6 @@ export default function ProfileView() {
               </button>
             </div>
           </div>
-
-          {profileMsg && <p className="text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl">{profileMsg}</p>}
-          {profileErr && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{profileErr}</p>}
         </div>
       </div>
 

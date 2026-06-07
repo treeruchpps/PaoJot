@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import Icon from '../components/common/Icon';
 import {
   Plus, Edit, Trash2, Calendar, CheckCircle, PiggyBank,
-  ImageIcon, Trophy, AlertCircle, ArrowRightLeft, Upload, X
+  ImageIcon, Trophy, AlertCircle, ArrowRightLeft, Upload, X, ArrowDownToLine
 } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -49,6 +50,7 @@ function goalMath(goal) {
 
 
 export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefreshKey = 0 }) {
+  const { showError } = useSnackbar();
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('in_progress');
@@ -57,15 +59,16 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [imageUploading, setImageUploading] = useState(false);
   const imageInputRef = useRef(null);
 
   const [depositGoal, setDepositGoal] = useState(null);
   const [depositForm, setDepositForm] = useState({ from_account_id: '', amount: '', note: '', date: today });
   const [depositSaving, setDepositSaving] = useState(false);
-  const [depositError, setDepositError] = useState('');
   const [justCompleted, setJustCompleted] = useState(false);
+  const [withdrawGoal, setWithdrawGoal] = useState(null);
+  const [withdrawForm, setWithdrawForm] = useState({ to_account_id: '', amount: '', note: '', date: today });
+  const [withdrawSaving, setWithdrawSaving] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
@@ -95,7 +98,6 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
   const openCreate = () => {
     setEditId(null);
     setForm({ ...EMPTY_FORM, start_date: today, current_amount: '0', account_id: assetAccounts[0]?.id || '' });
-    setError('');
     setImageUploading(false);
     setShowModal(true);
   };
@@ -111,7 +113,6 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
       deadline: g.deadline?.slice(0, 10) || '',
       account_id: g.account_id || assetAccounts[0]?.id || '',
     });
-    setError('');
     setImageUploading(false);
     setShowModal(true);
   };
@@ -119,14 +120,13 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
   const uploadGoalImage = async (file) => {
     if (!file) return;
     setImageUploading(true);
-    setError('');
     try {
       const body = new FormData();
       body.append('image', file);
       const uploaded = await goalsApi.uploadImage(body);
       setForm((prev) => ({ ...prev, image_url: uploaded.image_url || '' }));
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setImageUploading(false);
       if (imageInputRef.current) imageInputRef.current.value = '';
@@ -139,18 +139,18 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
 
   const save = async () => {
     const goalName = form.name.trim();
-    if (!goalName || !form.target_amount) { setError('กรุณากรอกชื่อและยอดเป้าหมาย'); return; }
+    if (!goalName || !form.target_amount) { showError('กรุณากรอกชื่อและยอดเป้าหมาย'); return; }
     const normalizedName = goalName.toLowerCase();
     const duplicateGoal = goals.find((g) => g.id !== editId && (g.name || '').trim().toLowerCase() === normalizedName);
-    if (duplicateGoal) { setError('มีเป้าหมายชื่อนี้อยู่แล้ว'); return; }
+    if (duplicateGoal) { showError('มีเป้าหมายชื่อนี้อยู่แล้ว'); return; }
     const targetAmount = parseFloat(form.target_amount);
-    if (targetAmount <= 0) { setError('เป้าหมายต้องมากกว่า 0'); return; }
-    if (!form.start_date) { setError('กรุณาเลือกวันที่เริ่มต้น'); return; }
+    if (targetAmount <= 0) { showError('เป้าหมายต้องมากกว่า 0'); return; }
+    if (!form.start_date) { showError('กรุณาเลือกวันที่เริ่มต้น'); return; }
     if (form.deadline && new Date(form.deadline) < new Date(form.start_date)) {
-      setError('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น');
+      showError('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น');
       return;
     }
-    setSaving(true); setError('');
+    setSaving(true);
     try {
       const body = {
         name: goalName,
@@ -163,7 +163,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
       else await goalsApi.create(body);
       await fetchGoals();
       setShowModal(false);
-    } catch (err) { setError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
 
@@ -221,23 +221,21 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
       note: '',
       date: today,
     });
-    setDepositError('');
     setJustCompleted(false);
   };
 
   const doDeposit = async () => {
-    if (!depositGoal.account_id) { setDepositError('เป้าหมายนี้ไม่มีบัญชีเก็บออมเชื่อมโยงอยู่'); return; }
-    if (!depositForm.from_account_id) { setDepositError('กรุณาเลือกบัญชีต้นทาง'); return; }
-    if (depositForm.from_account_id === depositGoal.account_id) { setDepositError('บัญชีต้นทางต้องไม่ใช่บัญชีเก็บออมของเป้าหมาย'); return; }
+    if (!depositGoal.account_id) { showError('เป้าหมายนี้ไม่มีบัญชีเก็บออมเชื่อมโยงอยู่'); return; }
+    if (!depositForm.from_account_id) { showError('กรุณาเลือกบัญชีต้นทาง'); return; }
+    if (depositForm.from_account_id === depositGoal.account_id) { showError('บัญชีต้นทางต้องไม่ใช่บัญชีเก็บออมของเป้าหมาย'); return; }
     const amount = parseFloat(depositForm.amount);
-    if (!depositForm.amount || amount <= 0) { setDepositError('กรุณาใส่จำนวนเงิน'); return; }
+    if (!depositForm.amount || amount <= 0) { showError('กรุณาใส่จำนวนเงิน'); return; }
     const sourceAccount = accounts.find((a) => a.id === depositForm.from_account_id);
     if (amount > Number(sourceAccount?.balance || 0)) {
-      setDepositError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(sourceAccount?.balance || 0)}`);
+      showError(`ยอดเงินในบัญชีไม่พอ คงเหลือ ฿${fmt(sourceAccount?.balance || 0)}`);
       return;
     }
-    setDepositSaving(true); setDepositError('');
-    try {
+    setDepositSaving(true); try {
       const updated = await goalsApi.deposit(depositGoal.id, {
         from_account_id: depositForm.from_account_id,
         amount,
@@ -247,8 +245,36 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
       if (updated.status === 'completed') setJustCompleted(true);
       await Promise.all([fetchGoals(), onRefreshAccounts?.()]);
       if (updated.status !== 'completed') setDepositGoal(null);
-    } catch (err) { setDepositError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setDepositSaving(false); }
+  };
+
+  const openWithdraw = (g) => {
+    setWithdrawGoal(g);
+    setWithdrawForm({ to_account_id: assetAccounts.find((a) => a.id !== g.account_id)?.id || '', amount: '', note: '', date: today });
+  };
+
+  const doWithdraw = async () => {
+    if (!withdrawGoal.account_id) { showError('เป้าหมายนี้ไม่มีบัญชีเก็บออม'); return; }
+    if (!withdrawForm.to_account_id) { showError('กรุณาเลือกบัญชีปลายทาง'); return; }
+    const amount = parseFloat(withdrawForm.amount);
+    if (!withdrawForm.amount || amount <= 0) { showError('กรุณาใส่จำนวนเงิน'); return; }
+    if (amount > withdrawGoal.current_amount) { showError(`ถอนได้สูงสุด ฿${fmt(withdrawGoal.current_amount)}`); return; }
+    setWithdrawSaving(true); try {
+      const updated = await goalsApi.withdraw(withdrawGoal.id, {
+        to_account_id: withdrawForm.to_account_id,
+        amount,
+        note: withdrawForm.note || null,
+        date: withdrawForm.date || null,
+      });
+      setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      await onRefreshAccounts?.();
+      setWithdrawGoal(null);
+    } catch (err) {
+      showError(err.message || 'เกิดข้อผิดพลาด');
+    } finally {
+      setWithdrawSaving(false);
+    }
   };
 
   const inProgressGoals = goals.filter((g) => g.status === 'in_progress');
@@ -258,6 +284,14 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
   const overviewPct = totalTarget > 0 ? Math.min((totalCurrent / totalTarget) * 100, 100) : 0;
   const completed = goals.filter((g) => g.status === 'completed').length;
   const filteredGoals = goals.filter((g) => g.status === statusFilter);
+
+  const GOAL_PAGE_SIZE = 6;
+  const [goalPage, setGoalPage] = useState(1);
+  const goalTotalPages = Math.max(1, Math.ceil(filteredGoals.length / GOAL_PAGE_SIZE));
+  const goalSafePage   = Math.min(goalPage, goalTotalPages);
+  const goalPageNums   = Array.from({ length: goalTotalPages }, (_, i) => i + 1)
+    .filter((p) => goalTotalPages <= 7 || p === 1 || p === goalTotalPages || Math.abs(p - goalSafePage) <= 1);
+  const pagedGoals     = filteredGoals.slice((goalSafePage - 1) * GOAL_PAGE_SIZE, goalSafePage * GOAL_PAGE_SIZE);
 
   return (
     <div className="p-6 space-y-5">
@@ -306,7 +340,7 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
             const active = statusFilter === status;
             const count = goals.filter((g) => g.status === status).length;
             return (
-              <button key={status} onClick={() => setStatusFilter(status)}
+              <button key={status} onClick={() => { setStatusFilter(status); setGoalPage(1); }}
                 className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
                   active ? 'bg-[#2C6488] text-white border-[#2C6488]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#BFD8E4]'
                 }`}>
@@ -336,8 +370,9 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
           ไม่มีเป้าหมายในสถานะนี้
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
-          {filteredGoals.map((g) => {
+          {pagedGoals.map((g) => {
             const { target, current, pct, monthlyNeeded } = goalMath(g);
             const isDone = g.status === 'completed';
             const isCancelled = g.status === 'cancelled';
@@ -425,12 +460,19 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
                       <p className="text-xs text-slate-500 font-medium">ยกเลิกเป้าหมายแล้ว</p>
                     </div>
                   ) : (
-                    <div className="mt-4 grid grid-cols-1 gap-2">
+                    <div className="mt-4 grid grid-cols-2 gap-2">
                       <button onClick={() => openDeposit(g)} disabled={assetAccounts.length === 0}
                         className="w-full py-2 rounded-xl text-sm font-semibold text-white bg-[#2C6488] transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
                         <span className="flex items-center justify-center gap-2">
                           <PiggyBank size={15} color="white" />
-                          ออมเงินเข้าเป้าหมาย
+                          ออมเงิน
+                        </span>
+                      </button>
+                      <button onClick={() => openWithdraw(g)} disabled={assetAccounts.length === 0 || g.current_amount <= 0}
+                        className="w-full py-2 rounded-xl text-sm font-semibold text-[#2C6488] border border-[#2C6488] bg-white transition-colors hover:bg-[#EAF3F7] disabled:opacity-40 disabled:cursor-not-allowed">
+                        <span className="flex items-center justify-center gap-2">
+                          <ArrowDownToLine size={15} color="#2C6488" />
+                          ถอนเงิน
                         </span>
                       </button>
                     </div>
@@ -440,12 +482,36 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
             );
           })}
         </div>
+
+        {filteredGoals.length > GOAL_PAGE_SIZE && (
+          <div className="flex items-center justify-between gap-3 px-1 py-3 border-t border-slate-100">
+            <p className="text-xs text-slate-500">
+              แสดง {(goalSafePage - 1) * GOAL_PAGE_SIZE + 1}–{Math.min(goalSafePage * GOAL_PAGE_SIZE, filteredGoals.length)} จาก {filteredGoals.length} เป้าหมาย
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => setGoalPage((p) => Math.max(1, p - 1))} disabled={goalSafePage === 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                ก่อนหน้า
+              </button>
+              {goalPageNums.map((p, i) => (
+                <button key={`${p}-${i}`} type="button" onClick={() => setGoalPage(p)}
+                  className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${goalSafePage === p ? 'bg-[#2C6488] border-[#2C6488] text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-[#EAF3F7]'}`}>
+                  {p}
+                </button>
+              ))}
+              <button type="button" onClick={() => setGoalPage((p) => Math.min(goalTotalPages, p + 1))} disabled={goalSafePage === goalTotalPages}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                ถัดไป
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {showModal && (
         <Modal title={editId ? 'แก้ไขเป้าหมาย' : 'เพิ่มเป้าหมายใหม่'} onClose={() => setShowModal(false)} size="lg">
           <div className="space-y-4 max-h-[75vh] overflow-y-auto p-1">
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
             {assetAccounts.length === 0 && (
               <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-xl">
                 ต้องมีบัญชีก่อนจึงจะสร้างเป้าหมายการออมได้
@@ -551,17 +617,17 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
       )}
 
       {depositGoal && (
-        <Modal title={`ออมเงินเข้าเป้าหมาย — ${depositGoal.name}`} onClose={() => setDepositGoal(null)}>
+        <Modal title="ออมเงิน" onClose={() => setDepositGoal(null)}>
           <div className="space-y-4">
             {justCompleted ? (
-              <div className="py-6 flex flex-col items-center gap-3 text-center">
+              <div className="py-8 flex flex-col items-center gap-3 text-center">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
                   <Trophy size={34} color="#10b981" />
                 </div>
-                <p className="text-lg font-bold text-slate-800">บรรลุเป้าหมายแล้ว</p>
+                <p className="text-lg font-bold text-slate-800">บรรลุเป้าหมายแล้ว! 🎉</p>
                 <p className="text-sm text-slate-500">{depositGoal.name} ครบตามเป้าหมายแล้ว</p>
                 <button onClick={() => setDepositGoal(null)}
-                  className="mt-2 px-6 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-semibold">
+                  className="mt-2 px-8 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-semibold">
                   ปิด
                 </button>
               </div>
@@ -569,56 +635,45 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
               <>
                 {(() => {
                   const g = goals.find((x) => x.id === depositGoal.id) || depositGoal;
-                  const { current, target, remaining, pct } = goalMath(g);
+                  const { current, remaining, pct } = goalMath(g);
                   return (
-                    <div className="bg-slate-50 rounded-xl p-3">
-                      <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                        <span>ออมแล้ว ฿{fmt(current)}</span>
-                        <span>เหลือ ฿{fmt(remaining)} · {pct.toFixed(0)}%</span>
-                      </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                    <div className="rounded-xl bg-[#EAF3F7] px-4 py-3">
+                      <p className="text-sm font-semibold text-[#2C6488] mb-2">{depositGoal.name}</p>
+                      <div className="w-full bg-[#BFD8E4]/50 rounded-full h-1.5 overflow-hidden mb-2">
                         <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${pct}%` }} />
                       </div>
-                      <p className="text-xs text-slate-400 mt-1.5">เป้าหมาย ฿{fmt(target)}</p>
+                      <div className="flex justify-between text-xs text-[#25536F]">
+                        <span>ออมแล้ว ฿{fmt(current)}</span>
+                        <span>เหลือ ฿{fmt(remaining)}</span>
+                      </div>
                     </div>
                   );
                 })()}
 
-                {depositError && (
-                  <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{depositError}</p>
-                )}
-
-                {!depositGoal.account_id ? (
+                {!depositGoal.account_id && (
                   <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-amber-700">
-                    เป้าหมายนี้ยังไม่ผูกบัญชีเก็บออม กรุณาแก้ไขเป้าหมายและเลือกบัญชีก่อนออมเงิน
-                  </div>
-                ) : (
-                  <div className="bg-[#EAF3F7] border border-[#DCE8EE] rounded-xl p-3 text-sm text-[#25536F] flex items-center gap-2">
-                    <ArrowRightLeft size={16} color="#2C6488" />
-                    การออมเงินนี้จะถูกบันทึกเป็นรายการออมเงินเข้าเป้าหมาย
+                    เป้าหมายนี้ยังไม่ผูกบัญชีเก็บออม กรุณาแก้ไขเป้าหมายก่อน
                   </div>
                 )}
 
                 <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">โอนจากบัญชี</label>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">จากบัญชี</label>
                   <AccountSelect
                     value={depositForm.from_account_id}
                     onChange={(v) => setDepositForm({ ...depositForm, from_account_id: v })}
                     accounts={assetAccounts.filter((a) => a.id !== depositGoal.account_id)}
                     placeholder="เลือกบัญชีต้นทาง"
                   />
-                  {depositGoal.account_id && (
-                    <p className="text-xs text-slate-400 mt-1">
-                      เข้า: {accounts.find((a) => a.id === depositGoal.account_id)?.name || '?'} (฿{fmt(accounts.find((a) => a.id === depositGoal.account_id)?.balance || 0)})
-                    </p>
-                  )}
                 </div>
 
                 <div>
                   <label className="text-xs font-medium text-slate-500 mb-1 block">จำนวนเงิน (฿)</label>
-                  <input type="number" value={depositForm.amount} placeholder="0.00" min="0"
+                  <input
+                    type="number" inputMode="decimal" value={depositForm.amount}
+                    placeholder="0.00" min="0"
                     onChange={(e) => setDepositForm({ ...depositForm, amount: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 text-lg font-bold" />
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-lg font-bold bg-slate-50 text-slate-800"
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -626,25 +681,25 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
                     <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่</label>
                     <input type="date" value={depositForm.date}
                       onChange={(e) => setDepositForm({ ...depositForm, date: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700" />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 mb-1 block">หมายเหตุ</label>
                     <input value={depositForm.note} placeholder="ไม่บังคับ"
                       onChange={(e) => setDepositForm({ ...depositForm, note: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700" />
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-1">
                   <button onClick={() => setDepositGoal(null)}
                     className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium">
                     ยกเลิก
                   </button>
                   <button onClick={doDeposit} disabled={depositSaving || !depositGoal.account_id}
-                    className="flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 bg-[#2C6488]">
-                    <PiggyBank size={15} color="white" />
-                    {depositSaving ? 'กำลังบันทึก...' : 'ออมเงินเข้าเป้าหมาย'}
+                    className="flex-[2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 bg-[#2C6488]">
+                    <PiggyBank size={15} />
+                    {depositSaving ? 'กำลังบันทึก...' : 'ออมเงิน'}
                   </button>
                 </div>
               </>
@@ -652,6 +707,73 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
           </div>
         </Modal>
       )}
+      {withdrawGoal && (
+        <Modal title="ถอนเงินออม" onClose={() => setWithdrawGoal(null)}>
+          <div className="space-y-4">
+            {(() => {
+              const g = goals.find((x) => x.id === withdrawGoal.id) || withdrawGoal;
+              const { current, pct } = goalMath(g);
+              return (
+                <div className="rounded-xl bg-[#EAF3F7] px-4 py-3">
+                  <p className="text-sm font-semibold text-[#2C6488] mb-2">{withdrawGoal.name}</p>
+                  <div className="w-full bg-[#BFD8E4]/50 rounded-full h-1.5 overflow-hidden mb-2">
+                    <div className="h-full rounded-full bg-[#2C6488]" style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-xs text-[#25536F]">ยอดออมปัจจุบัน ฿{fmt(current)}</p>
+                </div>
+              );
+            })()}
+
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">โอนเข้าบัญชี</label>
+              <AccountSelect
+                value={withdrawForm.to_account_id}
+                onChange={(v) => setWithdrawForm({ ...withdrawForm, to_account_id: v })}
+                accounts={assetAccounts.filter((a) => a.id !== withdrawGoal.account_id)}
+                placeholder="เลือกบัญชีปลายทาง"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">จำนวนที่ถอน (฿)</label>
+              <input
+                type="number" inputMode="decimal" value={withdrawForm.amount}
+                placeholder="0.00" min="0" max={withdrawGoal.current_amount}
+                onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-lg font-bold bg-slate-50 text-slate-800"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่</label>
+                <input type="date" value={withdrawForm.date}
+                  onChange={(e) => setWithdrawForm({ ...withdrawForm, date: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">หมายเหตุ</label>
+                <input value={withdrawForm.note} placeholder="ไม่บังคับ"
+                  onChange={(e) => setWithdrawForm({ ...withdrawForm, note: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setWithdrawGoal(null)}
+                className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium">
+                ยกเลิก
+              </button>
+              <button onClick={doWithdraw} disabled={withdrawSaving || !withdrawGoal.account_id}
+                className="flex-[2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 bg-[#2C6488]">
+                <ArrowDownToLine size={15} />
+                {withdrawSaving ? 'กำลังบันทึก...' : 'ถอนเงิน'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {showRefundModal && refundGoal && (
         <Modal title="คืนเงินและลบเป้าหมาย" onClose={() => { setShowRefundModal(false); setRefundGoal(null); }}>
           <div className="space-y-4">

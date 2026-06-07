@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import { Plus, Edit, Trash2, AlertCircle, Wallet, ChartPie, CheckCircle2, Repeat2 } from 'lucide-react';
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
@@ -9,7 +10,6 @@ import { formatDisplayDateRange } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
 
 const getColor = (pct) => pct <= 50 ? '#10b981' : pct <= 80 ? '#f59e0b' : '#ef4444';
-const getBg = (pct) => pct <= 50 ? '#f0fdf4' : pct <= 80 ? '#fffbeb' : '#fff1f2';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const addDays = (date, days) => {
@@ -65,6 +65,7 @@ const BUDGET_TABS = [
   { value: 'month', label: 'รายเดือน' },
   { value: 'year', label: 'รายปี' },
 ];
+const BUDGET_PAGE_SIZE = 6;
 const BUDGET_TYPE_LABEL = {
   week: 'รายสัปดาห์',
   month: 'รายเดือน',
@@ -73,14 +74,15 @@ const BUDGET_TYPE_LABEL = {
 };
 
 export default function BudgetsView({ categories }) {
+  const { showError } = useSnackbar();
   const [budgetList, setBudgetList] = useState([]);
+  const [budgetPage, setBudgetPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
@@ -124,7 +126,6 @@ export default function BudgetsView({ categories }) {
       budget_type: defaultType,
       ...getPresetRange(defaultType),
     });
-    setError('');
     setShowModal(true);
   };
 
@@ -139,25 +140,23 @@ export default function BudgetsView({ categories }) {
       end_date: budget.end_date || addDays(todayStr(), 29),
       is_recurring: !!budget.is_recurring,
     });
-    setError('');
     setShowModal(true);
   };
 
   const save = async () => {
     const amount = parseFloat(form.amount);
-    if (!form.category_id) { setError('กรุณาเลือกหมวดหมู่'); return; }
-    if (!amount || amount <= 0) { setError('วงเงินต้องมากกว่า 0'); return; }
-    if (!form.start_date || !form.end_date) { setError('กรุณาเลือกวันเริ่มต้นและวันสิ้นสุด'); return; }
-    if (new Date(form.end_date) < new Date(form.start_date)) { setError('วันสิ้นสุดต้องไม่น้อยกว่าวันเริ่มต้น'); return; }
+    if (!form.category_id) { showError('กรุณาเลือกหมวดหมู่'); return; }
+    if (!amount || amount <= 0) { showError('วงเงินต้องมากกว่า 0'); return; }
+    if (!form.start_date || !form.end_date) { showError('กรุณาเลือกวันเริ่มต้นและวันสิ้นสุด'); return; }
+    if (new Date(form.end_date) < new Date(form.start_date)) { showError('วันสิ้นสุดต้องไม่น้อยกว่าวันเริ่มต้น'); return; }
     const duplicate = budgetList.find((b) =>
       b.id !== editId &&
       b.category_id === form.category_id &&
       (b.budget_type || 'custom') === form.budget_type
     );
-    if (duplicate) { setError(`หมวดหมู่นี้มีงบประมาณ${BUDGET_TYPE_LABEL[form.budget_type] || ''}อยู่แล้ว`); return; }
+    if (duplicate) { showError(`หมวดหมู่นี้มีงบประมาณ${BUDGET_TYPE_LABEL[form.budget_type] || ''}อยู่แล้ว`); return; }
 
-    setSaving(true); setError('');
-    try {
+    setSaving(true); try {
       const body = {
         category_id: form.category_id,
         amount,
@@ -170,7 +169,7 @@ export default function BudgetsView({ categories }) {
       else await budgetsApi.create(body);
       await fetchAll();
       setShowModal(false);
-    } catch (err) { setError(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
 
@@ -189,7 +188,7 @@ export default function BudgetsView({ categories }) {
       await budgetsApi.delete(deleteTarget.id);
       await fetchAll();
       setDeleteTarget(null);
-    } catch (err) { alert(err.message); }
+    } catch (err) { showError(err.message); }
     finally { setDeleting(false); }
   };
 
@@ -198,6 +197,11 @@ export default function BudgetsView({ categories }) {
     : budgetList.filter((b) => (b.budget_type || 'custom') === activeTab);
   const totalLimit = visibleBudgets.reduce((s, b) => s + b.amount, 0);
   const totalSpent = visibleBudgets.reduce((s, b) => s + (b.spent || 0), 0);
+  const budgetTotalPages = Math.max(1, Math.ceil(visibleBudgets.length / BUDGET_PAGE_SIZE));
+  const budgetSafePage   = Math.min(budgetPage, budgetTotalPages);
+  const budgetPageNums   = Array.from({ length: budgetTotalPages }, (_, i) => i + 1)
+    .filter((p) => budgetTotalPages <= 7 || p === 1 || p === budgetTotalPages || Math.abs(p - budgetSafePage) <= 1);
+  const pagedBudgets     = visibleBudgets.slice((budgetSafePage - 1) * BUDGET_PAGE_SIZE, budgetSafePage * BUDGET_PAGE_SIZE);
   const totalPct = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0;
   const totalRemaining = Math.max(0, totalLimit - totalSpent);
 
@@ -255,7 +259,7 @@ export default function BudgetsView({ categories }) {
             <button
               key={tab.value}
               type="button"
-              onClick={() => setActiveTab(tab.value)}
+              onClick={() => { setActiveTab(tab.value); setBudgetPage(1); }}
               className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
                 active ? 'bg-[#2C6488] text-white border-[#2C6488]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#BFD8E4]'
               }`}
@@ -283,8 +287,9 @@ export default function BudgetsView({ categories }) {
           </button>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {visibleBudgets.map((budget) => {
+          {pagedBudgets.map((budget) => {
             const spent = budget.spent || 0;
             const pct = budget.amount > 0 ? Math.min(100, Math.round((spent / budget.amount) * 100)) : 0;
             const color = getColor(pct);
@@ -367,12 +372,35 @@ export default function BudgetsView({ categories }) {
             );
           })}
         </div>
+        {visibleBudgets.length > BUDGET_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 px-1 py-3 mt-2 border-t border-slate-100 col-span-full">
+              <p className="text-xs text-slate-500">
+                แสดง {(budgetSafePage - 1) * BUDGET_PAGE_SIZE + 1}–{Math.min(budgetSafePage * BUDGET_PAGE_SIZE, visibleBudgets.length)} จาก {visibleBudgets.length} รายการ
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setBudgetPage((p) => Math.max(1, p - 1))} disabled={budgetSafePage === 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  ก่อนหน้า
+                </button>
+                {budgetPageNums.map((p, i) => (
+                  <button key={`${p}-${i}`} type="button" onClick={() => setBudgetPage(p)}
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${budgetSafePage === p ? 'bg-[#2C6488] border-[#2C6488] text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-[#EAF3F7]'}`}>
+                    {p}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setBudgetPage((p) => Math.min(budgetTotalPages, p + 1))} disabled={budgetSafePage === budgetTotalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  ถัดไป
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {showModal && (
         <Modal title={editId ? 'แก้ไขงบประมาณ' : 'เพิ่มงบประมาณ'} onClose={() => setShowModal(false)}>
           <div className="space-y-4">
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1 block">หมวดหมู่</label>
