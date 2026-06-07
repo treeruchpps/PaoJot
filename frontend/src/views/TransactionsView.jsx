@@ -445,7 +445,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   const [ocrItems,      setOcrItems]     = useState([]);  // [{ name, amount, note, category_id, include }]
   const [ocrAccount,    setOcrAccount]   = useState('');
   const [ocrDate,       setOcrDate]      = useState(today);
-  const [ocrNote,       setOcrNote]      = useState('');
+  const [ocrNote]                       = useState('');
   const [ocrVatAmount,  setOcrVatAmount] = useState('');
   const [ocrVatMode,    setOcrVatMode]   = useState('include'); // include | exclude
   const [ocrDiscountAmount, setOcrDiscountAmount] = useState('');
@@ -550,24 +550,6 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
     if (results.some((r) => r.status === 'rejected' || r.status === 'error')) return 'text-red-500';
     if (results.some((r) => r.status === 'done') || job?.status === 'done') return 'text-emerald-600';
     return 'text-[#2C6488]';
-  };
-
-  const openOcrModal = (type) => {
-    if (!hasAccounts) return;
-    const pendingScan = scanJobsList[0];
-    const pendingReceipt = receiptJobsList[0];
-    const pendingSlip = slipJobsList[0];
-    if (pendingScan || pendingReceipt || pendingSlip) {
-      setOcrError('มีรายการที่สแกนยังไม่ได้จัดการ กรุณาตรวจสอบหรือยกเลิกก่อนเริ่มสแกนใหม่');
-      if (pendingScan) openScanJob(pendingScan.id);
-      else if (pendingReceipt) openReceiptJob(pendingReceipt.id);
-      else openSlipJob(pendingSlip.id);
-      return;
-    }
-    setOcrSource('scan');
-    setOcrModal(type); setOcrStep('upload'); setOcrFiles([]); setOcrPreviews([]);
-    setOcrPreview(''); setOcrError(''); setOcrData(null); setReceiptJob(null); setActiveReceipt(null);
-    setOcrNote(''); setOcrVatAmount(''); setOcrVatMode('include'); setOcrDiscountAmount(''); setOcrDiscountMode('prorate');
   };
 
   const clearBlockedReceiptResults = async (job = receiptJob) => {
@@ -1615,16 +1597,6 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               </div>
             )}
           </div>
-
-          {/* Unified scan upload */}
-          <input ref={ocrFileRef} type="file" accept="image/*,.heic,.heif" multiple className="hidden"
-            onChange={(e) => { handleOcrFileSelect(e.target.files); e.target.value = ''; }} />
-
-          <button onClick={() => openOcrModal('receipt')} disabled={!hasAccounts} title={!hasAccounts ? 'ต้องสร้างบัญชีก่อน' : ''}
-            className={`text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white hover:bg-[#25536F] hover:border-[#25536F] transition-colors ${!hasAccounts ? 'opacity-45 cursor-not-allowed hover:bg-[#2C6488] hover:border-[#2C6488]' : ''}`}>
-            <ScanLine size={13} color="#ffffff" />
-            สแกนเอกสาร
-          </button>
 
           {/* Export CSV */}
           <button onClick={exportCSV} disabled={exporting}

@@ -197,6 +197,18 @@ func validateQuickEntryInput(mode, text string) string {
 	}
 
 	last := matches[len(matches)-1]
+
+	// Reject numbers embedded in ASCII alphanumeric tokens e.g. "50d", "SIU50", "30kg"
+	isASCIIAlnum := func(b byte) bool {
+		return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
+	}
+	if last[0] > 0 && isASCIIAlnum(text[last[0]-1]) {
+		return "ยังไม่พบจำนวนเงินครับ ลองพิมพ์ชื่อรายการพร้อมจำนวนเงิน เช่น \"กาแฟ 50\""
+	}
+	if last[1] < len(text) && isASCIIAlnum(text[last[1]]) {
+		return "ยังไม่พบจำนวนเงินครับ ลองพิมพ์ชื่อรายการพร้อมจำนวนเงิน เช่น \"กาแฟ 50\""
+	}
+
 	amountText := text[last[0]:last[1]]
 	amount, err := strconv.ParseFloat(strings.ReplaceAll(amountText, ",", ""), 64)
 	if err != nil || amount <= 0 {

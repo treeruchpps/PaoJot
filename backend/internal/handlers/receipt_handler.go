@@ -656,6 +656,8 @@ func looksLikeSlipInReceiptFlow(text string, parsed *ReceiptData) bool {
 		"kasikorn",
 		"เลขที่รายการ", "เลขอ้างอิง", "รหัสอ้างอิง", "พร้อมเพย์", "โอนเงิน",
 		"จากบัญชี", "ไปยังบัญชี", "ผู้โอน", "ผู้รับ", "ผู้รับเงิน", "ธนาคาร",
+		// G-Wallet / ถุงเงิน
+		"g-wallet", "g wallet", "ถุงเงิน", "ทำรายการสำเร็จ", "จำนวนเงินที่ชำระ", "คนละครึ่ง",
 	}
 
 	hints := 0
@@ -715,6 +717,10 @@ const (
 
 func classifyOCRDocument(text string) ocrDocType {
 	t := strings.ToLower(text)
+	if hasStrongSlipEvidence(text) {
+		return ocrDocSlip
+	}
+
 	slipKeywords := []string{
 		"promptpay", "พร้อมเพย์", "transfer", "โอนเงิน", "โอนสำเร็จ", "ชำระเงินสำเร็จ", "สลิป",
 		"sender", "receiver", "from account", "to account", "account no",
@@ -722,6 +728,9 @@ func classifyOCRDocument(text string) ocrDocType {
 		"จากบัญชี", "ไปยังบัญชี", "ผู้โอน", "ผู้รับ", "ผู้รับเงิน",
 		"ธนาคาร", "kbank", "scb", "krungthai", "ktb", "bangkok bank", "bbl",
 		"kasikorn", "กสิกร", "ไทยพาณิชย์", "กรุงไทย", "กรุงเทพ", "กรุงศรี", "ออมสิน",
+		// G-Wallet / ถุงเงิน (คนละครึ่ง, ดิจิทัลวอลเล็ต)
+		"g-wallet", "g wallet", "ถุงเงิน", "ทำรายการสำเร็จ", "รหัสอ้างอิง",
+		"คนละครึ่ง", "จำนวนเงินที่ชำระ", "ค่าสินค้า/บริการ",
 	}
 	receiptKeywords := []string{
 		"receipt", "tax invoice", "invoice", "vat", "subtotal", "total", "cash", "change",
@@ -744,14 +753,6 @@ func classifyOCRDocument(text string) ocrDocType {
 		}
 	}
 
-	strongSlipEvidence := strings.Contains(t, "ชำระเงินสำเร็จ") ||
-		strings.Contains(t, "สแกนตรวจสอบสลิป") ||
-		strings.Contains(t, "เลขที่รายการ") ||
-		strings.Contains(t, "ค่าธรรมเนียม") ||
-		strings.Contains(t, "k+")
-	if strongSlipEvidence && slipScore >= receiptScore {
-		return ocrDocSlip
-	}
 	if slipScore >= 2 && slipScore > receiptScore {
 		return ocrDocSlip
 	}
@@ -759,6 +760,31 @@ func classifyOCRDocument(text string) ocrDocType {
 		return ocrDocReceipt
 	}
 	return ocrDocUnknown
+}
+
+func hasStrongSlipEvidence(text string) bool {
+	t := strings.ToLower(text)
+	hasPromptPayTransferContext := (strings.Contains(t, "promptpay") || strings.Contains(t, "พร้อมเพย์")) &&
+		(strings.Contains(t, "ผู้โอน") ||
+			strings.Contains(t, "ผู้รับ") ||
+			strings.Contains(t, "ผู้รับเงิน") ||
+			strings.Contains(t, "จากบัญชี") ||
+			strings.Contains(t, "ไปยังบัญชี") ||
+			strings.Contains(t, "เลขที่รายการ"))
+
+	// G-Wallet / ถุงเงิน slip: มี "ทำรายการสำเร็จ" + "รหัสอ้างอิง" (UUID ยาว) หรือ G-Wallet ID
+	hasGWalletSlipContext := (strings.Contains(t, "ทำรายการสำเร็จ") || strings.Contains(t, "g-wallet") || strings.Contains(t, "ถุงเงิน")) &&
+		(strings.Contains(t, "รหัสอ้างอิง") || strings.Contains(t, "จำนวนเงินที่ชำระ"))
+
+	return strings.Contains(t, "ชำระเงินสำเร็จ") ||
+		strings.Contains(t, "โอนสำเร็จ") ||
+		strings.Contains(t, "ทำรายการสำเร็จ") ||
+		strings.Contains(t, "สแกนตรวจสอบสลิป") ||
+		strings.Contains(t, "เลขที่รายการ") ||
+		strings.Contains(t, "ค่าธรรมเนียม") ||
+		strings.Contains(t, "k+") ||
+		hasPromptPayTransferContext ||
+		hasGWalletSlipContext
 }
 
 func hasSlipTransferEvidence(text string, parsed *SlipData) bool {
@@ -850,7 +876,8 @@ var ocrDocumentClassifierPrompt = `คุณคือระบบแยกปร
 
 นิยาม:
 - receipt = ใบเสร็จ/บิล/ใบกำกับภาษี มีร้านค้า รายการสินค้า/บริการ จำนวน ราคา subtotal/total/VAT/cashier/change
-- slip = สลิปโอนเงิน/หลักฐานธุรกรรมธนาคาร มีผู้โอน ผู้รับ บัญชี ธนาคาร PromptPay เลขอ้างอิง รายการโอน วันที่เวลาโอน ยอดโอน
+- slip = สลิปโอนเงิน/หลักฐานธุรกรรม มีผู้โอน ผู้รับ บัญชี ธนาคาร PromptPay เลขอ้างอิง รายการโอน วันที่เวลาโอน ยอดโอน
+  รวมถึง: G-Wallet, ถุงเงิน, คนละครึ่ง, เป๋าตัง, สลิปดิจิทัลวอลเล็ต
 - unknown = ข้อมูลไม่พอ หรือไม่มั่นใจ
 
 กฎสำคัญ:
@@ -858,6 +885,8 @@ var ocrDocumentClassifierPrompt = `คุณคือระบบแยกปร
 - ถ้ามีโครงสร้างผู้โอน/ผู้รับ/บัญชี/ธนาคาร/PromptPay/ยอดโอน ให้จัดเป็น slip
 - ถ้ามีรายการสินค้า/บริการหลายรายการพร้อมราคา ร้านค้า หรือภาษี ให้จัดเป็น receipt
 - ถ้ามีทั้งสองแบบ ให้เลือกชนิดที่เป็นเอกสารหลักจากบริบททั้งหมด
+- "ทำรายการสำเร็จ" + "รหัสอ้างอิง" + G-Wallet ID → slip เสมอ แม้จะมี "ค่าสินค้า/บริการ" หรือ "สิทธิคนละครึ่ง" ปรากฏอยู่ด้วย
+- ถ้ามี sender→receiver structure (มีลูกศร ↓ หรือมีชื่อผู้โอนและผู้รับ) → slip
 - confidence ต้องอยู่ระหว่าง 0 และ 1`
 
 func (h *ReceiptHandler) callOCRDocumentClassifier(ocrText string) (ocrDocType, float64, error) {

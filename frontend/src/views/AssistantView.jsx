@@ -1,19 +1,38 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { 
-  MessageCircle, Send, Sparkles, AlertCircle, CheckCircle2, 
+  MessageCircle, Send, Sparkles, AlertCircle, CheckCircle2,
   Repeat2, PiggyBank, RefreshCw, HelpCircle,
-  Lightbulb, BarChart2, ArrowRight, Check, Edit3, 
-  CreditCard, TrendingUp, AlertTriangle, Info, Calendar
+  Lightbulb, BarChart2, ArrowRight, Check, Edit3,
+  CreditCard, TrendingUp, AlertTriangle, Info, Calendar, ImagePlus, X,
+  ChevronLeft, ChevronRight, ChevronDown,
+  DollarSign, Briefcase, Star, Smartphone
 } from 'lucide-react';
 import { 
   quickEntry, savingsGoals, transactions, budgets as budgetsApi, 
-  notifications as notiApi, aiSummary as aiSummaryApi 
+  notifications as notiApi, aiSummary as aiSummaryApi, scanJobs as scanJobsApi
 } from '../services/api';
+import Icon from '../components/common/Icon';
 import { fmt } from '../constants/data';
 import { getTransactionAccounts } from '../utils/accountFilters';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (s) => {
+  if (!s) return '-';
+  const parts = String(s).split('-');
+  if (parts.length !== 3) return s;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
 const messageId = () => crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+const API_BASE_URL = 'http://localhost:8080';
+
+const scanImageSrc = (image) => {
+  if (!image) return '';
+  if (image.preview_url) return image.preview_url;
+  if (image.image_path) {
+    return image.image_path.startsWith('http') ? image.image_path : `${API_BASE_URL}${image.image_path}`;
+  }
+  return image.url || '';
+};
 
 const MODE_META = {
   expense: { label: 'รายจ่าย', tone: '#ef4444', bg: '#fff1f2', placeholder: 'เช่น กาแฟ 50 หรือ ข้าวกะเพรา 60' },
@@ -106,6 +125,127 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [] }) 
   );
 }
 
+// ─── Scan-bubble account-kind helpers ────────────────────────────────────────
+const SCAN_ACC_KIND_META = {
+  cash:         { icon: 'DollarSign', color: '#10b981' },
+  bank_account: { icon: 'Briefcase',  color: '#2C6488' },
+  savings:      { icon: 'Star',       color: '#f59e0b' },
+  e_wallet:     { icon: 'Smartphone', color: '#2C6488' },
+  investment:   { icon: 'TrendingUp', color: '#5F9A7A' },
+};
+
+// ─── ScanCatSelect ───────────────────────────────────────────────────────────
+function ScanCatSelect({ value, onChange, categories, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = categories.find((c) => String(c.id) === String(value));
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  const btnCls = compact
+    ? 'w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-[#DCE8EE] bg-white text-[11px] text-slate-700 hover:border-[#BFD8E4] transition-colors'
+    : 'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-[#DCE8EE] bg-white text-xs text-slate-700 hover:border-[#BFD8E4] transition-colors';
+  return (
+    <div ref={ref} className="relative flex-1 min-w-0">
+      <button type="button" onClick={() => setOpen((o) => !o)} className={btnCls}>
+        {selected ? (
+          <>
+            <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+              style={{ background: (selected.color || '#94a3b8') + '25' }}>
+              <Icon name={selected.icon} size={10} color={selected.color || '#94a3b8'} />
+            </div>
+            <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
+          </>
+        ) : (
+          <span className="flex-1 text-left text-slate-400">หมวดหมู่</span>
+        )}
+        <ChevronDown size={11} color="#94a3b8"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+          {categories.map((c) => (
+            <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-2.5 py-2 text-xs hover:bg-slate-50 transition-colors"
+              style={{ background: String(value) === String(c.id) ? (c.color || '#94a3b8') + '10' : undefined }}>
+              <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+                style={{ background: (c.color || '#94a3b8') + '25' }}>
+                <Icon name={c.icon} size={10} color={c.color || '#94a3b8'} />
+              </div>
+              <span className="flex-1 text-left font-medium"
+                style={{ color: String(value) === String(c.id) ? (c.color || '#374151') : '#374151' }}>
+                {c.name}
+              </span>
+              {String(value) === String(c.id) && (
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ScanAccSelect ───────────────────────────────────────────────────────────
+function ScanAccSelect({ value, onChange, accounts }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = accounts.find((a) => String(a.id) === String(value));
+  const km = (kind) => SCAN_ACC_KIND_META[kind] || { icon: 'DollarSign', color: '#94a3b8' };
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  return (
+    <div ref={ref} className="relative w-full">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-[#DCE8EE] bg-white text-xs text-slate-700 hover:border-[#BFD8E4] transition-colors">
+        {selected ? (
+          <>
+            <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+              style={{ background: km(selected.kind).color + '25' }}>
+              <Icon name={km(selected.kind).icon} size={11} color={km(selected.kind).color} />
+            </div>
+            <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
+            <span className="text-[10px] font-semibold flex-shrink-0 text-slate-500">฿{fmt(selected.balance)}</span>
+          </>
+        ) : (
+          <span className="flex-1 text-left text-slate-400">เลือกบัญชี</span>
+        )}
+        <ChevronDown size={11} color="#94a3b8"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+          {accounts.map((a) => (
+            <button key={a.id} type="button" onClick={() => { onChange(a.id); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-2.5 py-2 text-xs hover:bg-slate-50 transition-colors"
+              style={{ background: String(value) === String(a.id) ? km(a.kind).color + '10' : undefined }}>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                style={{ background: km(a.kind).color + '25' }}>
+                <Icon name={km(a.kind).icon} size={11} color={km(a.kind).color} />
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <p className="font-medium truncate"
+                  style={{ color: String(value) === String(a.id) ? km(a.kind).color : '#374151' }}>{a.name}</p>
+                <p className="text-[10px] text-slate-500">฿{fmt(a.balance)}</p>
+              </div>
+              {String(value) === String(a.id) && (
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: km(a.kind).color }} />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function AssistantView({ accounts = [], categories = [], onRefresh, onGoAccounts, onGoGoals }) {
   const [mode, setMode] = useState('expense');
   const [input, setInput] = useState('');
@@ -127,11 +267,29 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const [saving, setSaving] = useState(false);
   const chatBottomRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const prevMsgCountRef = useRef(0);
+  const scanFileRef = useRef(null);
+  const scanPreviewUrlsRef = useRef([]);
+  const preValidatedRef = useRef(null);
 
 
 
   // AI Summary state
   const [aiLoading, setAiLoading] = useState(false);
+  const [scanUploading, setScanUploading] = useState(false);
+  const [scanJobDetails, setScanJobDetails] = useState({});
+  const [scanReview, setScanReview] = useState({});
+  const [scanSaving, setScanSaving] = useState({});
+  const [scanEditMode, setScanEditMode] = useState({});
+  const [scanItemState, setScanItemState] = useState({}); // key: `${resultId}-${itemIdx}`, val: 'saving'|'saved'|'skipped'
+  const [scanImageViewer, setScanImageViewer] = useState(null);
+
+  useEffect(() => {
+    return () => {
+      scanPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      scanPreviewUrlsRef.current = [];
+    };
+  }, []);
 
   const assetAccounts = useMemo(() => getTransactionAccounts(accounts), [accounts]);
   const modeCategories = useMemo(() => categories.filter((c) => c.type === mode), [categories, mode]);
@@ -167,6 +325,58 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             role: 'ai_summary',
             period: msg.period,
             summary: msg.summary,
+          };
+        }
+        if (msg.role === 'scan_job') {
+          return {
+            id: msg.id,
+            role: 'scan_job',
+            job_id: msg.job_id,
+            status: msg.status || 'pending',
+            total_count: Number(msg.total_count || 0),
+            done_count: Number(msg.done_count || 0),
+            ready_count: Number(msg.ready_count || 0),
+            rejected_count: Number(msg.rejected_count || 0),
+            saved_count: Number(msg.saved_count || 0),
+            skipped_count: Number(msg.skipped_count || 0),
+            error_count: Number(msg.error_count || 0),
+            error_msg: msg.error_msg || '',
+          };
+        }
+        if (msg.role === 'user_images') {
+          return {
+            id: msg.id,
+            role: 'user_images',
+            text: msg.text || '',
+            job_id: msg.job_id || '',
+            upload_status: msg.upload_status || '',
+            images: (msg.images || [])
+              .filter((image) => image.image_path || (image.url && !String(image.url).startsWith('blob:')))
+              .map((image) => ({
+                id: image.id || messageId(),
+                name: image.name || '',
+                image_path: image.image_path || '',
+                url: image.url || '',
+                status: image.status || '',
+                document_type: image.document_type || '',
+              })),
+          };
+        }
+        if (msg.role === 'scan_result') {
+          return {
+            id: msg.id,
+            role: 'scan_result',
+            job_id: msg.job_id || '',
+            result_id: msg.result_id || '',
+            image_index: msg.image_index ?? 0,
+            status: msg.status || 'uploading',
+            image_path: msg.image_path || '',
+            name: msg.name || '',
+            filename: msg.filename || '',
+            document_type: msg.document_type || '',
+            error_msg: msg.error_msg || '',
+            slip: msg.slip || null,
+            data: msg.data || null,
           };
         }
         return {
@@ -279,10 +489,20 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     });
   }, [notifications, chatLoaded, saveChatLog]);
 
-  // Scroll to bottom of chat
+  // Scroll to bottom only when new messages are added (not on status-update polls)
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, parsing, aiLoading]);
+    const count = messages.length;
+    if (count > prevMsgCountRef.current) {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+    prevMsgCountRef.current = count;
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (parsing || aiLoading) {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [parsing, aiLoading]);
 
 
 
@@ -312,6 +532,321 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       return next;
     });
   };
+
+  const summarizeScanJob = useCallback((job) => {
+    const results = job?.results || [];
+    return {
+      status: job?.status || 'pending',
+      total_count: Number(job?.total_count || 0),
+      done_count: Number(job?.done_count || 0),
+      ready_count: results.filter((r) => r.status === 'done').length,
+      rejected_count: results.filter((r) => r.status === 'rejected').length,
+      saved_count: results.filter((r) => r.status === 'saved').length,
+      skipped_count: results.filter((r) => r.status === 'skipped').length,
+      error_count: results.filter((r) => r.status === 'error').length,
+      receipt_count: results.filter((r) => r.document_type === 'receipt').length,
+      slip_count: results.filter((r) => r.document_type === 'slip').length,
+      error_msg: job?.error_msg || '',
+    };
+  }, []);
+
+  const upsertScanJobMessage = useCallback((job) => {
+    if (!job?.id) return;
+    const summary = summarizeScanJob(job);
+    const jobResults = job.results || [];
+    const allResultsHandled = jobResults.length > 0
+      && jobResults.every((result) => ['saved', 'skipped'].includes(result.status));
+    setScanJobDetails((prev) => ({ ...prev, [job.id]: job }));
+    setMessages((prev) => {
+      let changed = false;
+      const jobIdx = prev.findIndex((m) => m.role === 'scan_job' && m.job_id === job.id);
+      const jobMsg = {
+        id: jobIdx >= 0 ? prev[jobIdx].id : messageId(),
+        role: 'scan_job',
+        job_id: job.id,
+        ...summary,
+      };
+
+      let next = prev.map((msg) => {
+        // Update scan_job progress message
+        if (msg.role === 'scan_job' && msg.job_id === job.id) {
+          changed = true;
+          if (allResultsHandled) return null;
+          return { ...msg, ...jobMsg };
+        }
+        // Update individual scan_result bubbles
+        if (msg.role === 'scan_result' && msg.job_id === job.id) {
+          const result = (job.results || []).find((r) => r.id === msg.result_id)
+            || (job.results || [])[msg.image_index];
+          if (!result) return msg;
+          const newStatus = result.status === 'pending' ? 'scanning' : result.status;
+          if (
+            msg.status === newStatus
+            && msg.result_id === result.id
+            && msg.image_path === (result.image_path || '')
+          ) return msg;
+          changed = true;
+          return {
+            ...msg,
+            result_id: result.id || msg.result_id,
+            status: newStatus,
+            image_path: result.image_path || msg.image_path,
+            document_type: result.document_type || msg.document_type,
+            filename: result.filename || msg.filename,
+            error_msg: result.error_msg || '',
+            slip: result.slip !== undefined ? result.slip : msg.slip,
+            data: result.data !== undefined ? result.data : msg.data,
+          };
+        }
+        return msg;
+      }).filter(Boolean);
+
+      // Add scan_job message if not present (e.g. old chat loaded from DB)
+      if (jobIdx < 0 && !allResultsHandled) {
+        changed = true;
+        next = [...next, jobMsg];
+      }
+
+      if (!changed) return prev;
+      saveChatLog(next);
+      return next;
+    });
+  }, [saveChatLog, summarizeScanJob]);
+
+  const getDefaultCategoryId = useCallback((type = 'expense') => {
+    return categories.find((cat) => cat.type === type)?.id || '';
+  }, [categories]);
+
+  const getReceiptTotal = (data) => {
+    return (data?.items || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  };
+
+  const buildScanReviewValue = useCallback((result) => {
+    const isSlip = result.document_type === 'slip';
+    const slip = result.slip || {};
+    const receipt = result.data || {};
+    const amount = isSlip ? Number(slip.amount || 0) : getReceiptTotal(receipt);
+    const txType = 'expense';
+    const categoryType = 'expense';
+    const name = isSlip
+      ? (slip.receiver || slip.sender || 'สลิปโอนเงิน')
+      : (receipt.merchant || 'ใบเสร็จ');
+    // Receipt-only: items + VAT/discount from scan data
+    const defaultCatId = getDefaultCategoryId('expense');
+    const items = !isSlip
+      ? (receipt.items || []).filter((it) => (it.amount || 0) > 0).map((it) => ({
+          name: it.name || '',
+          amount: Number(it.amount) || 0,
+          note: it.note || '',
+          category_id: defaultCatId,
+        }))
+      : [];
+    const vatAmount = !isSlip && receipt.vat?.amount > 0 ? String(receipt.vat.amount) : '';
+    const vatMode = !isSlip && receipt.vat?.mode === 'exclude' ? 'exclude' : 'include';
+    const discountAmount = !isSlip && receipt.discount?.amount > 0 ? String(receipt.discount.amount) : '';
+    const discountMode = !isSlip && receipt.discount?.mode === 'ignore' ? 'ignore' : 'prorate';
+    return {
+      tx_type: txType,
+      account_id: assetAccounts[0]?.id || '',
+      category_id: getDefaultCategoryId(categoryType),
+      name,
+      amount: amount > 0 ? amount.toFixed(2) : '',
+      transaction_date: (isSlip ? slip.date : receipt.date) || todayStr(),
+      items,
+      vatAmount,
+      vatMode,
+      discountAmount,
+      discountMode,
+    };
+  }, [assetAccounts, getDefaultCategoryId]);
+
+  const ensureScanReview = useCallback((job) => {
+    const results = job?.results || [];
+    if (results.length === 0) return;
+    setScanReview((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      results.forEach((result) => {
+        if (result.status === 'done' && !next[result.id]) {
+          next[result.id] = buildScanReviewValue(result);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [buildScanReviewValue]);
+
+  const handleScanFiles = async (fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (files.length === 0 || scanUploading) return;
+    if (files.length > 20) {
+      addMessage({ role: 'bot', text: 'อัปโหลดได้สูงสุด 20 รูปต่อหนึ่งงานสแกนครับ ถ้ามีมากกว่านี้ให้แบ่งอัปโหลดเป็นงานใหม่ได้เรื่อย ๆ' });
+      return;
+    }
+    const imageFiles = files.filter((file) => {
+      const name = (file.name || '').toLowerCase();
+      return file.type.startsWith('image/') || name.endsWith('.heic') || name.endsWith('.heif');
+    });
+    if (imageFiles.length === 0) {
+      addMessage({ role: 'bot', text: 'รองรับเฉพาะรูปภาพ JPG, PNG, HEIC หรือ HEIF ครับ' });
+      return;
+    }
+    closeActiveChoices();
+    setScanUploading(true);
+    const userImageMessageId = messageId();
+    const localImages = imageFiles.map((file) => {
+      const name = file.name || 'image';
+      const lowerName = name.toLowerCase();
+      const canPreview = !lowerName.endsWith('.heic') && !lowerName.endsWith('.heif');
+      let previewUrl = '';
+      if (canPreview) {
+        previewUrl = URL.createObjectURL(file);
+        scanPreviewUrlsRef.current.push(previewUrl);
+      }
+      return {
+        id: messageId(),
+        name,
+        preview_url: previewUrl,
+        is_local: true,
+      };
+    });
+    // Generate stable IDs for individual scan_result bubbles
+    const scanResultMsgIds = localImages.map(() => messageId());
+
+    setMessages((prev) => {
+      const next = [
+        ...prev,
+        {
+          id: userImageMessageId,
+          role: 'user_images',
+          text: `ส่งรูป ${imageFiles.length} รูป`,
+          upload_status: 'uploading',
+          images: localImages,
+        },
+        // One spinner bubble per image, shown immediately
+        ...localImages.map((img, idx) => ({
+          id: scanResultMsgIds[idx],
+          role: 'scan_result',
+          job_id: null,
+          result_id: null,
+          image_index: idx,
+          status: 'uploading',
+          preview_url: img.preview_url,
+          name: img.name,
+          filename: img.name,
+          image_path: '',
+          document_type: '',
+          error_msg: '',
+          slip: null,
+          data: null,
+        })),
+      ];
+      saveChatLog(next);
+      return next;
+    });
+    try {
+      const res = await scanJobsApi.create(imageFiles);
+      const job = await scanJobsApi.get(res.job_id);
+      const serverImages = (job.results || []).map((result, index) => ({
+        id: result.id || localImages[index]?.id || messageId(),
+        name: result.filename || localImages[index]?.name || `รูปที่ ${index + 1}`,
+        image_path: result.image_path || '',
+        status: result.status || '',
+        document_type: result.document_type || '',
+      }));
+      // Update user_images + all scan_result bubbles with server data
+      setMessages((prev) => {
+        const next = prev.map((msg) => {
+          if (msg.id === userImageMessageId) {
+            return {
+              ...msg,
+              text: `ส่งรูป ${serverImages.length || imageFiles.length} รูป`,
+              job_id: job.id,
+              upload_status: 'done',
+              images: serverImages.length > 0 ? serverImages : msg.images,
+            };
+          }
+          if (msg.role === 'scan_result' && scanResultMsgIds.includes(msg.id)) {
+            const idx = scanResultMsgIds.indexOf(msg.id);
+            const result = (job.results || [])[idx];
+            if (!result) return { ...msg, job_id: job.id, status: 'scanning' };
+            return {
+              ...msg,
+              job_id: job.id,
+              result_id: result.id,
+              status: result.status === 'pending' ? 'scanning' : result.status,
+              image_path: result.image_path || '',
+              document_type: result.document_type || '',
+              filename: result.filename || msg.name,
+              slip: result.slip || null,
+              data: result.data || null,
+            };
+          }
+          return msg;
+        });
+        saveChatLog(next);
+        return next;
+      });
+      upsertScanJobMessage(job);
+    } catch (err) {
+      setMessages((prev) => {
+        const next = prev.map((msg) => {
+          if (msg.id === userImageMessageId) return { ...msg, upload_status: 'error' };
+          if (msg.role === 'scan_result' && scanResultMsgIds.includes(msg.id)) return { ...msg, status: 'error', error_msg: err.message || 'อัปโหลดไม่สำเร็จ' };
+          return msg;
+        });
+        saveChatLog(next);
+        return next;
+      });
+      addMessage({ role: 'bot', text: err.message || 'อัปโหลดเอกสารไม่สำเร็จครับ' });
+    } finally {
+      setScanUploading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!chatLoaded) return undefined;
+    const activeJobIds = [...new Set(messages
+      .filter((m) => m.role === 'scan_job' && ['pending', 'processing'].includes(m.status))
+      .map((m) => m.job_id)
+      .filter(Boolean))];
+    if (activeJobIds.length === 0) return undefined;
+
+    let cancelled = false;
+    const refreshScanJobs = async () => {
+      for (const jobId of activeJobIds) {
+        try {
+          const job = await scanJobsApi.get(jobId);
+          if (!cancelled) upsertScanJobMessage(job);
+        } catch {}
+      }
+    };
+    refreshScanJobs();
+    const timer = setInterval(refreshScanJobs, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [chatLoaded, messages, upsertScanJobMessage]);
+
+  useEffect(() => {
+    if (!chatLoaded) return;
+    const jobIds = [...new Set(messages
+      .filter((m) => m.role === 'scan_job')
+      .map((m) => m.job_id)
+      .filter(Boolean))];
+    jobIds.forEach(async (jobId) => {
+      if (scanJobDetails[jobId]) {
+        ensureScanReview(scanJobDetails[jobId]);
+        return;
+      }
+      try {
+        const job = await scanJobsApi.get(jobId);
+        setScanJobDetails((prev) => ({ ...prev, [jobId]: job }));
+        ensureScanReview(job);
+      } catch {}
+    });
+  }, [chatLoaded, messages, scanJobDetails, ensureScanReview]);
 
   const changeMode = (nextMode) => {
     if (nextMode === mode) return;
@@ -504,7 +1039,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     parseText(textToContinue, { goalId: id, accountId: effectiveAccountId });
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const text = input.trim();
     if (!text || parsing || saving || !chatLoaded) return;
     setInput('');
@@ -570,6 +1105,17 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       return;
     }
 
+    // Validate format first — before asking for account/goal
+    setParsing(true);
+    try {
+      preValidatedRef.current = await quickEntry.parse({ mode, text });
+    } catch (err) {
+      addMessage({ role: 'bot', text: err.message || 'รูปแบบไม่ถูกต้อง ลองพิมพ์ใหม่ครับ' });
+      setParsing(false);
+      return;
+    }
+    setParsing(false);
+
     if (mode === 'saving' && !goalId) {
       askGoal(text);
       return;
@@ -601,7 +1147,13 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     if (!text) return;
     setParsing(true);
     try {
-      const result = await quickEntry.parse({ mode, text });
+      let result;
+      if (preValidatedRef.current) {
+        result = preValidatedRef.current;
+        preValidatedRef.current = null;
+      } else {
+        result = await quickEntry.parse({ mode, text });
+      }
       
       const activeAccId = overrides.accountId || accountId;
       const activeToAccId = overrides.toAccountId || toAccountId;
@@ -882,8 +1434,758 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const cancelScanJob = async (jobId) => {
+    try {
+      await scanJobsApi.cancel(jobId);
+      const job = await scanJobsApi.get(jobId).catch(() => null);
+      if (job) upsertScanJobMessage(job);
+    } catch (err) {
+      addMessage({ role: 'bot', text: err.message || 'ยกเลิกงานสแกนไม่สำเร็จครับ' });
+    }
+  };
+
+  const updateScanReview = (resultId, patch) => {
+    setScanReview((prev) => ({
+      ...prev,
+      [resultId]: {
+        ...(prev[resultId] || {}),
+        ...(typeof patch === 'function' ? patch(prev[resultId] || {}) : patch),
+      },
+    }));
+  };
+
+  const updateItemInReview = (resultId, itemIdx, patch) => {
+    setScanReview((prev) => {
+      const review = prev[resultId] || {};
+      const items = [...(review.items || [])];
+      items[itemIdx] = { ...(items[itemIdx] || {}), ...patch };
+      return { ...prev, [resultId]: { ...review, items } };
+    });
+  };
+
+  const refreshScanJob = async (jobId) => {
+    const job = await scanJobsApi.get(jobId);
+    setScanJobDetails((prev) => ({ ...prev, [jobId]: job }));
+    ensureScanReview(job);
+    upsertScanJobMessage(job);
+    return job;
+  };
+
+  const skipScanResult = async (jobId, resultId) => {
+    setScanSaving((prev) => ({ ...prev, [resultId]: true }));
+    try {
+      await scanJobsApi.skip(jobId, resultId);
+      await refreshScanJob(jobId);
+    } catch (err) {
+      addMessage({ role: 'bot', text: err.message || 'ข้ามรายการสแกนไม่สำเร็จครับ' });
+    } finally {
+      setScanSaving((prev) => ({ ...prev, [resultId]: false }));
+    }
+  };
+
+  const saveScanResult = async (jobId, result) => {
+    const review = scanReview[result.id] || buildScanReviewValue(result);
+    const amount = Number(review.amount || 0);
+    const account = assetAccounts.find((a) => a.id === review.account_id);
+    if (!account) {
+      addMessage({ role: 'bot', text: 'กรุณาเลือกบัญชีที่จะใช้บันทึกรายการนี้ก่อนครับ' });
+      return;
+    }
+    if (!review.category_id) {
+      addMessage({ role: 'bot', text: 'กรุณาเลือกหมวดหมู่ของรายการนี้ก่อนครับ' });
+      return;
+    }
+    if (amount <= 0) {
+      addMessage({ role: 'bot', text: 'จำนวนเงินต้องมากกว่า 0 บาทครับ' });
+      return;
+    }
+    if ((review.tx_type || 'expense') === 'expense' && amount > Number(account.balance || 0)) {
+      addMessage({ role: 'bot', text: `ยอดเงินในบัญชี "${account.name}" ไม่เพียงพอครับ คงเหลือ ฿${fmt(account.balance || 0)}` });
+      return;
+    }
+
+    setScanSaving((prev) => ({ ...prev, [result.id]: true }));
+    try {
+      if (result.document_type === 'slip') {
+        await scanJobsApi.saveSlip(jobId, result.id, {
+          tx_type: review.tx_type || 'expense',
+          account_id: review.account_id,
+          category_id: review.category_id,
+          amount,
+          name: review.name || result.slip?.receiver || 'สลิปโอนเงิน',
+          transaction_date: review.transaction_date || todayStr(),
+          note: '',
+          ref_no: result.slip?.ref_no || '',
+          image_path: result.image_path || '',
+        });
+      } else {
+        await transactions.create({
+          type: 'expense',
+          account_id: review.account_id,
+          category_id: review.category_id,
+          amount,
+          name: review.name || result.data?.merchant || 'ใบเสร็จ',
+          transaction_date: review.transaction_date || todayStr(),
+        });
+        await scanJobsApi.save(jobId, result.id);
+      }
+      await Promise.all([onRefresh?.(), fetchAuxData()]);
+      await refreshScanJob(jobId);
+      addMessage({ role: 'bot', text: `บันทึกรายการจาก${result.document_type === 'slip' ? 'สลิป' : 'ใบเสร็จ'}จำนวน ฿${fmt(amount)} เรียบร้อยแล้วครับ`, success: true });
+    } catch (err) {
+      addMessage({ role: 'bot', text: err.message || 'บันทึกรายการสแกนไม่สำเร็จครับ' });
+    } finally {
+      setScanSaving((prev) => ({ ...prev, [result.id]: false }));
+    }
+  };
+
+  const saveReceiptItem = async (jobId, resultId, itemIndex, itemData, review) => {
+    const key = `${resultId}-${itemIndex}`;
+    setScanItemState((prev) => ({ ...prev, [key]: 'saving' }));
+    try {
+      await transactions.create({
+        type: 'expense',
+        account_id: review.account_id,
+        category_id: itemData.category_id || review.category_id,
+        amount: itemData.finalAmount ?? itemData.amount ?? 0,
+        name: itemData.name || `รายการ ${itemIndex + 1}`,
+        transaction_date: review.transaction_date || todayStr(),
+      });
+      // Build new state and check if all items are resolved
+      const newItemState = { ...scanItemState, [key]: 'saved' };
+      setScanItemState(newItemState);
+      const totalItems = review?.items?.length ?? 0;
+      const allResolved = totalItems > 0 && Array.from({ length: totalItems }, (_, i) => {
+        const st = newItemState[`${resultId}-${i}`];
+        return st === 'saved' || st === 'skipped';
+      }).every(Boolean);
+      if (allResolved) {
+        await scanJobsApi.skip(jobId, resultId);
+      }
+      await Promise.all([onRefresh?.(), fetchAuxData(), refreshScanJob(jobId)]);
+    } catch (err) {
+      setScanItemState((prev) => ({ ...prev, [key]: null }));
+      addMessage({ role: 'bot', text: err.message || 'บันทึกรายการไม่สำเร็จครับ' });
+    }
+  };
+
+  const skipReceiptItem = async (jobId, resultId, itemIndex, review) => {
+    const key = `${resultId}-${itemIndex}`;
+    const newItemState = { ...scanItemState, [key]: 'skipped' };
+    setScanItemState(newItemState);
+    const totalItems = review?.items?.length ?? 0;
+    const allResolved = totalItems > 0 && Array.from({ length: totalItems }, (_, i) => {
+      const st = newItemState[`${resultId}-${i}`];
+      return st === 'saved' || st === 'skipped';
+    }).every(Boolean);
+    if (allResolved) {
+      try {
+        await scanJobsApi.skip(jobId, resultId);
+        await refreshScanJob(jobId);
+      } catch (_) { /* best effort */ }
+    }
+  };
+
   // Render chatbot messages
   const renderMsg = (message) => {
+    if (message.role === 'user_images') {
+      const images = message.images || [];
+      const visibleImages = images.slice(0, 4);
+      const viewableImages = images
+        .map((image, imageIndex) => ({
+          src: scanImageSrc(image),
+          title: image.name || `รูปที่ ${imageIndex + 1}`,
+        }))
+        .filter((image) => image.src);
+      const moreCount = Math.max(0, images.length - visibleImages.length);
+      const isSingle = images.length <= 1;
+      const statusText = message.upload_status === 'uploading'
+        ? 'กำลังอัปโหลด...'
+        : message.upload_status === 'error'
+          ? 'อัปโหลดไม่สำเร็จ'
+          : message.text;
+
+      return (
+        <div key={message.id} className="flex justify-end animate-fade-in">
+          <div className="max-w-[86%] md:max-w-[70%] space-y-1">
+            <div className={`rounded-2xl rounded-br-md bg-[#2C6488] p-1 shadow-sm ${
+              isSingle ? 'w-fit' : 'w-[260px] sm:w-[300px]'
+            }`}>
+              <div className={`grid gap-1 overflow-hidden rounded-[14px] ${
+                isSingle ? 'grid-cols-1' : 'grid-cols-2'
+              }`}>
+                {visibleImages.map((image, index) => {
+                  const src = scanImageSrc(image);
+                  const hasPreview = Boolean(src);
+                  const imageTitle = image.name || `รูปที่ ${index + 1}`;
+                  const viewerIndex = viewableImages.findIndex((item) => item.src === src && item.title === imageTitle);
+                  return (
+                    <button
+                      type="button"
+                      key={image.id || `${message.id}-${index}`}
+                      onClick={() => {
+                        if (hasPreview) {
+                          setScanImageViewer({
+                            images: viewableImages,
+                            index: viewerIndex >= 0 ? viewerIndex : 0,
+                          });
+                        }
+                      }}
+                      disabled={!hasPreview}
+                      title={hasPreview ? 'กดเพื่อดูรูปใหญ่' : imageTitle}
+                      className={`relative overflow-hidden bg-[#EAF3F7] text-left ${
+                        isSingle ? 'w-[220px] sm:w-[280px] h-[220px]' : 'aspect-square'
+                      } ${hasPreview ? 'cursor-zoom-in hover:brightness-95 transition' : 'cursor-default'}`}
+                    >
+                      {hasPreview ? (
+                        <img
+                          src={src}
+                          alt={imageTitle}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-[#2C6488] bg-[#EAF3F7]">
+                          <ImagePlus size={22} />
+                          <span className="text-[11px] font-semibold px-2 text-center break-all">
+                            {image.name || 'รูปภาพ'}
+                          </span>
+                        </div>
+                      )}
+                      {moreCount > 0 && index === visibleImages.length - 1 && (
+                        <div className="absolute inset-0 bg-slate-900/55 text-white flex items-center justify-center text-xl font-bold">
+                          +{moreCount}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-1.5 text-[11px] text-slate-400">
+              {message.upload_status === 'uploading' && (
+                <RefreshCw size={11} className="animate-spin text-[#2C6488]" />
+              )}
+              {message.upload_status === 'error' && (
+                <AlertCircle size={11} className="text-red-500" />
+              )}
+              <span>{statusText}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (message.role === 'scan_result') {
+      const isScanning = ['uploading', 'scanning'].includes(message.status);
+      const isDone = message.status === 'done';
+      const isSaved = message.status === 'saved';
+      const isSkipped = message.status === 'skipped';
+      const isError = ['rejected', 'error'].includes(message.status);
+      const resultId = message.result_id;
+      const isSlip = message.document_type === 'slip';
+      const isReceipt = !isSlip && !!message.document_type;
+      const review = resultId
+        ? (scanReview[resultId] || buildScanReviewValue({
+            document_type: message.document_type,
+            slip: message.slip,
+            data: message.data,
+            image_path: message.image_path,
+          }))
+        : null;
+      const categoryOptions = review
+        ? categories.filter((c) => c.type === 'expense')
+        : [];
+      const isEditing = !!scanEditMode[resultId];
+      const isBusy = !!scanSaving[resultId];
+      const slip = message.slip || {};
+      const receipt = message.data || {};
+      const docLabel = isSlip ? 'สลิป' : isReceipt ? 'ใบเสร็จ' : message.document_type ? 'เอกสาร' : 'รูปภาพ';
+      const resultObj = {
+        id: message.result_id,
+        document_type: message.document_type,
+        slip: message.slip,
+        data: message.data,
+        image_path: message.image_path,
+        filename: message.filename,
+        status: message.status,
+        error_msg: message.error_msg,
+      };
+
+      // Receipt VAT/discount calculation
+      const getReceiptAdjustments = () => {
+        if (!review) return { vat: 0, discount: 0 };
+        return {
+          vat: review.vatMode === 'exclude' ? Math.max(0, Number(review.vatAmount) || 0) : 0,
+          discount: review.discountMode === 'prorate' ? Math.max(0, Number(review.discountAmount) || 0) : 0,
+        };
+      };
+      const getReceiptFinalItems = () => {
+        const items = (review?.items || []).filter((it) => (it.amount || 0) > 0);
+        const baseTotal = items.reduce((sum, it) => sum + it.amount, 0);
+        const { vat, discount } = getReceiptAdjustments();
+        return items.map((it) => {
+          const ratio = baseTotal > 0 ? it.amount / baseTotal : 0;
+          const finalAmount = Math.max(0, it.amount + vat * ratio - discount * ratio);
+          return { ...it, finalAmount: Number(finalAmount.toFixed(2)) };
+        });
+      };
+
+      const fieldClass = "rounded-xl border border-[#DCE8EE] bg-white px-3 py-2 text-xs text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488]/50 transition";
+      const compactFieldClass = "rounded-lg border border-[#DCE8EE] bg-white px-2 py-1.5 text-xs text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488]/50 transition";
+
+      const statusBadge = isSaved ? (
+        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 flex items-center gap-1 border border-emerald-100">
+          <CheckCircle2 size={10} /> บันทึกแล้ว
+        </span>
+      ) : isSkipped ? (
+        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200">ไม่บันทึก</span>
+      ) : isError ? (
+        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-red-50 text-red-500 border border-red-100">อ่านไม่สำเร็จ</span>
+      ) : null;
+
+      const staggerDelay = `${(message.image_index ?? 0) * 140}ms`;
+      return (
+        <div key={message.id} className="flex justify-start opacity-0 animate-fade-in" style={{ animationDelay: staggerDelay }}>
+          <div className="w-[21.5rem] sm:w-[24rem] rounded-3xl rounded-bl-md bg-white dark:bg-slate-800 border border-[#DCE8EE] dark:border-slate-700/60 shadow-sm">
+
+            {/* ── Header ── */}
+            <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3 bg-[#F6FAFC] border-b border-[#EAF3F7] rounded-t-3xl">
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full inline-flex items-center gap-1.5 ${
+                isSlip || isReceipt ? 'bg-white text-[#2C6488] border border-[#DCE8EE]' : 'bg-slate-100 text-slate-400 border border-slate-200'
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2C6488]" />
+                {docLabel}
+              </span>
+              {statusBadge}
+            </div>
+
+            {/* ── Scanning ── */}
+            {isScanning && (
+              <div className="flex items-center gap-3 px-4 py-4">
+                <div className="w-9 h-9 rounded-2xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                  <RefreshCw size={13} className="animate-spin text-[#2C6488]" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-600 truncate">{message.filename || 'กำลังสแกนเอกสาร'}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">กำลังอ่านและแยกประเภทเอกสาร</p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Error ── */}
+            {isError && (
+              <div className="px-4 py-4 space-y-3">
+                <div className="rounded-2xl bg-red-50 border border-red-100 px-3 py-2.5">
+                  <p className="text-xs font-semibold text-red-500">{message.error_msg || 'อ่านข้อมูลไม่สำเร็จ'}</p>
+                  <p className="text-[11px] text-red-400 mt-1">รายการนี้ยังไม่ถูกบันทึก สามารถข้ามออกจากรายการได้</p>
+                </div>
+                {resultId && (
+                  <button
+                    onClick={() => skipScanResult(message.job_id, resultId)}
+                    disabled={isBusy}
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-500 text-xs font-semibold border border-slate-200 transition-colors disabled:opacity-60"
+                  >
+                    ไม่บันทึก
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ── SLIP ── */}
+            {isSlip && (isDone || isSaved || isSkipped) && review && (
+              <div className="p-4 pt-3 space-y-3">
+                <div className="rounded-3xl bg-[#F6FAFC] border border-[#EAF3F7] overflow-hidden">
+                  <div className="px-3.5 py-3 border-b border-[#EAF3F7] bg-white/65">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[#2C6488]">โอนเงินให้</p>
+                        <p className="text-base font-bold text-slate-800 dark:text-slate-200 truncate mt-1">
+                          {review.name || slip.receiver || '-'}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-[10px] font-semibold text-slate-400">ยอดเงิน</p>
+                        <p className="text-xl font-bold text-[#2C6488] leading-tight">฿{fmt(Number(review.amount || 0))}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-3.5 py-2.5 flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center rounded-full bg-white border border-[#DCE8EE] px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                      {fmtDate(review.transaction_date)}
+                    </span>
+                    {slip.bank && (
+                      <span className="inline-flex items-center rounded-full bg-white border border-[#DCE8EE] px-2.5 py-1 text-[11px] font-semibold text-slate-500 max-w-full truncate">
+                        {slip.bank}
+                      </span>
+                    )}
+                    {slip.ref_no && (
+                      <span className="inline-flex items-center rounded-full bg-white border border-[#DCE8EE] px-2.5 py-1 text-[11px] font-semibold text-slate-400 max-w-full truncate">
+                        Ref {slip.ref_no}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {isDone && isEditing && (
+                  <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] p-3 space-y-2">
+                    <select
+                      value={review.tx_type || 'expense'}
+                      onChange={(e) => {
+                        const nextType = e.target.value;
+                        updateScanReview(resultId, {
+                          tx_type: nextType,
+                          category_id: getDefaultCategoryId(nextType === 'income' ? 'income' : 'expense'),
+                        });
+                      }}
+                      className={`w-full ${fieldClass}`}
+                    >
+                      <option value="expense">รายจ่าย</option>
+                      <option value="income">รายรับ</option>
+                    </select>
+                    <div className="grid grid-cols-2 gap-2">
+                      <ScanAccSelect
+                        value={review.account_id || ''}
+                        onChange={(v) => updateScanReview(resultId, { account_id: v })}
+                        accounts={assetAccounts}
+                      />
+                      <ScanCatSelect
+                        value={review.category_id || ''}
+                        onChange={(v) => updateScanReview(resultId, { category_id: v })}
+                        categories={categoryOptions}
+                      />
+                    </div>
+                    <input
+                      value={review.amount || ''}
+                      onChange={(e) => updateScanReview(resultId, { amount: e.target.value })}
+                      className={`w-full ${fieldClass}`}
+                      placeholder="จำนวนเงิน" type="number" min="0" step="0.01"
+                    />
+                    <input
+                      value={review.name || ''}
+                      onChange={(e) => updateScanReview(resultId, { name: e.target.value })}
+                      className={`w-full ${fieldClass}`}
+                      placeholder="ชื่อรายการ"
+                    />
+                    <input
+                      value={review.transaction_date || todayStr()}
+                      onChange={(e) => updateScanReview(resultId, { transaction_date: e.target.value })}
+                      className={`w-full ${fieldClass}`}
+                      type="date"
+                    />
+                  </div>
+                )}
+                {isDone && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveScanResult(message.job_id, resultObj)}
+                      disabled={isBusy}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#2C6488] hover:bg-[#25536F] text-white text-xs font-semibold disabled:opacity-60 transition-colors"
+                    >
+                      <Check size={12} />
+                      {isBusy ? 'กำลังบันทึก...' : 'บันทึก'}
+                    </button>
+                    <button
+                      onClick={() => skipScanResult(message.job_id, resultId)}
+                      disabled={isBusy}
+                      className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-500 text-xs font-semibold border border-slate-200 disabled:opacity-60 transition-colors"
+                    >
+                      ไม่บันทึก
+                    </button>
+                    <button
+                      onClick={() => setScanEditMode((prev) => ({ ...prev, [resultId]: !prev[resultId] }))}
+                      className="px-3 py-2 rounded-xl bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[#2C6488] text-xs border border-[#DCE8EE] transition-colors flex items-center justify-center"
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── RECEIPT ── */}
+            {isReceipt && (isDone || isSaved || isSkipped) && review && (() => {
+              const finalItems = getReceiptFinalItems();
+              const receiptTotal = finalItems.reduce((sum, item) => sum + Number(item.finalAmount || item.amount || 0), 0);
+              const allReceiptItemsHandled = finalItems.length > 0 && finalItems.every((_, itemIdx) => {
+                const itemStatus = scanItemState[`${resultId}-${itemIdx}`];
+                return itemStatus === 'saved' || itemStatus === 'skipped';
+              });
+              return (
+                <div className="p-4 pt-3 space-y-3">
+                  {/* Merchant */}
+                  <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] px-3.5 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-slate-400">ร้านค้า / เอกสาร</p>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate mt-0.5">
+                          {receipt.merchant || review.name || 'ใบเสร็จ'}
+                        </p>
+                      </div>
+                      <p className="text-lg font-bold text-[#2C6488] whitespace-nowrap">฿{fmt(receiptTotal)}</p>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                      <span>{fmtDate(review.transaction_date)}</span>
+                      <span>{finalItems.length} รายการ</span>
+                    </div>
+                  </div>
+
+                  {/* Items */}
+                  {finalItems.length > 0 && (
+                    <div className="space-y-1.5">
+                      {finalItems.map((item, itemIdx) => {
+                        const itemKey = `${resultId}-${itemIdx}`;
+                        const itemSt = scanItemState[itemKey];
+                        const isSavedItem = itemSt === 'saved';
+                        const isSkippedItem = itemSt === 'skipped';
+                        const isSavingItem = itemSt === 'saving';
+                        const isActiveItem = !isSavedItem && !isSkippedItem;
+                        const showArrow = Math.abs(item.finalAmount - item.amount) >= 0.005;
+                        const itemCatId = item.category_id || '';
+                        return (
+                          <div
+                            key={itemKey}
+                            className={`rounded-2xl border text-xs shadow-sm ${
+                              isSavedItem
+                                ? 'border-emerald-100 bg-emerald-50/60'
+                                : isSkippedItem
+                                ? 'border-slate-100 bg-slate-50/60'
+                                : 'border-[#DCE8EE] bg-white'
+                            }`}
+                          >
+                            {isEditing && isActiveItem ? (
+                              <div className="p-2.5 space-y-2 bg-[#F6FAFC]">
+                                <div className="flex gap-1.5">
+                                  <input
+                                    value={item.name || ''}
+                                    onChange={(e) => updateItemInReview(resultId, itemIdx, { name: e.target.value })}
+                                    className={`flex-1 min-w-0 ${compactFieldClass}`}
+                                    placeholder={`รายการ ${itemIdx + 1}`}
+                                  />
+                                  <input
+                                    value={item.amount || ''}
+                                    onChange={(e) => updateItemInReview(resultId, itemIdx, { amount: Number(e.target.value) || 0 })}
+                                    type="number" min="0" step="0.01"
+                                    className={`w-20 text-right ${compactFieldClass}`}
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <ScanCatSelect
+                                    value={itemCatId}
+                                    onChange={(v) => updateItemInReview(resultId, itemIdx, { category_id: v })}
+                                    categories={categoryOptions}
+                                    compact
+                                  />
+                                  <button
+                                    onClick={() => saveReceiptItem(message.job_id, resultId, itemIdx, item, review)}
+                                    disabled={isSavingItem || !review.account_id || !itemCatId}
+                                    className="px-2 py-1.5 rounded-lg bg-[#2C6488] hover:bg-[#25536F] text-white text-[10px] font-semibold disabled:opacity-50 transition-colors flex-shrink-0"
+                                  >
+                                    {isSavingItem ? '...' : 'บันทึก'}
+                                  </button>
+                                  <button
+                                    onClick={() => skipReceiptItem(message.job_id, resultId, itemIdx, review)}
+                                    className="px-2 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-500 text-[10px] font-semibold border border-slate-200 transition-colors flex-shrink-0"
+                                  >
+                                    ไม่บันทึก
+                                  </button>
+                                </div>
+                              </div>
+                            ) : isSavedItem ? (
+                              <div className="flex items-center gap-2 px-2.5 py-2">
+                                <CheckCircle2 size={12} className="text-emerald-500 flex-shrink-0" />
+                                <span className="flex-1 truncate text-emerald-700 font-medium">{item.name || `รายการ ${itemIdx + 1}`}</span>
+                                <span className="text-[11px] text-emerald-600 flex-shrink-0 font-semibold">฿{fmt(item.finalAmount)}</span>
+                              </div>
+                            ) : isSkippedItem ? (
+                              <div className="flex items-center gap-2 px-2.5 py-2">
+                                <span className="flex-1 truncate text-slate-400 line-through">{item.name || `รายการ ${itemIdx + 1}`}</span>
+                                <span className="text-[10px] text-slate-400 flex-shrink-0">ไม่บันทึก</span>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 space-y-2">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="flex-1 truncate text-slate-700 font-semibold">{item.name || `รายการ ${itemIdx + 1}`}</span>
+                                  <span className="text-[11px] flex-shrink-0">
+                                    {showArrow ? (
+                                      <span className="text-slate-500">
+                                        ฿{fmt(item.amount)} <span className="text-slate-300">→</span> <span className="font-bold text-slate-700">฿{fmt(item.finalAmount)}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="font-bold text-slate-700">฿{fmt(item.amount)}</span>
+                                    )}
+                                  </span>
+                                </div>
+                                {isDone && (
+                                  <div className="flex gap-1.5">
+                                    <ScanCatSelect
+                                      value={itemCatId}
+                                      onChange={(v) => updateItemInReview(resultId, itemIdx, { category_id: v })}
+                                      categories={categoryOptions}
+                                      compact
+                                    />
+                                    <button
+                                      onClick={() => saveReceiptItem(message.job_id, resultId, itemIdx, item, review)}
+                                      disabled={isSavingItem || !review.account_id || !itemCatId}
+                                      className="px-2.5 py-1 rounded-lg bg-[#2C6488] hover:bg-[#25536F] text-white text-[10px] font-semibold disabled:opacity-50 transition-colors flex-shrink-0"
+                                    >
+                                      {isSavingItem ? '...' : 'บันทึก'}
+                                    </button>
+                                    <button
+                                      onClick={() => skipReceiptItem(message.job_id, resultId, itemIdx, review)}
+                                      className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-500 text-[10px] font-semibold border border-slate-200 transition-colors flex-shrink-0"
+                                    >
+                                      ไม่บันทึก
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Saved/skipped summary */}
+                  {(isSaved || isSkipped) && (
+                    <div>
+                      <p className="text-xs text-slate-400">รวม ฿{fmt(finalItems.reduce((s, it) => s + it.amount, 0))}</p>
+                    </div>
+                  )}
+
+                  {/* VAT + Discount */}
+                  {isDone && !allReceiptItemsHandled && (
+                    <div className="bg-[#F6FAFC] border border-[#EAF3F7] rounded-2xl p-2.5 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-semibold text-slate-500 w-12 flex-shrink-0">VAT</span>
+                        <input
+                          value={review.vatAmount || ''}
+                          onChange={(e) => updateScanReview(resultId, { vatAmount: e.target.value })}
+                          type="number" min="0" step="0.01" placeholder="0"
+                          className={`w-20 text-right ${compactFieldClass}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateScanReview(resultId, { vatMode: review.vatMode === 'include' ? 'exclude' : 'include' })}
+                          className="flex-1 min-w-0 rounded-xl border border-[#DCE8EE] bg-white hover:bg-[#EAF3F7] px-2.5 py-1.5 text-[11px] font-bold text-[#2C6488] transition-colors"
+                        >
+                          {review.vatMode === 'exclude' ? 'บวกเพิ่ม' : 'รวมในราคา'}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-semibold text-slate-500 w-12 flex-shrink-0">ส่วนลด</span>
+                        <input
+                          value={review.discountAmount || ''}
+                          onChange={(e) => updateScanReview(resultId, { discountAmount: e.target.value })}
+                          type="number" min="0" step="0.01" placeholder="0"
+                          className={`w-20 text-right ${compactFieldClass}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateScanReview(resultId, { discountMode: review.discountMode === 'prorate' ? 'ignore' : 'prorate' })}
+                          className="flex-1 min-w-0 rounded-xl border border-[#DCE8EE] bg-white hover:bg-[#EAF3F7] px-2.5 py-1.5 text-[11px] font-bold text-[#2C6488] transition-colors"
+                        >
+                          {review.discountMode === 'ignore' ? 'ไม่คิด' : 'กระจายส่วนลด'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Account + actions */}
+                  {isDone && !allReceiptItemsHandled && (
+                    <div className="space-y-2">
+                      <ScanAccSelect
+                        value={review.account_id || ''}
+                        onChange={(v) => updateScanReview(resultId, { account_id: v })}
+                        accounts={assetAccounts}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => skipScanResult(message.job_id, resultId)}
+                          disabled={isBusy}
+                          className="flex-1 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-500 text-xs font-semibold border border-slate-200 disabled:opacity-60 transition-colors"
+                        >
+                          ไม่บันทึกทั้งหมด
+                        </button>
+                        <button
+                          onClick={() => setScanEditMode((prev) => ({ ...prev, [resultId]: !prev[resultId] }))}
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[#2C6488] text-xs font-semibold border border-[#DCE8EE] transition-colors"
+                        >
+                          <Edit3 size={12} />
+                          {isEditing ? 'ซ่อน' : 'แก้ไข'}
+                        </button>
+                      </div>
+                      {isEditing && (
+                        <div className="pt-2 grid grid-cols-1 gap-2 border-t border-[#EAF3F7]">
+                          <input
+                            value={review.name || ''}
+                            onChange={(e) => updateScanReview(resultId, { name: e.target.value })}
+                            className={fieldClass}
+                            placeholder="ชื่อร้าน/เอกสาร"
+                          />
+                          <input
+                            value={review.transaction_date || todayStr()}
+                            onChange={(e) => updateScanReview(resultId, { transaction_date: e.target.value })}
+                            className={fieldClass}
+                            type="date"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+          </div>
+        </div>
+      );
+    }
+    if (message.role === 'scan_job') {
+      const total = Number(message.total_count || 0);
+      const done = Number(message.done_count || 0);
+      const isActive = ['pending', 'processing'].includes(message.status);
+      const isCancelled = message.status === 'cancelled';
+      const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+      if (!isActive && !isCancelled) return null;
+
+      return (
+        <div key={message.id} className="flex justify-start animate-fade-in">
+          <div className="max-w-[86%] md:max-w-[72%] rounded-2xl rounded-bl-md bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-sm px-4 py-3 space-y-2">
+            {isCancelled ? (
+              <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                <AlertCircle size={13} className="text-red-400" />
+                ยกเลิกงานสแกนแล้ว
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                    <RefreshCw size={12} className="animate-spin text-[#2C6488]" />
+                    กำลังสแกนเอกสาร {done}/{total}
+                  </span>
+                  <button
+                    onClick={() => cancelScanJob(message.job_id)}
+                    className="text-[11px] text-red-400 hover:text-red-600 font-semibold transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                  <div className="h-full bg-[#2C6488] transition-all duration-500" style={{ width: `${pct}%` }} />
+                </div>
+                {message.error_msg && (
+                  <p className="text-[11px] text-red-500">{message.error_msg}</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     if (message.role === 'preview') {
       const meta = MODE_META[message.mode];
       return (
@@ -1134,11 +2436,6 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             : 'rounded-bl-none bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 text-slate-700 dark:text-slate-350 shadow-sm'
         }`}>
           <div className="flex items-start gap-2">
-            {!isUser && (
-              <div className="w-5 h-5 rounded-lg bg-[#EAF3F7] dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <MessageCircle size={13} className="text-[#2C6488] dark:text-[#4da2db]" />
-              </div>
-            )}
             <div className="flex-1">
               <span className="whitespace-pre-wrap">{message.text}</span>
             </div>
@@ -1147,7 +2444,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             )}
           </div>
           {message.actions && message.choiceActive !== false && (
-            <div className="mt-3 flex flex-wrap gap-1.5 pl-7">
+            <div className="mt-3 flex flex-wrap gap-1.5">
               {message.actions.map((action) => (
                 <button
                   key={action.label}
@@ -1174,7 +2471,36 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     );
   };
 
+  const currentScanImage = scanImageViewer?.images?.[scanImageViewer.index] || null;
+  const scanImageCount = scanImageViewer?.images?.length || 0;
+  const canGoPrevScanImage = scanImageViewer?.index > 0;
+  const canGoNextScanImage = scanImageViewer && scanImageViewer.index < scanImageCount - 1;
+  const goToScanImage = (direction) => {
+    setScanImageViewer((prev) => {
+      const count = prev?.images?.length || 0;
+      if (!prev || count <= 1) return prev;
+      const nextIndex = prev.index + direction;
+      if (nextIndex < 0 || nextIndex >= count) return prev;
+      return {
+        ...prev,
+        index: nextIndex,
+      };
+    });
+  };
+
+  useEffect(() => {
+    if (!scanImageViewer) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setScanImageViewer(null);
+      if (e.key === 'ArrowLeft') goToScanImage(-1);
+      if (e.key === 'ArrowRight') goToScanImage(1);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [scanImageViewer]);
+
   return (
+    <>
     <div className="p-4 md:p-6 w-full max-w-5xl mx-auto flex-1 flex flex-col min-h-0 relative">
       {/* Main Single Chat Card Container */}
       <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm h-full">
@@ -1348,6 +2674,21 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
           <div className="max-w-4xl mx-auto flex items-center gap-2 bg-white dark:bg-slate-800 p-2.5 rounded-2xl shadow-md border border-slate-150 dark:border-slate-700/60 focus-within:ring-2 focus-within:ring-[#2C6488]/30 transition-all">
 
+            {/* Hidden file input for scan upload */}
+            <input
+              ref={scanFileRef}
+              type="file"
+              accept="image/*,.heic,.heif"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) {
+                  handleScanFiles(e.target.files);
+                  e.target.value = '';
+                }
+              }}
+            />
+
             {/* Active Mode Indicator Badge */}
             <span 
               className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all select-none flex-shrink-0"
@@ -1369,6 +2710,16 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               className="flex-1 min-w-0 px-2 py-2 text-sm bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
             />
             
+            {/* Upload Image Button */}
+            <button
+              onClick={() => scanFileRef.current?.click()}
+              disabled={scanUploading}
+              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors disabled:opacity-60 flex-shrink-0"
+              title="สแกนใบเสร็จ / สลิป"
+            >
+              <ImagePlus size={18} />
+            </button>
+
             {/* Send Button */}
             <button
               onClick={handleSend}
@@ -1383,5 +2734,49 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
       </div>
     </div>
+
+    {/* ── Scan Image Lightbox ── */}
+    {scanImageViewer && currentScanImage && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={() => setScanImageViewer(null)}
+      >
+        <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <img
+            src={currentScanImage.src}
+            alt={currentScanImage.title || 'scan'}
+            className="max-h-[80vh] max-w-full rounded-2xl object-contain shadow-2xl"
+          />
+          {scanImageCount > 1 && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => goToScanImage(-1)}
+                disabled={!canGoPrevScanImage}
+                className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-40 transition-colors"
+              >
+                ‹
+              </button>
+              <span className="text-white text-sm font-semibold">
+                {(scanImageViewer.index ?? 0) + 1} / {scanImageCount}
+              </span>
+              <button
+                onClick={() => goToScanImage(1)}
+                disabled={!canGoNextScanImage}
+                                className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-40 transition-colors"
+              >
+                ›
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setScanImageViewer(null)}
+            className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

@@ -100,7 +100,7 @@ func (h *ScanHandler) ensureSchema(ctx context.Context) error {
 
 func (h *ScanHandler) CreateJob(c *gin.Context) {
 	userID := c.GetString("user_id")
-	if err := c.Request.ParseMultipartForm(60 << 20); err != nil {
+	if err := c.Request.ParseMultipartForm(160 << 20); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ต้องส่งไฟล์แบบ multipart"})
 		return
 	}
@@ -109,8 +109,8 @@ func (h *ScanHandler) CreateJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบไฟล์"})
 		return
 	}
-	if len(files) > 5 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "อัปโหลดได้สูงสุด 5 รูปต่อครั้ง"})
+	if len(files) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "อัปโหลดได้สูงสุด 20 รูปต่อหนึ่งงานสแกน"})
 		return
 	}
 
@@ -450,12 +450,9 @@ func (h *ScanHandler) processJob(jobID, userID string) {
 	}
 	rows.Close()
 
-	for i, item := range items {
+	for _, item := range items {
 		if h.isJobCancelled(ctx, jobID) {
 			return
-		}
-		if i > 0 {
-			time.Sleep(3 * time.Second)
 		}
 		h.processOne(ctx, item.id, item.imagePath, item.filename, userID)
 	}
@@ -488,7 +485,8 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 		)
 	}
 	fail := func(msg string) { complete("error", scanDocUnknown, msg, nil, false) }
-	reject := func(msg string) { complete("rejected", scanDocUnknown, msg, nil, false) }
+	rejectAs := func(docType, msg string) { complete("rejected", docType, msg, nil, false) }
+	reject := func(msg string) { rejectAs(scanDocUnknown, msg) }
 
 	fullPath := strings.TrimPrefix(imagePath, "/")
 	imageBytes, err := os.ReadFile(fullPath)
@@ -507,30 +505,18 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 	h.db.Exec(ctx, `UPDATE scan_results SET ocr_text=$1, updated_at=NOW() WHERE id=$2`, ocrText, resultID)
 
 	docType := classifyOCRDocument(ocrText)
-	if classified, confidence, err := h.receiptH.callOCRDocumentClassifier(ocrText); err == nil && confidence >= 0.6 {
+	if hasStrongSlipEvidence(ocrText) {
+		docType = ocrDocSlip
+	} else if classified, confidence, err := h.receiptH.callOCRDocumentClassifier(ocrText); err == nil && confidence >= 0.6 {
 		docType = classified
 	}
 
 	h.db.Exec(ctx, `UPDATE scan_results SET status='parsing', document_type=$1, updated_at=NOW() WHERE id=$2`, string(docType), resultID)
 	time.Sleep(2 * time.Second)
 
-	switch docType {
-	case ocrDocReceipt:
-		parsed, err := h.receiptH.callReceiptParser(ocrText)
-		if err != nil {
-			fail(fmt.Sprintf("แปลงผลใบเสร็จไม่สำเร็จ: %v", err))
-			return
-		}
-		if looksLikeSlipInReceiptFlow(ocrText, parsed) {
-			reject("รูปนี้ดูเหมือนสลิปโอนเงิน กรุณาตรวจสอบเอกสาร")
-			return
-		}
-		if looksInvalidReceipt(parsed) {
-			reject("รูปนี้อ่านข้อมูลใบเสร็จไม่ครบ กรุณาใช้รูปที่เห็นวันที่ รายการ และราคาอย่างชัดเจน")
-			return
-		}
-		complete("done", scanDocReceipt, "", parsed, false)
-	case ocrDocSlip:
+	parseSlip := func() {
+		h.db.Exec(ctx, `UPDATE scan_results SET status='parsing', document_type=$1, updated_at=NOW() WHERE id=$2`, string(ocrDocSlip), resultID)
+
 		parsed, err := h.slipH.callTyphoonParser(ocrText)
 		if err != nil {
 			fail(fmt.Sprintf("แปลงผลสลิปไม่สำเร็จ: %v", err))
@@ -538,7 +524,7 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 		}
 		preferSlipReceiverMerchant(ocrText, parsed)
 		if !hasSlipTransferEvidence(ocrText, parsed) {
-			reject("รูปนี้ดูไม่ใช่สลิปโอนเงิน หรืออ่านข้อมูลสำคัญไม่พบ")
+			rejectAs(scanDocSlip, "รูปนี้ดูไม่ใช่สลิปโอนเงิน หรืออ่านข้อมูลสำคัญไม่พบ")
 			return
 		}
 		isDuplicate := false
@@ -551,6 +537,26 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 			isDuplicate = cnt > 0
 		}
 		complete("done", scanDocSlip, "", parsed, isDuplicate)
+	}
+
+	switch docType {
+	case ocrDocReceipt:
+		parsed, err := h.receiptH.callReceiptParser(ocrText)
+		if err != nil {
+			fail(fmt.Sprintf("แปลงผลใบเสร็จไม่สำเร็จ: %v", err))
+			return
+		}
+		if looksLikeSlipInReceiptFlow(ocrText, parsed) {
+			parseSlip()
+			return
+		}
+		if looksInvalidReceipt(parsed) {
+			reject("รูปนี้อ่านข้อมูลใบเสร็จไม่ครบ กรุณาใช้รูปที่เห็นวันที่ รายการ และราคาอย่างชัดเจน")
+			return
+		}
+		complete("done", scanDocReceipt, "", parsed, false)
+	case ocrDocSlip:
+		parseSlip()
 	default:
 		reject("รูปนี้ไม่พบข้อมูลใบเสร็จหรือสลิปโอนเงินที่ชัดเจน")
 	}
