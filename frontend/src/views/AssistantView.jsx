@@ -4,7 +4,7 @@ import {
   MessageCircle, Sparkles, AlertCircle, CheckCircle2,
   Repeat2, PiggyBank, RefreshCw, HelpCircle,
   Lightbulb, BarChart2, ArrowRight, Check, Edit3,
-  CreditCard, TrendingUp, AlertTriangle, Info, Calendar, ImagePlus,
+  CreditCard, TrendingUp, AlertTriangle, Info, Calendar, ImagePlus, Image,
   ChevronDown, Trash2, ArrowUp, ArrowDown, ArrowLeftRight, Plus, Maximize2, X
 } from 'lucide-react';
 import { 
@@ -2142,6 +2142,12 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       ) : isDuplicateSlip ? (
         <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100">สลิปซ้ำ</span>
       ) : null;
+      const scanResultImage = message.image_path
+        ? {
+            src: scanImageSrc({ image_path: message.image_path }),
+            title: message.filename || docLabel,
+          }
+        : null;
 
       const staggerDelay = `${(message.image_index ?? 0) * 140}ms`;
       return (
@@ -2163,7 +2169,19 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 <span className="w-1.5 h-1.5 rounded-full bg-[#2C6488]" />
                 {docLabel}
               </span>
-              {statusBadge}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {statusBadge}
+                {scanResultImage?.src && (
+                  <button
+                    type="button"
+                    onClick={() => setScanImageViewer({ images: [scanResultImage], index: 0 })}
+                    title="ดูรูปเอกสาร"
+                    className="w-7 h-7 rounded-full bg-white border border-[#DCE8EE] text-[#2C6488] inline-flex items-center justify-center hover:bg-[#EAF3F7] transition-colors"
+                  >
+                    <Image size={13} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* ── Scanning ── */}
