@@ -13,6 +13,7 @@ const FULL_MONTH_LABELS = [
 ];
 const FALLBACK_CATEGORY_COLOR = '#94a3b8';
 const SAVING_COLOR = '#0EA5E9';
+const CHART_FONT_FAMILY = "'Sarabun', sans-serif";
 
 const PERIOD_CONFIG = [
   { id: 'today', label: 'วันนี้',     icon: 'Sun',      color: '#2C6488', bg: '#EAF3F7', ring: '#BFD8E4' },
@@ -192,6 +193,8 @@ function BarChart({ data, isDarkMode }) {
             displayColors: true,
             boxWidth: 8,
             boxHeight: 8,
+            titleFont: { family: CHART_FONT_FAMILY, size: 12, weight: 600 },
+            bodyFont: { family: CHART_FONT_FAMILY, size: 12 },
             callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ฿${fmt(ctx.raw)}` },
           },
         },
@@ -199,14 +202,14 @@ function BarChart({ data, isDarkMode }) {
           x: {
             grid:  { display: false },
             border: { display: false },
-            ticks: { font: { size: 11, weight: 600 }, color: '#94a3b8' },
+            ticks: { font: { family: CHART_FONT_FAMILY, size: 11, weight: 600 }, color: isDarkMode ? '#9ca3af' : '#111827' },
           },
           y: {
             border: { display: false },
             grid:  { color: isDarkMode ? '#24304c' : '#eef4f7', drawTicks: false },
             ticks: {
-              font:     { size: 11 },
-              color:    '#94a3b8',
+              font:     { family: CHART_FONT_FAMILY, size: 11 },
+              color:    isDarkMode ? '#9ca3af' : '#4b5563',
               padding:   8,
               callback: (v) => v >= 1000 ? `฿${(v / 1000).toFixed(0)}K` : `฿${v}`,
             },
@@ -327,6 +330,8 @@ function TrendLineChart({ data, isDarkMode }) {
             displayColors: true,
             boxWidth: 8,
             boxHeight: 8,
+            titleFont: { family: CHART_FONT_FAMILY, size: 12, weight: 600 },
+            bodyFont: { family: CHART_FONT_FAMILY, size: 12 },
             callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ฿${fmt(ctx.raw)}` },
           },
         },
@@ -335,7 +340,7 @@ function TrendLineChart({ data, isDarkMode }) {
             grid:  { display: false },
             border: { display: false },
             ticks: {
-              font: { size: 11, weight: 600 },
+              font: { family: CHART_FONT_FAMILY, size: 11, weight: 600 },
               color: isDarkMode ? '#9ca3af' : '#111827',
             },
           },
@@ -347,7 +352,7 @@ function TrendLineChart({ data, isDarkMode }) {
               drawTicks: false,
             },
             ticks: {
-              font:     { size: 12 },
+              font:     { family: CHART_FONT_FAMILY, size: 12 },
               color:    isDarkMode ? '#9ca3af' : '#4b5563',
               padding:   10,
               callback: (v) => v >= 1000 ? `฿${Math.round(v / 1000)}k` : `฿${v === 0 ? '0k' : v}`,

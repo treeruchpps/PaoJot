@@ -1226,7 +1226,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     });
   };
 
-  const askCategory = (result) => {
+  const askCategory = (result, context = {}) => {
     addChoiceMessage({
       choiceType: 'category',
       text: 'กรุณาเลือกหมวดหมู่ให้รายการนี้ด้วยครับ:',
@@ -1234,7 +1234,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         label: cat.name,
         onClick: () => {
           setCategoryId(cat.id);
-          showPreview(result, cat.id);
+          showPreview(result, cat.id, context);
         },
       })),
     });
@@ -1394,6 +1394,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       askGoal(text);
       return;
     }
+    if (mode === 'expense') {
+      askAccount(text, assetAccounts, { forceAccountChoice: true });
+      return;
+    }
     if (mode === 'transfer' && !accountId) {
       askAccount(text);
       return;
@@ -1461,7 +1465,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       const nextCategoryId = result.category_id || '';
       setCategoryId(nextCategoryId);
       if (mode !== 'saving' && mode !== 'transfer' && !nextCategoryId) {
-        askCategory(result);
+        askCategory(result, overrides);
       } else {
         showPreview(result, nextCategoryId, overrides);
       }
@@ -2840,7 +2844,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 </button>
                 {(message.mode === 'income' || message.mode === 'expense') && (
                   <button
-                    onClick={() => askCategory(message.result)}
+                    onClick={() => askCategory(message.result, {
+                      accountId: message.account?.id || accountId,
+                      toAccountId: message.toAccount?.id || toAccountId,
+                      goalId: message.goal?.id || goalId,
+                    })}
                     className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-600 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-600 transition-colors"
                   >
                     <span className="flex items-center gap-1.5">
