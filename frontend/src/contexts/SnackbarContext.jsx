@@ -8,6 +8,7 @@ export function SnackbarProvider({ children }) {
   const idRef = useRef(0);
 
   const show = useCallback((message, type = 'error', duration = 3500) => {
+    if (message == null || !String(message).trim()) return;
     const id = ++idRef.current;
     setSnacks((prev) => [...prev.slice(-4), { id, message, type }]);
     setTimeout(() => {

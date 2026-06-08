@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   MessageCircle, Sparkles, AlertCircle, CheckCircle2,
   Repeat2, PiggyBank, RefreshCw, HelpCircle,
   Lightbulb, BarChart2, ArrowRight, Check, Edit3,
   CreditCard, TrendingUp, AlertTriangle, Info, Calendar, ImagePlus,
-  ChevronDown, Trash2, ArrowUp, ArrowDown, ArrowLeftRight, Plus
+  ChevronDown, Trash2, ArrowUp, ArrowDown, ArrowLeftRight, Plus, Maximize2, X
 } from 'lucide-react';
 import { 
   quickEntry, savingsGoals, transactions, budgets as budgetsApi, 
-  notifications as notiApi, aiSummary as aiSummaryApi, scanJobs as scanJobsApi
+  notifications as notiApi, aiSummary as aiSummaryApi, scanJobs as scanJobsApi, profile as profileApi
 } from '../services/api';
 import Icon from '../components/common/Icon';
 import { fmt } from '../constants/data';
 import { getTransactionAccounts } from '../utils/accountFilters';
 import { convertHeicFilesToJpeg } from '../utils/heicToJpeg';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
+import { formatDisplayDateRange } from '../utils/dateFormat';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (s) => {
@@ -47,6 +49,20 @@ const firstBotMessage = (mode) => ({
   role: 'bot',
   text: `ยินดีต้อนรับเข้าสู่แชท PaoJot ครับ พิมพ์รายการเพื่อจดบันทึก หรือส่งรูปภาพสลิป/ใบเสร็จเพื่อจำแนกสแกนได้เลยครับ`,
 });
+
+const getAiSummaryChatError = (message) => {
+  const text = message || '';
+  if (text.includes('รายการรายรับ/รายจ่าย') || text.includes('ข้อมูลธุรกรรมไม่เพียงพอ')) {
+    return 'ยังมีรายการรายรับ/รายจ่ายไม่เพียงพอสำหรับสรุปด้วย AI ครับ ลองบันทึกรายการเพิ่มก่อนแล้วค่อยสร้างสรุปอีกครั้ง';
+  }
+  return `ไม่สามารถดึงข้อมูลสรุปได้ในขณะนี้: ${text || 'ลองใหม่อีกครั้งภายหลัง'}`;
+};
+
+const aiNotificationPeriod = (type) => {
+  if (type === 'ai_weekly') return 'weekly';
+  if (type === 'ai_monthly') return 'monthly';
+  return '';
+};
 
 const closeChoiceMessages = (messages, targetId = null) =>
   messages.map((msg) => (
@@ -260,7 +276,7 @@ function quickParseFallback(mode, text) {
   return { mode, amount, title, category_id: null, confidence: 0.3, needs_review: true };
 }
 
-export default function AssistantView({ accounts = [], categories = [], onRefresh, onGoAccounts, onGoGoals }) {
+export default function AssistantView({ accounts = [], categories = [], onRefresh, onGoAccounts, onGoGoals, onGoProfile }) {
   const [mode, setMode] = useState('expense');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState(() => [firstBotMessage('expense')]);
@@ -285,6 +301,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const scanFileRef = useRef(null);
   const scanPreviewUrlsRef = useRef([]);
   const preValidatedRef = useRef(null);
+  const aiSummaryNotificationFetchRef = useRef(new Set());
 
 
 
@@ -297,6 +314,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const [scanEditMode, setScanEditMode] = useState({});
   const [scanItemState, setScanItemState] = useState({}); // key: `${resultId}-${itemIdx}`, val: 'saving'|'saved'|'skipped'
   const [scanImageViewer, setScanImageViewer] = useState(null);
+  const [expandedAiSummary, setExpandedAiSummary] = useState(null);
+  const [pendingScanCue, setPendingScanCue] = useState({ count: 0, visible: false });
 
   // Composer (input bar) UI state
   const [isDragOver, setIsDragOver] = useState(false);
@@ -376,6 +395,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             id: msg.id,
             role: 'ai_summary',
             period: msg.period,
+            period_start: msg.period_start,
+            period_end: msg.period_end,
+            source_notification_id: msg.source_notification_id,
+            auto: !!msg.auto,
             summary: msg.summary,
           };
         }
@@ -545,6 +568,47 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     });
   }, [notifications, chatLoaded, saveChatLog]);
 
+  // When an AI summary notification arrives, fetch the completed-period summary and show it in chat.
+  useEffect(() => {
+    if (!chatLoaded) return;
+    const targets = messages.filter((msg) => (
+      msg.role === 'notification' &&
+      aiNotificationPeriod(msg.notification_type) &&
+      !messages.some((m) => m.role === 'ai_summary' && m.source_notification_id === (msg.notification_id || msg.id))
+    ));
+
+    targets.forEach((msg) => {
+      const notificationId = msg.notification_id || msg.id;
+      if (!notificationId || aiSummaryNotificationFetchRef.current.has(notificationId)) return;
+      aiSummaryNotificationFetchRef.current.add(notificationId);
+      const period = aiNotificationPeriod(msg.notification_type);
+
+      aiSummaryApi.get(period)
+        .then((detail) => {
+          if (!detail?.summary) return;
+          setMessages((prev) => {
+            if (prev.some((m) => m.role === 'ai_summary' && m.source_notification_id === notificationId)) return prev;
+            const next = [
+              ...prev,
+              {
+                id: `ai-summary-${notificationId}`,
+                role: 'ai_summary',
+                period,
+                period_start: detail.period_start,
+                period_end: detail.period_end,
+                source_notification_id: notificationId,
+                auto: true,
+                summary: detail.summary,
+              },
+            ];
+            saveChatLog(next);
+            return next;
+          });
+        })
+        .catch(() => {});
+    });
+  }, [messages, chatLoaded, saveChatLog]);
+
   // Scroll to bottom only when new messages are added (not on status-update polls)
   useEffect(() => {
     const count = messages.length;
@@ -559,8 +623,6 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [parsing, aiLoading]);
-
-
 
   const addMessage = (message) => {
     setMessages((prev) => {
@@ -603,6 +665,66 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       return next;
     });
   };
+
+  const refreshPendingScanCue = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const pendingNodes = Array.from(container.querySelectorAll('[data-scan-pending="true"]'));
+    const count = pendingNodes.length;
+    if (count === 0) {
+      setPendingScanCue((prev) => (
+        prev.count === 0 && !prev.visible ? prev : { count: 0, visible: false }
+      ));
+      return;
+    }
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const nearBottom = distanceFromBottom < 96;
+    const containerRect = container.getBoundingClientRect();
+    const pendingVisible = pendingNodes.some((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.bottom > containerRect.top + 12 && rect.top < containerRect.bottom - 12;
+    });
+    const visible = nearBottom && !pendingVisible;
+
+    setPendingScanCue((prev) => (
+      prev.count === count && prev.visible === visible ? prev : { count, visible }
+    ));
+  }, []);
+
+  const scrollToFirstPendingScanResult = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const target = container.querySelector('[data-scan-pending="true"]');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('ring-2', 'ring-amber-300', 'ring-offset-2');
+    window.setTimeout(() => {
+      target.classList.remove('ring-2', 'ring-amber-300', 'ring-offset-2');
+      refreshPendingScanCue();
+    }, 1400);
+  };
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+
+    const onScroll = () => refreshPendingScanCue();
+    container.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    const timer = window.setTimeout(onScroll, 80);
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      window.clearTimeout(timer);
+    };
+  }, [refreshPendingScanCue]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(refreshPendingScanCue, 80);
+    return () => window.clearTimeout(timer);
+  }, [messages, scanItemState, refreshPendingScanCue]);
 
   const summarizeScanJob = useCallback((job) => {
     const results = job?.results || [];
@@ -1473,6 +1595,49 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     setMessages(nextMsgs1);
     saveChatLog(nextMsgs1);
 
+    try {
+      const profile = await profileApi.get();
+      if (!profile?.ai_summary_enabled) {
+        const next = [
+          ...nextMsgs1,
+          {
+            id: messageId(),
+            role: 'bot',
+            text: 'ยังไม่ได้เปิดการยินยอมให้ใช้ข้อมูลกับ AI ครับ ต้องเปิดที่หน้าโปรไฟล์ก่อนถึงจะสร้างสรุปการเงินรายสัปดาห์หรือรายเดือนได้',
+            choiceActive: true,
+            actions: onGoProfile ? [
+              {
+                label: 'ไปหน้าโปรไฟล์',
+                onClick: onGoProfile,
+              },
+            ] : undefined,
+          },
+        ];
+        setMessages(next);
+        saveChatLog(next);
+        return;
+      }
+    } catch (err) {
+      const next = [
+        ...nextMsgs1,
+        {
+          id: messageId(),
+          role: 'bot',
+          text: 'ตอนนี้ตรวจสอบสถานะการยินยอม AI ไม่สำเร็จครับ ลองเปิดหน้าโปรไฟล์เพื่อตรวจสอบอีกครั้ง',
+          choiceActive: true,
+          actions: onGoProfile ? [
+            {
+              label: 'ไปหน้าโปรไฟล์',
+              onClick: onGoProfile,
+            },
+          ] : undefined,
+        },
+      ];
+      setMessages(next);
+      saveChatLog(next);
+      return;
+    }
+
     // Add bot loading status
     const botLoadingId = messageId();
     const nextMsgs2 = [
@@ -1496,6 +1661,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               id: messageId(),
               role: 'ai_summary',
               period,
+              period_start: detail.period_start,
+              period_end: detail.period_end,
               summary: detail.summary
             }
           ];
@@ -1514,7 +1681,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           {
             id: messageId(),
             role: 'bot',
-            text: `ไม่สามารถดึงข้อมูลสรุปได้ในขณะนี้: ${err.message || 'ข้อมูลธุรกรรมไม่เพียงพอ (ต้องการรายการรายรับ/รายจ่ายเพื่อสรุป)'}`
+            text: getAiSummaryChatError(err.message)
           }
         ];
         saveChatLog(next);
@@ -1911,7 +2078,14 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
       const staggerDelay = `${(message.image_index ?? 0) * 140}ms`;
       return (
-        <div key={message.id} className="flex justify-start animate-message-left" style={{ animationDelay: staggerDelay }}>
+        <div
+          key={message.id}
+          data-scan-job-id={message.job_id || ''}
+          data-scan-result-id={resultId || ''}
+          data-scan-pending={isDone ? 'true' : 'false'}
+          className="flex justify-start animate-message-left transition"
+          style={{ animationDelay: staggerDelay }}
+        >
           <div className="w-[20.5rem] sm:w-[23rem] rounded-2xl bg-white dark:bg-slate-800 border border-[#DCE8EE] dark:border-slate-700/60 shadow-sm">
 
             {/* ── Header ── */}
@@ -2399,7 +2573,6 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       const duplicates = Number(message.duplicate_count || 0);
       const receipts = Number(message.receipt_count || 0);
       const slips = Number(message.slip_count || 0);
-
       if (!isActive && !isCancelled && !isDoneState) return null;
 
       const scanJobPills = [
@@ -2585,6 +2758,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         badgeBg = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600';
         iconElement = <PiggyBank size={13} />;
         label = 'เป้าหมายการออม';
+      } else if (aiNotificationPeriod(message.notification_type)) {
+        badgeBg = 'bg-[#EAF3F7] dark:bg-slate-700/50 text-[#2C6488] dark:text-[#4da2db]';
+        iconElement = <Sparkles size={13} />;
+        label = 'สรุปการเงิน';
       }
 
       return (
@@ -2649,7 +2826,21 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 <Sparkles size={12} className="text-yellow-500" />
                 <span>วิเคราะห์การเงินราย{isWeekly ? 'สัปดาห์' : 'เดือน'}ด้วย AI</span>
               </span>
-              <span className="text-xs text-slate-400">สรุปรายงานบัญชี</span>
+              <div className="flex items-center gap-1.5">
+                {message.period_start && message.period_end && (
+                  <span className="hidden sm:inline text-[10px] text-slate-400">
+                    {formatDisplayDateRange(message.period_start, message.period_end)}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setExpandedAiSummary(message)}
+                  className="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 inline-flex items-center justify-center hover:bg-slate-100 dark:bg-slate-700/70 dark:hover:bg-slate-700"
+                  title="ขยายดูสรุปการเงิน"
+                >
+                  <Maximize2 size={14} />
+                </button>
+              </div>
             </div>
 
             <div>
@@ -2751,6 +2942,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const scanImageCount = scanImageViewer?.images?.length || 0;
   const canGoPrevScanImage = scanImageViewer?.index > 0;
   const canGoNextScanImage = scanImageViewer && scanImageViewer.index < scanImageCount - 1;
+  const expandedSummary = expandedAiSummary?.summary || null;
+  const expandedIsWeekly = expandedAiSummary?.period === 'weekly';
   const goToScanImage = (direction) => {
     setScanImageViewer((prev) => {
       const count = prev?.images?.length || 0;
@@ -2779,7 +2972,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     <>
     <div className="p-3 md:p-4 w-full max-w-5xl mx-auto flex-1 flex flex-col min-h-0 relative">
       {/* Main Single Chat Container (frameless) */}
-      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden h-full">
+      <div className="relative flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden h-full">
         
         {/* Header (centered minimal) */}
         <div className="relative px-5 pt-1 pb-1.5 flex flex-col items-center text-center flex-shrink-0 border-b border-slate-200/70 dark:border-slate-800">
@@ -2875,6 +3068,16 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
           <div ref={chatBottomRef} />
         </div>
+
+        {pendingScanCue.visible && (
+          <button
+            type="button"
+            onClick={scrollToFirstPendingScanResult}
+            className="absolute left-1/2 bottom-[8.75rem] z-30 -translate-x-1/2 rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700 shadow-lg shadow-amber-100/70 hover:bg-amber-100 transition-colors"
+          >
+            ยังไม่บันทึก {pendingScanCue.count} รายการ
+          </button>
+        )}
 
         {/* Quick Action Chips Bar */}
         <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-1.5 flex-shrink-0">
@@ -3122,6 +3325,111 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           </button>
         </div>
       </div>
+    )}
+    {expandedAiSummary && expandedSummary && createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 max-w-2xl w-full max-h-[85vh] flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-700 pb-4 mb-4 flex-shrink-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Sparkles size={18} className="text-[#2C6488]" />
+                <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  สรุปการเงินราย{expandedIsWeekly ? 'สัปดาห์' : 'เดือน'}
+                </h2>
+                {expandedAiSummary.auto && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EAF3F7] text-[#2C6488] border border-[#DCE8EE]">
+                    แจ้งเตือนอัตโนมัติ
+                  </span>
+                )}
+              </div>
+              {expandedAiSummary.period_start && expandedAiSummary.period_end && (
+                <p className="text-xs text-slate-400 mt-1">
+                  ช่วงวันที่วิเคราะห์: {formatDisplayDateRange(expandedAiSummary.period_start, expandedAiSummary.period_end)}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpandedAiSummary(null)}
+              className="w-9 h-9 rounded-xl bg-slate-50 text-slate-500 inline-flex items-center justify-center hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-1 space-y-5">
+            <div className="rounded-2xl bg-[#EAF3F7] border border-[#DCE8EE] p-4">
+              <h4 className="text-sm font-bold text-[#2C6488] mb-1.5">{expandedSummary.title || 'สรุปการเงิน'}</h4>
+              <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{expandedSummary.overview}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {expandedSummary.highlights?.length > 0 && (
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                    <TrendingUp size={14} className="text-emerald-500" />
+                    จุดเด่นทางการเงิน
+                  </h4>
+                  <div className="space-y-2.5 pl-3">
+                    {expandedSummary.highlights.map((item, idx) => (
+                      <p key={idx} className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed relative before:content-['•'] before:absolute before:-left-3 before:text-[#2C6488]">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {expandedSummary.cautions?.length > 0 && (
+                <div className="bg-amber-50/70 dark:bg-amber-950/20 rounded-2xl p-4 border border-amber-100 dark:border-amber-900/40">
+                  <h4 className="text-xs font-bold text-amber-800 dark:text-amber-400 mb-3 flex items-center gap-1.5">
+                    <AlertTriangle size={14} className="text-amber-600" />
+                    ข้อพึงระวังด้านบัญชี
+                  </h4>
+                  <div className="space-y-2 pl-1">
+                    {expandedSummary.cautions.map((item, idx) => (
+                      <p key={idx} className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">• {item}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {expandedSummary.suggestions?.length > 0 && (
+              <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700">
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                  <Info size={14} className="text-[#2C6488]" />
+                  แนวทางคำแนะนำแก้ไข
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-1">
+                  {expandedSummary.suggestions.map((item, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-[10px]">
+                        {idx + 1}
+                      </span>
+                      <p className="flex-1">{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-slate-700 pt-3 mt-4 flex items-center justify-between flex-shrink-0">
+            <p className="text-[10px] text-slate-400 italic">
+              *คำแนะนำนี้เป็นคำแนะนำเบื้องต้นจาก AI*
+            </p>
+            <button
+              type="button"
+              onClick={() => setExpandedAiSummary(null)}
+              className="px-4 py-2 rounded-xl bg-[#2C6488] text-white text-xs font-semibold hover:bg-[#204a66]"
+            >
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
     )}
     </>
   );

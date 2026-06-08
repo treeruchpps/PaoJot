@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2, Target, ChevronRight } from 'lucide-react';
-import { transactions as txApi, profile as profileApi, aiSummary as aiSummaryApi, savingsGoals as goalsApi, budgets as budgetsApi } from '../services/api';
+import { transactions as txApi, profile as profileApi, savingsGoals as goalsApi, budgets as budgetsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
 
@@ -397,9 +397,8 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const [budgets,      setBudgets]      = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [aiPeriod,     setAiPeriod]     = useState('monthly');
-  const [aiState,      setAiState]      = useState(null);
-  const [aiError,      setAiError]      = useState('');
-  const [showAiSummary, setShowAiSummary] = useState(true);
+  const [aiState]      = useState(null);
+  const [aiError]      = useState('');
   const [showAiSummaryModal, setShowAiSummaryModal] = useState(false);
   const [chartTab,     setChartTab]     = useState('trend'); // 'compare' or 'trend'
   // ── Fetch profile once ────────────────────────────────────────────────────
@@ -450,17 +449,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
 
   useEffect(() => { fetchAll(weekStartDay); }, [weekStartDay, fetchAll]);
 
-  const loadAiSummary = useCallback(async (periodType = aiPeriod) => {
-    try {
-      setAiError('');
-      const data = await aiSummaryApi.get(periodType);
-      setAiState(data);
-    } catch (err) {
-      setAiError(err.message || 'โหลดสรุป AI ไม่สำเร็จ');
-    }
-  }, [aiPeriod]);
-
-  useEffect(() => { loadAiSummary(aiPeriod); }, [aiPeriod, weekStartDay, loadAiSummary]);
+  // AI summary is now surfaced in the chat page through AI notifications.
 
 
   // ── Computed ──────────────────────────────────────────────────────────────
@@ -500,10 +489,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
     : `${MONTH_LABELS[donutMonth - 1]} ${selectedYear}`;
   const aiSummary = aiState?.summary;
   const hasAiSummary = !!aiSummary;
-  const aiConsentEnabled = aiState?.ai_consent !== false;
-  const showAiConsentNotice = aiState?.ai_consent === false;
-  const showAiSummaryCard = aiConsentEnabled && hasAiSummary && showAiSummary;
-  const overviewSpan = showAiSummaryCard ? 'lg:col-span-7' : 'lg:col-span-12';
+  const showAiSummaryCard = false;
 
   const currentRange = getDateRange(aiPeriod === 'weekly' ? 'week' : 'month', weekStartDay);
   const isFallback = aiState && hasAiSummary && (aiState.period_start !== currentRange.from || aiState.period_end !== currentRange.to);
@@ -557,7 +543,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
 
       {/* ── Overview ───────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-4 items-start">
-        <div className={`col-span-12 ${overviewSpan} rounded-2xl border border-[#DCE8EE] bg-gradient-to-br from-[#EAF3F7] to-[#d7e7ee] p-5 overflow-hidden min-h-[280px] flex flex-col gap-5`}>
+        <div className="col-span-12 rounded-2xl border border-[#DCE8EE] bg-gradient-to-br from-[#EAF3F7] to-[#d7e7ee] p-5 overflow-hidden flex flex-col gap-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold mb-2 text-[#2C6488]">ภาพรวมการเงิน</p>
@@ -604,73 +590,12 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               <p className="text-lg font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(yearSaving)}</p>
             </div>
           </div>
-          {showAiConsentNotice && (
-            <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl px-4 py-3 border ${isDarkMode ? 'bg-[#1c2336] border-[#24304c]' : 'bg-white/85 border-[#BFD8E4] shadow-sm'}`}>
-              <div>
-                <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-200' : 'text-[#1f4358]'}`}>AI สรุปการเงินยังปิดอยู่</p>
-                <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-700'}`}>
-                  หากต้องการให้ระบบสรุปภาพรวมด้วย LLM ให้เปิดการยินยอมใช้ข้อมูลในหน้าโปรไฟล์ก่อน
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onGoProfile}
-                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-[#2C6488] text-white text-xs font-semibold"
-              >
-                ไปเปิดที่โปรไฟล์
-              </button>
-            </div>
-          )}
-          {!showAiSummaryCard && !showAiConsentNotice && (
-            <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl px-4 py-3 border ${isDarkMode ? 'bg-[#131926]/70 border-[#1e2638]' : 'bg-white/70 border-white'}`}>
-              <div>
-                <p className="text-sm font-semibold text-slate-700">AI สรุปการเงิน</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {hasAiSummary
-                    ? 'มีสรุปที่สร้างไว้แล้ว กดเปิดเพื่อดูอีกครั้ง'
-                    : aiState?.eligible === false
-                    ? aiState.reason
-                    : aiState?.stale
-                      ? 'ข้อมูลมีการเปลี่ยนแปลง กดสรุปใหม่เพื่ออัปเดต'
-                      : 'เลือกช่วงเวลาแล้วให้ AI ช่วยสรุปภาพรวมแบบสั้น ๆ'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`flex rounded-xl border p-1 ${isDarkMode ? 'bg-[#1a2235] border-[#24304c]' : 'bg-white border-[#DCE8EE]'}`}>
-                  {[
-                    ['weekly', 'สัปดาห์'],
-                    ['monthly', 'เดือน'],
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setAiPeriod(id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${aiPeriod === id ? 'bg-[#2C6488] text-white' : 'text-slate-500 hover:text-[#2C6488]'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {hasAiSummary && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAiSummary(true)}
-                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${isDarkMode ? 'bg-[#1c2336] text-[#4da2db] border-[#24304c]' : 'bg-white text-[#2C6488] border-[#DCE8EE]'}`}
-                  >
-                    <Sparkles size={14} />
-                    เปิดสรุป
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-          {aiError && !hasAiSummary && (
-            <p className="text-xs text-red-500">{aiError}</p>
-          )}
         </div>
 
+      </div>
+
         {showAiSummaryCard && (
-          <div className="col-span-12 lg:col-span-5 rounded-2xl bg-white p-5 shadow-sm border border-slate-100 min-h-[280px] max-h-[350px] flex flex-col">
+          <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100 flex flex-col max-h-[440px]">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -711,14 +636,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                   title="ขยายเต็มจอ"
                 >
                   <Maximize2 size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAiSummary(false)}
-                  className="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 inline-flex items-center justify-center hover:bg-slate-100"
-                  title="ปิดสรุป"
-                >
-                  <X size={15} />
                 </button>
               </div>
             </div>
@@ -791,9 +708,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             </div>
           </div>
         )}
-
-
-      </div>
 
       {/* ── Period Cards ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

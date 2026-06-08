@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSnackbar } from '../contexts/SnackbarContext';
-import { Camera, X, User, Lock, LogOut, Settings, Sparkles, ShieldCheck, ShieldOff, CalendarDays, KeyRound, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { Camera, X, User, Lock, LogOut, Settings, Sparkles, ShieldCheck, ShieldOff, CalendarDays, KeyRound, Eye, EyeOff, CheckCircle2, AtSign, Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profile as profileApi, auth as authApi } from '../services/api';
 import { formatDisplayDate } from '../utils/dateFormat';
@@ -86,28 +86,16 @@ export default function ProfileView() {
   const resetProfileDraft = () => {
     setDisplayName(profileData?.display_name || '');
     setAvatarUrl(profileData?.avatar_url || '');
-    showSuccess('');
-    showError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const requestSaveProfile = () => {
-    showSuccess('');
-    showError('');
-    setConfirmAction({ type: 'save-profile' });
-  };
+  const requestSaveProfile = () => setConfirmAction({ type: 'save-profile' });
 
   const resetSystemSettingsDraft = () => {
     setWeekStartDay(profileData?.week_start_day ?? 1);
-    showSuccess('');
-    showError('');
   };
 
-  const requestSaveSystemSettings = () => {
-    showSuccess('');
-    showError('');
-    setConfirmAction({ type: 'save-settings' });
-  };
+  const requestSaveSystemSettings = () => setConfirmAction({ type: 'save-settings' });
 
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0];
@@ -125,8 +113,6 @@ export default function ProfileView() {
     const nextWeekStartDay = overrides.weekStartDay ?? weekStartDay;
     const nextAiEnabled = overrides.aiSummaryEnabled ?? aiSummaryEnabled;
     setSavingProfile(true);
-    showSuccess('');
-    showError('');
     try {
       const updated = await profileApi.update({
         display_name: nextDisplayName.trim() || null,
@@ -212,14 +198,10 @@ export default function ProfileView() {
   const closePasswordForm = () => {
     setShowPwForm(false);
     setPwForm({ current: '', next: '', confirm: '' });
-    showSuccess('');
-    showError('');
     setShowPw({ current: false, next: false, confirm: false });
   };
 
   const changePassword = async () => {
-    showSuccess('');
-    showError('');
     if (!pwForm.current || !pwForm.next) { showError('กรุณากรอกรหัสผ่านให้ครบ'); return; }
     if (pwForm.next.length < 8) { showError('รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
     if (pwForm.next !== pwForm.confirm) { showError('รหัสผ่านใหม่ไม่ตรงกัน'); return; }
@@ -236,21 +218,26 @@ export default function ProfileView() {
     }
   };
 
-  const PasswordField = ({ id, label, value, onChange, placeholder }) => (
+  const labelCls = 'text-xs font-medium text-slate-500 mb-1.5 block';
+  const inputCls = 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50 text-slate-700 focus:outline-none focus:bg-white focus:border-[#2C6488] focus:ring-2 focus:ring-[#2C6488]/10 transition-colors';
+  const cardCls = 'bg-white rounded-2xl border border-slate-200/70 shadow-sm';
+
+  // Plain render helper (NOT a component) so inputs keep focus while typing
+  const pwField = (id, label, value, onChange, placeholder) => (
     <div>
-      <label className="text-xs font-medium text-slate-500 mb-1 block">{label}</label>
+      <label className={labelCls}>{label}</label>
       <div className="relative">
         <input
           type={showPw[id] ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full border border-slate-200 rounded-xl pl-3 pr-10 py-2.5 text-sm bg-slate-50 text-slate-700 focus:outline-none focus:border-[#BFD8E4]"
+          className={`${inputCls} pr-10`}
         />
         <button
           type="button"
           onClick={() => setShowPw((prev) => ({ ...prev, [id]: !prev[id] }))}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#2C6488]"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#2C6488] transition-colors"
         >
           {showPw[id] ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
@@ -311,137 +298,144 @@ export default function ProfileView() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
-      <div className="relative overflow-hidden rounded-3xl bg-[#EAF3F7] p-6 md:p-8 shadow-sm text-slate-800 border border-[#DCE8EE]">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 relative z-10">
-          <div className="flex items-center gap-6 min-w-0">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
+
+      {/* ── Header ───────────────────────────────────────────────────────────── */}
+      <div className={`${cardCls} p-6 md:p-7`}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+          <div className="flex items-center gap-5 min-w-0">
             <div className="relative flex-shrink-0 group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
               {avatarUrl ? (
-                <div className="p-1 rounded-2xl bg-white shadow-sm border border-[#DCE8EE]">
-                  <img src={avatarUrl} alt="avatar" className="w-20 h-20 rounded-xl object-cover border border-[#DCE8EE]" />
-                </div>
+                <img src={avatarUrl} alt="avatar" className="w-20 h-20 rounded-2xl object-cover border border-slate-200" />
               ) : (
-                <div className="p-1 rounded-2xl bg-white shadow-sm border border-[#DCE8EE]">
-                  <div className="w-20 h-20 rounded-xl flex items-center justify-center text-white text-2xl font-bold bg-[#2C6488]/80 shadow-md">
-                    {initials}
-                  </div>
+                <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-2xl font-bold bg-[#2C6488]">
+                  {initials}
                 </div>
               )}
-              <div className="absolute inset-1 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Camera size={22} color="white" />
+              <div className="absolute inset-0 rounded-2xl bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera size={20} color="white" />
               </div>
               {avatarUrl && (
-                <button onClick={(e) => { e.stopPropagation(); setAvatarUrl(''); }}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-650 flex items-center justify-center shadow-lg transition-colors border border-white/20">
-                  <X size={12} color="white" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setAvatarUrl(''); }}
+                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow border-2 border-white transition-colors"
+                >
+                  <X size={11} color="white" />
                 </button>
               )}
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-extrabold text-slate-800 truncate leading-tight">{profileData?.display_name || user?.username}</h1>
-                <Sparkles size={16} className="text-yellow-400 animate-pulse flex-shrink-0" />
-              </div>
-              <p className="text-slate-500 text-sm mt-1.5 font-medium">{user?.email || '-'}</p>
-              <span className="inline-flex mt-2 text-xs px-2.5 py-1 rounded-lg font-bold bg-white text-[#2C6488] border border-[#DCE8EE]">
-                @{user?.username || '-'}
-              </span>
-              {hasProfileChanges && (
-                <span className="inline-flex mt-2 ml-2 text-xs px-2.5 py-1 rounded-lg font-bold bg-amber-50 text-amber-700 border border-amber-100">
-                  มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
+              <h1 className="text-xl md:text-2xl font-bold text-slate-800 truncate leading-tight">
+                {profileData?.display_name || user?.username}
+              </h1>
+              <p className="text-sm text-slate-500 mt-1 truncate flex items-center gap-1.5">
+                <Mail size={13} className="text-slate-400 flex-shrink-0" />
+                {user?.email || '-'}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-semibold bg-[#EAF3F7] text-[#2C6488] border border-[#DCE8EE]">
+                  <AtSign size={12} />{user?.username || '-'}
                 </span>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-[#2C6488] border border-[#DCE8EE] hover:bg-[#F6FAFC]"
-                >
-                  <Camera size={13} />
-                  เปลี่ยนรูปโปรไฟล์
-                </button>
-                {avatarUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setAvatarUrl('')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-red-500 border border-red-100 hover:bg-red-50"
-                  >
-                    <X size={13} />
-                    ลบรูป
-                  </button>
+                {hasProfileChanges && (
+                  <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    มีการเปลี่ยนแปลงที่ยังไม่บันทึก
+                  </span>
                 )}
               </div>
             </div>
           </div>
-          <button onClick={() => setConfirmAction({ type: 'logout' })}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold text-[#2C6488] bg-white hover:bg-[#F6FAFC] border border-[#DCE8EE] transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98]">
+          <button
+            onClick={() => setConfirmAction({ type: 'logout' })}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-red-600 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-colors flex-shrink-0 self-start sm:self-auto"
+          >
             <LogOut size={15} />
             ออกจากระบบ
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
-        <div className="lg:col-span-3 space-y-5">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-4">
-            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <User size={16} color={accent} /> ข้อมูลโปรไฟล์
-            </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+        {/* ── Left column ────────────────────────────────────────────────────── */}
+        <div className="lg:col-span-3 space-y-6">
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อผู้ใช้</label>
-                <div className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-400">
-                  {user?.username || '-'}
-                </div>
+          {/* Profile info */}
+          <div className={cardCls}>
+            <div className="flex items-center gap-3 p-5 border-b border-slate-100">
+              <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                <User size={17} color={accent} />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">อีเมล</label>
-                <div className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-400">
-                  {user?.email || '-'}
-                </div>
+                <h2 className="text-sm font-semibold text-slate-800">ข้อมูลโปรไฟล์</h2>
+                <p className="text-xs text-slate-400 mt-0.5">จัดการชื่อที่แสดงและรูปโปรไฟล์ของคุณ</p>
               </div>
             </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>ชื่อผู้ใช้</label>
+                  <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-100/60 text-slate-500">
+                    <AtSign size={14} className="text-slate-400 flex-shrink-0" />
+                    <span className="truncate">{user?.username || '-'}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>อีเมล</label>
+                  <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-100/60 text-slate-500">
+                    <Mail size={14} className="text-slate-400 flex-shrink-0" />
+                    <span className="truncate">{user?.email || '-'}</span>
+                  </div>
+                </div>
+              </div>
 
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อที่แสดง</label>
-              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={user?.username}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
-            </div>
+              <div>
+                <label className={labelCls}>ชื่อที่แสดง</label>
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder={user?.username}
+                  className={inputCls}
+                />
+                <p className="text-[11px] text-slate-400 mt-1.5">ชื่อนี้จะแสดงบนแดชบอร์ดและรายงานสรุปต่าง ๆ</p>
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button onClick={resetProfileDraft} disabled={savingProfile || !hasBasicProfileChanges}
-                className="w-full py-2.5 rounded-xl text-sm font-bold border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-all disabled:opacity-50 active:scale-[0.98]">
-                ยกเลิกการแก้ไข
-              </button>
-              <button onClick={requestSaveProfile} disabled={savingProfile || !hasBasicProfileChanges}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:bg-[#25536F] disabled:opacity-50 active:scale-[0.98] shadow-sm bg-[#2C6488]">
-                {savingProfile ? 'กำลังบันทึก...' : 'บันทึกโปรไฟล์'}
-              </button>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={resetProfileDraft}
+                  disabled={savingProfile || !hasBasicProfileChanges}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50 active:scale-[0.98]"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={requestSaveProfile}
+                  disabled={savingProfile || !hasBasicProfileChanges}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#2C6488] hover:bg-[#25536F] transition-colors disabled:opacity-50 active:scale-[0.98] shadow-sm"
+                >
+                  {savingProfile ? 'กำลังบันทึก...' : 'บันทึกโปรไฟล์'}
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                  <Lock size={18} color={accent} />
+          {/* Security */}
+          <div className={cardCls}>
+            <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                  <Lock size={17} color={accent} />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-slate-700">ความปลอดภัยของบัญชี</h2>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    อัปเดตรหัสผ่านสำหรับเข้าสู่ระบบ ควรใช้รหัสที่ไม่ซ้ำกับเว็บอื่น
-                  </p>
+                  <h2 className="text-sm font-semibold text-slate-800">ความปลอดภัยของบัญชี</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">อัปเดตรหัสผ่านสำหรับเข้าสู่ระบบ</p>
                 </div>
               </div>
               {!showPwForm && (
                 <button
                   type="button"
-                  onClick={() => { setShowPwForm(true); showSuccess(''); showError(''); }}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white flex-shrink-0"
-                  style={{ background: accent }}
+                  onClick={() => setShowPwForm(true)}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-[#2C6488] bg-[#EAF3F7] hover:bg-[#DCE8EE] border border-[#DCE8EE] transition-colors flex-shrink-0"
                 >
                   <KeyRound size={14} />
                   เปลี่ยนรหัสผ่าน
@@ -449,33 +443,15 @@ export default function ProfileView() {
               )}
             </div>
 
-            {showPwForm && (
-              <div className="space-y-4 pt-2">
-                <PasswordField
-                  id="current"
-                  label="รหัสผ่านปัจจุบัน"
-                  value={pwForm.current}
-                  onChange={(value) => setPwForm({ ...pwForm, current: value })}
-                  placeholder="••••••••"
-                />
+            {showPwForm ? (
+              <div className="p-5 space-y-4">
+                {pwField('current', 'รหัสผ่านปัจจุบัน', pwForm.current, (v) => setPwForm({ ...pwForm, current: v }), '••••••••')}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <PasswordField
-                    id="next"
-                    label="รหัสผ่านใหม่"
-                    value={pwForm.next}
-                    onChange={(value) => setPwForm({ ...pwForm, next: value })}
-                    placeholder="อย่างน้อย 8 ตัวอักษร"
-                  />
-                  <PasswordField
-                    id="confirm"
-                    label="ยืนยันรหัสผ่านใหม่"
-                    value={pwForm.confirm}
-                    onChange={(value) => setPwForm({ ...pwForm, confirm: value })}
-                    placeholder="พิมพ์รหัสผ่านอีกครั้ง"
-                  />
+                  {pwField('next', 'รหัสผ่านใหม่', pwForm.next, (v) => setPwForm({ ...pwForm, next: v }), 'อย่างน้อย 8 ตัวอักษร')}
+                  {pwField('confirm', 'ยืนยันรหัสผ่านใหม่', pwForm.confirm, (v) => setPwForm({ ...pwForm, confirm: v }), 'พิมพ์รหัสผ่านอีกครั้ง')}
                 </div>
 
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-2">
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3.5 py-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[11px] font-semibold text-slate-600">ความแข็งแรงรหัสผ่าน</p>
                     <p className="text-[11px] font-bold" style={{ color: strengthMeta.color }}>{strengthMeta.label}</p>
@@ -483,7 +459,7 @@ export default function ProfileView() {
                   <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
                     <div className="h-full rounded-full transition-all" style={{ width: strengthMeta.width, background: strengthMeta.color }} />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-0.5">
                     {passwordChecks.map((item) => (
                       <div key={item.label} className="flex items-center gap-1.5 text-[11px]">
                         <CheckCircle2 size={12} color={item.pass ? '#10b981' : '#cbd5e1'} />
@@ -493,90 +469,132 @@ export default function ProfileView() {
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 pt-1">
-                  <button onClick={closePasswordForm}
-                    className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={closePasswordForm}
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors active:scale-[0.98]"
+                  >
                     ยกเลิก
                   </button>
-                  <button onClick={changePassword} disabled={savingPw}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-                    style={{ background: accent }}>
+                  <button
+                    onClick={changePassword}
+                    disabled={savingPw}
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#2C6488] hover:bg-[#25536F] transition-colors disabled:opacity-60 active:scale-[0.98] shadow-sm"
+                  >
                     {savingPw ? 'กำลังบันทึก...' : 'บันทึกรหัสผ่านใหม่'}
                   </button>
                 </div>
+              </div>
+            ) : (
+              <div className="p-5">
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  เพื่อความปลอดภัย ควรใช้รหัสผ่านที่ไม่ซ้ำกับเว็บไซต์อื่น และเปลี่ยนเป็นระยะ
+                </p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="lg:col-span-2 space-y-5">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-4">
-            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Settings size={16} color={accent} /> ตั้งค่าระบบ
-            </h2>
+        {/* ── Right column ───────────────────────────────────────────────────── */}
+        <div className="lg:col-span-2 space-y-6">
 
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">วันเริ่มต้นสัปดาห์</label>
-              <div className="relative">
-                <CalendarDays size={15} className="absolute left-3 top-3 text-slate-400" />
-                <select value={weekStartDay} onChange={(e) => setWeekStartDay(parseInt(e.target.value, 10))}
-                  className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm bg-slate-50 text-slate-700">
-                  {WEEK_START_OPTS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+          {/* System settings */}
+          <div className={cardCls}>
+            <div className="flex items-center gap-3 p-5 border-b border-slate-100">
+              <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                <Settings size={17} color={accent} />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">ตั้งค่าระบบ</h2>
+                <p className="text-xs text-slate-400 mt-0.5">ค่าที่ใช้คำนวณรายงานสรุป</p>
               </div>
             </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className={labelCls}>วันเริ่มต้นสัปดาห์</label>
+                <div className="relative">
+                  <CalendarDays size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <select
+                    value={weekStartDay}
+                    onChange={(e) => setWeekStartDay(parseInt(e.target.value, 10))}
+                    className={`${inputCls} pl-9 appearance-none cursor-pointer`}
+                  >
+                    {WEEK_START_OPTS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">ใช้กำหนดช่วงของสรุปการเงินรายสัปดาห์</p>
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button onClick={resetSystemSettingsDraft} disabled={savingProfile || !hasSystemSettingsChanges}
-                className="w-full py-2.5 rounded-xl text-sm font-bold border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-all disabled:opacity-50 active:scale-[0.98]">
-                ยกเลิกการแก้ไข
-              </button>
-              <button onClick={requestSaveSystemSettings} disabled={savingProfile || !hasSystemSettingsChanges}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:bg-[#25536F] disabled:opacity-50 active:scale-[0.98] shadow-sm bg-[#2C6488]">
-                บันทึกการตั้งค่า
-              </button>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={resetSystemSettingsDraft}
+                  disabled={savingProfile || !hasSystemSettingsChanges}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50 active:scale-[0.98]"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={requestSaveSystemSettings}
+                  disabled={savingProfile || !hasSystemSettingsChanges}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#2C6488] hover:bg-[#25536F] transition-colors disabled:opacity-50 active:scale-[0.98] shadow-sm"
+                >
+                  บันทึก
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className={`rounded-2xl shadow-sm border p-6 space-y-4 ${aiSummaryEnabled ? 'bg-[#EAF3F7] border-[#BFD8E4]' : 'bg-white border-slate-100'}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} color={accent} />
-                <h2 className="text-sm font-semibold text-slate-700">การใช้ข้อมูลกับ AI</h2>
+          {/* AI consent */}
+          <div className={cardCls}>
+            <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
+                  <Sparkles size={17} color={accent} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-slate-800">การใช้ข้อมูลกับ AI</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">สำหรับสรุปการเงินอัตโนมัติ</p>
+                </div>
               </div>
-              {aiSummaryEnabled ? <ShieldCheck size={18} color="#10b981" /> : <ShieldOff size={18} color="#94a3b8" />}
+              {aiSummaryEnabled
+                ? <ShieldCheck size={18} color="#10b981" className="flex-shrink-0" />
+                : <ShieldOff size={18} color="#94a3b8" className="flex-shrink-0" />}
             </div>
 
-            <div className="space-y-2 text-sm text-slate-600 leading-relaxed">
-              <p>เปิดเพื่ออนุญาตให้ระบบส่งข้อมูลธุรกรรมที่จำเป็นไปให้ AI สำหรับสรุปการเงินรายสัปดาห์และรายเดือน</p>
-              <p className="text-xs text-slate-500">ระบบจะใช้ข้อมูลสรุป เช่น รายรับ รายจ่าย หมวดหมู่ งบประมาณ และเป้าหมายการออม ไม่ส่งรูปสลิป รูปใบเสร็จ หรือหมายเหตุส่วนตัวที่ไม่จำเป็น</p>
-            </div>
+            <div className="p-5 space-y-4">
+              <div className="space-y-2 text-sm text-slate-600 leading-relaxed">
+                <p>เปิดเพื่ออนุญาตให้ระบบส่งข้อมูลธุรกรรมที่จำเป็นไปให้ AI สำหรับสรุปการเงินรายสัปดาห์และรายเดือน</p>
+                <p className="text-xs text-slate-500">ระบบจะใช้ข้อมูลสรุป เช่น รายรับ รายจ่าย หมวดหมู่ งบประมาณ และเป้าหมายการออม ไม่ส่งรูปสลิป รูปใบเสร็จ หรือหมายเหตุส่วนตัวที่ไม่จำเป็น</p>
+              </div>
 
-            <div className="rounded-xl bg-white/80 border border-white px-3 py-3">
-              <p className="text-xs text-slate-500 mb-1">สถานะปัจจุบัน</p>
-              <p className={`text-sm font-bold ${aiSummaryEnabled ? 'text-emerald-600' : 'text-slate-500'}`}>
-                {aiSummaryEnabled ? 'ยินยอมให้ใช้ข้อมูลกับ AI' : 'ปิดการใช้ข้อมูลกับ AI'}
-              </p>
-              {profileData?.ai_summary_consent_at && aiSummaryEnabled && (
-                <p className="text-xs text-slate-400 mt-1">ยินยอมเมื่อ {formatDisplayDate(profileData.ai_summary_consent_at)}</p>
-              )}
-            </div>
+              <div className={`rounded-xl px-3.5 py-3 border ${aiSummaryEnabled ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                <p className="text-xs text-slate-500 mb-1">สถานะปัจจุบัน</p>
+                <p className={`text-sm font-bold ${aiSummaryEnabled ? 'text-emerald-600' : 'text-slate-500'}`}>
+                  {aiSummaryEnabled ? 'ยินยอมให้ใช้ข้อมูลกับ AI' : 'ปิดการใช้ข้อมูลกับ AI'}
+                </p>
+                {profileData?.ai_summary_consent_at && aiSummaryEnabled && (
+                  <p className="text-xs text-slate-400 mt-1">ยินยอมเมื่อ {formatDisplayDate(profileData.ai_summary_consent_at)}</p>
+                )}
+              </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setConfirmAction({ type: 'enable-ai' })} disabled={savingProfile || aiSummaryEnabled}
-                className="py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
-                style={{ background: accent }}>
-                ยินยอม
-              </button>
-              <button 
-                onClick={() => setConfirmAction({ type: 'disable-ai' })} 
-                disabled={savingProfile || !aiSummaryEnabled}
-                className="py-2.5 rounded-xl text-sm font-bold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-all disabled:opacity-50 active:scale-[0.98]"
-              >
-                ปิดการยินยอม
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setConfirmAction({ type: 'enable-ai' })}
+                  disabled={savingProfile || aiSummaryEnabled}
+                  className="py-2.5 rounded-xl text-sm font-semibold text-white bg-[#2C6488] hover:bg-[#25536F] transition-colors disabled:opacity-50 active:scale-[0.98] shadow-sm"
+                >
+                  ยินยอม
+                </button>
+                <button
+                  onClick={() => setConfirmAction({ type: 'disable-ai' })}
+                  disabled={savingProfile || !aiSummaryEnabled}
+                  className="py-2.5 rounded-xl text-sm font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50 active:scale-[0.98]"
+                >
+                  ปิดการยินยอม
+                </button>
+              </div>
             </div>
           </div>
         </div>

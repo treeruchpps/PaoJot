@@ -172,6 +172,7 @@ function AppShell() {
             categories={categories}
             onGoAccounts={() => setView('accounts')}
             onGoGoals={() => setView('goals')}
+            onGoProfile={() => setView('profile')}
             onRefresh={async () => {
               await Promise.all([refreshAccounts(), refreshNotifications()]);
               setQuickEntryRefreshKey((v) => v + 1);
