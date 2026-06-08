@@ -494,3 +494,63 @@ input[type="password"]::-ms-clear {
   .animate-card-pop,
   .animate-snack { animation: none !important; }
 }
+
+/* ==========================================
+   DARK MODE — ADDITIONAL COVERAGE
+   ========================================== */
+
+/* Dashboard "ภาพรวมการเงิน" overview gradient card */
+.dark div[class*="from-[#EAF3F7]"][class*="to-[#d7e7ee]"] {
+  background-image: linear-gradient(to bottom right, #131926, #0f1b2e) !important;
+}
+
+/* White borders → subtle dark borders */
+.dark [class*="border-white"] {
+  border-color: #24304c !important;
+}
+
+/* Solid light blue-gray fills */
+.dark [class*="bg-[#DCE8EE]"],
+.dark [class*="bg-[#BFD8E4]"] {
+  background-color: #1c2b44 !important;
+}
+
+/* Light tints used as section backgrounds */
+.dark [class*="bg-[#EAF7E8]"],
+.dark [style*="background: #EAF7E8"] {
+  background-color: #12291d !important;
+}
+
+/* Inline white backgrounds (style={{ backgroundColor: '#ffffff' }}) — inline white bg */
+.dark [style*="background-color: #ffffff"],
+.dark [style*="background-color: #fff"],
+.dark [style*="background-color: rgb(255, 255, 255)"],
+.dark [style*="background-color: rgb(255,255,255)"] {
+  background-color: #131926 !important;
+}
+
+/* ==========================================
+   INLINE LIGHT BG (rgb-serialized) — dark fixes
+   Browsers serialize inline hex -> rgb(), so match both forms
+   ========================================== */
+.dark [style*="background: rgb(255, 255, 255)"],
+.dark [style*="background-color: rgb(255, 255, 255)"],
+.dark [style*="background: #ffffff"],
+.dark [style*="background-color: #ffffff"] {
+  background-color: #131926 !important;
+}
+.dark [style*="background: rgb(239, 246, 255)"],
+.dark [style*="background-color: rgb(239, 246, 255)"],
+.dark [style*="background: #eff6ff"] {
+  background-color: #122130 !important;
+}
+.dark [style*="background: rgb(254, 242, 242)"],
+.dark [style*="background-color: rgb(254, 242, 242)"],
+.dark [style*="background: #fef2f2"] {
+  background-color: #2a1b1d !important;
+}
+.dark [style*="background: rgb(236, 253, 245)"],
+.dark [style*="background-color: rgb(236, 253, 245)"],
+.dark [style*="background: #ecfdf5"] {
+  background-color: #152920 !important;
+}

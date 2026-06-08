@@ -226,9 +226,36 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
     
     return (
       <div
-        className="relative rounded-2xl p-5 shadow-sm border border-slate-100 card-hover hover:-translate-y-1.5 hover:shadow-md transition-all duration-300 overflow-hidden group"
+        className="relative rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 card-hover hover:-translate-y-1.5 hover:shadow-md transition-all duration-300 overflow-hidden group"
         style={{ backgroundColor: '#ffffff' }}
       >
+        {/* Mobile: compact row */}
+        <div className="flex sm:hidden items-center gap-3 relative z-10">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: k.color + '18' }}>
+            <KindIcon icon={k.icon} color={k.color} size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-slate-800 truncate">{acc.name}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5 truncate">{k.label} · {acc.currency}</p>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+            <p className="text-base font-extrabold text-emerald-600 whitespace-nowrap">฿{fmt(acc.balance)}</p>
+            <div className="flex gap-1">
+              <button onClick={() => onGoTransactions?.(acc.id)} className="w-6 h-6 rounded-md bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors" title="ดูรายการธุรกรรม">
+                <ReceiptText size={11} className="text-slate-500" />
+              </button>
+              <button onClick={() => openEdit(acc)} className="w-6 h-6 rounded-md bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors" title="แก้ไข">
+                <Edit size={11} className="text-slate-500" />
+              </button>
+              <button onClick={() => setDeleteTarget(acc)} className="w-6 h-6 rounded-md bg-slate-100 hover:bg-red-50 flex items-center justify-center transition-colors" title="ลบ">
+                <Trash2 size={11} className="text-slate-400 hover:text-red-500" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: full vertical card */}
+        <div className="hidden sm:block">
         <div className="flex items-start justify-between mb-4 relative z-10">
           <div className="flex items-center gap-3">
             {/* Logo/Chip */}
@@ -267,6 +294,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">{acc.currency}</span>
           </div>
         </div>
+        </div>
       </div>
     );
   };
@@ -274,16 +302,16 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
 
       <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
         <h2 className="text-base font-semibold text-slate-700">ภาพรวมบัญชี</h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
             { label: 'ยอดเงินรวม', value: totalAssets, color: '#2C6488', bg: '#EAF3F7', prefix: '฿' },
             { label: 'บัญชีเงินทั้งหมด', value: regularAccounts.length, color: '#2C6488', bg: '#EAF3F7', suffix: ' บัญชี' },
           ].map((s, i) => (
-            <div key={i} className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
+            <div key={i} className={`rounded-2xl p-4 bg-slate-50 border border-slate-100 ${i === 1 ? 'hidden sm:block' : ''}`}>
               <p className="text-xs text-slate-500 mb-1">{s.label}</p>
               <p className="text-2xl font-bold" style={{ color: s.color }}>
                 {s.prefix || ''}{s.prefix ? fmt(s.value) : s.value}{s.suffix || ''}
