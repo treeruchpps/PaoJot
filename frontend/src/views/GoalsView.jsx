@@ -295,9 +295,9 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
   const pagedGoals     = filteredGoals.slice((goalSafePage - 1) * GOAL_PAGE_SIZE, goalSafePage * GOAL_PAGE_SIZE);
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
       {!loading && goals.length > 0 && (
-        <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
+        <div className="hidden sm:block rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
           <h2 className="text-base font-semibold text-slate-700">ภาพรวมเป้าหมายการออม</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
@@ -381,20 +381,20 @@ export default function GoalsView({ accounts, onRefreshAccounts, quickEntryRefre
 
             return (
               <div key={g.id}
-                className={`bg-white rounded-2xl shadow-sm border card-hover overflow-hidden ${isDone ? 'border-emerald-200' : 'border-slate-100'}`}>
+                className={`bg-white rounded-2xl shadow-sm border card-hover overflow-hidden flex sm:block ${isDone ? 'border-emerald-200' : 'border-slate-100'}`}>
                 {g.image_url ? (
-                  <div className="aspect-[16/10] bg-slate-100 overflow-hidden">
+                  <div className="w-24 flex-shrink-0 sm:w-auto sm:aspect-[16/10] bg-slate-100 overflow-hidden">
                     <img src={g.image_url} alt={g.name} className="w-full h-full object-cover object-center" />
                   </div>
                 ) : (
-                  <div className="aspect-[16/10] bg-gradient-to-br from-[#EAF3F7] to-[#EAF7E8] flex items-center justify-center">
+                  <div className="w-24 flex-shrink-0 sm:w-auto sm:aspect-[16/10] bg-gradient-to-br from-[#EAF3F7] to-[#EAF7E8] flex items-center justify-center">
                     <div className="w-12 h-12 rounded-2xl bg-white/80 flex items-center justify-center shadow-sm">
                       <Icon name="PiggyBank" size={24} color="#2C6488" />
                     </div>
                   </div>
                 )}
 
-                <div className="p-5">
+                <div className="flex-1 min-w-0 p-4 sm:p-5">
                   <div className="flex items-start justify-between mb-4">
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-800 truncate">{g.name}</p>

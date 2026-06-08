@@ -485,7 +485,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const yearIncome = yearTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const yearExpense = yearTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const yearSaving = yearTx.filter((t) => isSavingTransfer(t, activeSavingAccountIds)).reduce((s, t) => s + t.amount, 0);
-  const yearNetCashflow = yearIncome - yearExpense;
+  const yearNetCashflow = totalAssets;
   const yearMonthly = getYearCashflowTrend(yearTx, activeSavingAccountIds);
   const barData = yearMonthly;
   const yearTrendData = yearMonthly;
@@ -551,7 +551,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
     .sort((a, b) => b.pct - a.pct);
   const topGoals = inProgressGoals.slice(0, 3);
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
 
       {/* ── Overview ───────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-4 items-start">
@@ -559,12 +559,12 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold mb-2 text-[#2C6488]">ภาพรวมการเงิน</p>
-              <h2 className="text-sm text-slate-500 mb-1">กระแสเงินสุทธิ · ปี {selectedYear}</h2>
-              <p className="text-4xl font-bold" style={{ color: yearNetCashflow >= 0 ? '#15803d' : '#dc2626' }}>
-                {signedBaht(yearNetCashflow)}
+              <h2 className="text-sm text-slate-500 mb-1">กระแสเงินสุทธิรวม</h2>
+              <p className="text-4xl font-bold whitespace-nowrap" style={{ color: yearNetCashflow >= 0 ? '#15803d' : '#dc2626' }}>
+                {signedBaht(yearNetCashflow, '')}
               </p>
               <p className="text-xs text-slate-400 mt-2">
-                ยอดเงินปัจจุบันรวม ฿{fmt(totalAssets)} · {accounts.filter((a) => a.type === 'asset').length} บัญชี
+                สินทรัพย์จากบัญชี ฿{fmt(totalAssets)} · {accounts.filter((a) => a.type === 'asset').length} บัญชี
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -589,17 +589,17 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">รายรับ ปี {selectedYear}</p>
-              <p className="text-lg font-bold text-emerald-600">฿{fmt(yearIncome)}</p>
+            <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
+              <p className="text-xs text-slate-500 sm:mb-1 truncate">รายรับ ปี {selectedYear}</p>
+              <p className="text-base sm:text-lg font-bold text-emerald-600 whitespace-nowrap flex-shrink-0">฿{fmt(yearIncome)}</p>
             </div>
-            <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">รายจ่าย ปี {selectedYear}</p>
-              <p className="text-lg font-bold text-red-500">฿{fmt(yearExpense)}</p>
+            <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
+              <p className="text-xs text-slate-500 sm:mb-1 truncate">รายจ่าย ปี {selectedYear}</p>
+              <p className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap flex-shrink-0">฿{fmt(yearExpense)}</p>
             </div>
-            <div className="rounded-xl p-4 border border-white bg-white/75">
-              <p className="text-xs text-slate-500 mb-1 truncate">การออม ปี {selectedYear}</p>
-              <p className="text-lg font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(yearSaving)}</p>
+            <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
+              <p className="text-xs text-slate-500 sm:mb-1 truncate">การออม ปี {selectedYear}</p>
+              <p className="text-base sm:text-lg font-bold whitespace-nowrap flex-shrink-0" style={{ color: SAVING_COLOR }}>฿{fmt(yearSaving)}</p>
             </div>
           </div>
         </div>
@@ -736,6 +736,35 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                 borderColor:  isDarkMode ? '#24304c' : '#f1f5f9',
               }}
             >
+              {/* Phone: compact list row */}
+              <div className="flex sm:hidden items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: isDarkMode ? '#1a2c44' : pc.bg }}>
+                  {pc.icon === 'Sun' && <Sun size={16} color={isDarkMode ? '#4da2db' : pc.color} />}
+                  {pc.icon === 'Calendar' && <Calendar size={16} color={isDarkMode ? '#4da2db' : pc.color} />}
+                  {pc.icon === 'BarChart2' && <BarChart2 size={16} color={isDarkMode ? '#4da2db' : pc.color} />}
+                  {pc.icon === 'TrendingUp' && <TrendingUp size={16} color={isDarkMode ? '#4da2db' : pc.color} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold leading-tight" style={{ color: isDarkMode ? '#4da2db' : pc.color }}>{pc.label}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">{dateLabel}</p>
+                </div>
+                {loading || !stats ? (
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <div className="h-3 w-12 bg-slate-100 rounded animate-pulse" />
+                    <div className="h-3 w-10 bg-slate-100 rounded animate-pulse" />
+                    <div className="h-3 w-9 bg-slate-100 rounded animate-pulse" />
+                  </div>
+                ) : (
+                  <div className="text-right leading-tight flex-shrink-0">
+                    <p className="text-xs font-bold text-emerald-600">{signedBaht(stats.inc)}</p>
+                    <p className="text-xs font-bold text-red-500">-฿{fmt(stats.exp)}</p>
+                    <p className="text-xs font-bold" style={{ color: SAVING_COLOR }}>฿{fmt(stats.sav || 0)}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="hidden sm:block">
               {/* Header */}
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -785,6 +814,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                   </div>
                 </div>
               )}
+              </div>
             </div>
           );
         })}

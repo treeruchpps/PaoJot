@@ -165,9 +165,9 @@ function FilterSelect({ value, onChange, options }) {
   }, []);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative w-full sm:w-auto" ref={ref}>
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors whitespace-nowrap">
+        className="flex items-center justify-between gap-2 w-full sm:w-auto px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors whitespace-nowrap">
         <span>{selected?.label ?? value}</span>
         <ChevronDown size={13} color="#94a3b8"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
@@ -304,7 +304,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
           {selectedTxs.length === 0 ? (
             <div className="py-10 text-center text-slate-400 text-sm">ไม่มีรายการในวันนี้</div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm min-w-[720px]">
               <tbody>
                 {selectedTxs.map((tx) => {
                   const cat   = getCat(tx.category_id);
@@ -352,7 +352,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
@@ -361,6 +361,74 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
 }
 
 // ─── Main view ────────────────────────────────────────────────────────────────
+function TxSwipeRow({ tx, cat, acc, toAcc, onEdit, onDelete }) {
+  const [dx, setDx] = useState(0);
+  const startX = useRef(0);
+  const baseDx = useRef(0);
+  const dragging = useRef(false);
+  const moved = useRef(false);
+  const OPEN = 132;
+  const isAdj = tx.type === 'adjustment';
+  const sub = `${cat?.name ? cat.name + ' · ' : ''}${tx.type === 'transfer' ? `${acc?.name || '?'} → ${toAcc?.name || '?'}` : (acc?.name || '?')}`;
+  const sign = tx.type === 'expense' ? '-' : tx.type === 'adjustment' ? '' : '+';
+
+  const onStart = (e) => { dragging.current = true; moved.current = false; startX.current = e.touches[0].clientX; baseDx.current = dx; };
+  const onMove = (e) => {
+    if (!dragging.current) return;
+    const delta = e.touches[0].clientX - startX.current;
+    if (Math.abs(delta) > 4) moved.current = true;
+    let next = baseDx.current + delta;
+    if (next > 0) next = 0;
+    if (next < -OPEN) next = -OPEN;
+    setDx(next);
+  };
+  const onEnd = () => { dragging.current = false; setDx((d) => (d < -OPEN / 2 ? -OPEN : 0)); };
+  const handleTap = () => {
+    if (moved.current) return;
+    if (dx !== 0) { setDx(0); return; }
+    if (!isAdj) onEdit(tx);
+  };
+
+  return (
+    <div className="relative overflow-hidden border-b border-slate-50 dark:border-slate-700/40 last:border-b-0">
+      <div className="absolute inset-y-0 right-0 flex">
+        <button type="button" onClick={() => { setDx(0); if (!isAdj) onEdit(tx); }} disabled={isAdj}
+          className="w-16 flex flex-col items-center justify-center gap-0.5 bg-[#2C6488] text-white text-[10px] font-semibold disabled:opacity-50">
+          <Edit size={15} />แก้ไข
+        </button>
+        <button type="button" onClick={() => { setDx(0); onDelete(tx); }}
+          className="w-16 flex flex-col items-center justify-center gap-0.5 bg-red-500 text-white text-[10px] font-semibold">
+          <Trash2 size={15} />ลบ
+        </button>
+      </div>
+      <div
+        className="relative bg-white dark:bg-slate-800 flex items-center gap-3 px-4 py-3"
+        style={{ transform: `translateX(${dx}px)`, transition: dragging.current ? 'none' : 'transform 0.2s ease' }}
+        onTouchStart={onStart}
+        onTouchMove={onMove}
+        onTouchEnd={onEnd}
+        onClick={handleTap}
+      >
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: (cat?.color || '#2C6488') + '22' }}>
+          <Icon name={cat?.icon || 'Tag'} size={16} color={cat?.color || '#2C6488'} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{tx.name || cat?.name || '—'}</p>
+            {tx.is_recurring && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0" style={{ background: '#EAF3F7', color: '#2C6488' }}>ประจำ</span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-400 truncate mt-0.5">{sub}</p>
+        </div>
+        <span className="text-sm font-bold whitespace-nowrap flex-shrink-0" style={{ color: TYPE_COLOR[tx.type] }}>
+          {sign}฿{fmt(tx.amount)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function TransactionsView({ accounts, categories, onRefreshAccounts, onNotificationRefresh, onGoAccounts, initialAccountId, onClearInitialAccountId, quickEntryRefreshKey = 0 }) {
   const { showError } = useSnackbar();
   const today     = new Date().toISOString().slice(0, 10);
@@ -734,7 +802,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   };
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
 
       <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
         <h2 className="text-base font-semibold text-slate-700">ภาพรวมรายการธุรกรรม</h2>
@@ -806,7 +874,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
           {/* Export CSV */}
           <button onClick={exportCSV} disabled={exporting}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-wait">
+            className="text-xs px-3 py-2 rounded-xl font-medium hidden lg:flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-wait">
             {exporting ? <Loader2 size={13} color="#64748b" className="animate-spin" /> : <Download size={13} color="#64748b" />}
             {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
@@ -833,7 +901,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         </div>
       )}
 
-      <div className="flex gap-3 flex-wrap items-center">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3 sm:items-center">
         <FilterSelect
           value={filterMonth}
           onChange={setFilterMonth}
@@ -848,7 +916,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         {filterMonth === 'month' && (
           <input type="month" value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white text-slate-700" />
+            className="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white text-slate-700" />
         )}
         <FilterSelect
           value={filterType}
@@ -871,7 +939,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         />
 
         {/* Search box */}
-        <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-white flex-1 min-w-48">
+        <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-white col-span-2 sm:flex-1 sm:min-w-48">
           <Search size={14} color="#94a3b8" />
           <input
             value={search}
@@ -887,7 +955,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         </div>
 
         {txList.length > 0 && (
-          <span className="text-xs text-slate-400 whitespace-nowrap">
+          <span className="col-span-2 text-right text-xs text-slate-400 whitespace-nowrap sm:col-auto sm:text-left">
             {totalRows} รายการ
           </span>
         )}
@@ -913,7 +981,24 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             </div>
           ) : (
             <>
-              <table className="w-full text-sm">
+              {/* Phone: grouped card list with swipe actions (sm+ uses table below) */}
+              <div className="sm:hidden">
+                {paginatedList.map((tx, idx) => {
+                  const showDate = idx === 0 || paginatedList[idx - 1].transaction_date !== tx.transaction_date;
+                  return (
+                    <div key={tx.id}>
+                      {showDate && (
+                        <div className="px-4 py-1.5 bg-slate-50 dark:bg-slate-850 text-[11px] font-semibold text-slate-500 dark:text-slate-400 border-y border-slate-100 dark:border-slate-700/40">
+                          {formatDisplayDate(tx.transaction_date, '')}
+                        </div>
+                      )}
+                      <TxSwipeRow tx={tx} cat={getCat(tx.category_id)} acc={getAcc(tx.account_id)} toAcc={getAcc(tx.to_account_id)} onEdit={openEdit} onDelete={setDeleteTarget} />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden sm:block overflow-x-auto"><table className="w-full text-sm min-w-[720px]">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
                     {[
@@ -998,7 +1083,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   );
                   })}
                 </tbody>
-              </table>
+              </table></div>
               {totalRows > TX_PAGE_SIZE && (
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50">
                   <p className="text-xs text-slate-500">

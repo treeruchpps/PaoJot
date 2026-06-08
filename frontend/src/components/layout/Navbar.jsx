@@ -88,7 +88,7 @@ export default function Navbar({
         </div>
 
         {/* Center: Grouped Nav Menu Links */}
-        <nav className="hidden md:flex items-center gap-1.5 relative">
+        <nav className="hidden lg:flex items-center gap-1.5 relative">
           
           {/* 1. Chat */}
           <button 
@@ -242,7 +242,7 @@ export default function Navbar({
           {/* Hamburger Menu Toggle on Mobile */}
           <button 
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden focus:outline-none"
+            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors lg:hidden focus:outline-none"
             aria-label="Toggle navigation menu"
           >
             {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
@@ -336,7 +336,7 @@ export default function Navbar({
 
       {/* Mobile Menu Panel */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-4 pt-2 pb-6 space-y-4 max-h-[calc(100vh-4rem)] overflow-y-auto transition-colors">
+        <div className="lg:hidden absolute top-full inset-x-0 z-50 shadow-xl border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-2 pb-6 space-y-4 max-h-[calc(100vh-4rem)] overflow-y-auto transition-colors">
           
           {/* 1. Main Navigation */}
           <div className="space-y-1">

@@ -5,7 +5,7 @@ import {
   Repeat2, PiggyBank, RefreshCw, HelpCircle,
   Lightbulb, BarChart2, ArrowRight, Check, Edit3,
   CreditCard, TrendingUp, AlertTriangle, Info, Calendar, ImagePlus, Image,
-  ChevronDown, Trash2, ArrowUp, ArrowDown, ArrowLeftRight, Plus, Maximize2, X
+  ChevronDown, Trash2, ArrowUp, ArrowDown, ArrowLeftRight, Plus, Maximize2, X, Camera
 } from 'lucide-react';
 import { 
   quickEntry, savingsGoals, transactions, budgets as budgetsApi, 
@@ -301,6 +301,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const scrollContainerRef = useRef(null);
   const prevMsgCountRef = useRef(0);
   const scanFileRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const scanPreviewUrlsRef = useRef([]);
   const preValidatedRef = useRef(null);
   const aiSummaryNotificationFetchRef = useRef(new Set());
@@ -3211,6 +3212,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 </h4>
                 <ul className="list-disc list-inside text-slate-500 dark:text-slate-400 space-y-1 pl-1">
                   <li>แนบรูปใบเสร็จหรือสลิปได้จากปุ่มรูปภาพ</li>
+                  <li>รองรับไฟล์ JPG, PNG และ HEIC</li>
                   <li>ระบบจะแยกประเภทเอกสารให้อัตโนมัติ</li>
                   <li>ตรวจสอบข้อมูล แล้วเลือกบันทึกหรือข้ามรายการ</li>
                 </ul>
@@ -3390,6 +3392,21 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               }}
             />
 
+            {/* Hidden camera input (mobile/tablet) */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) {
+                  handleScanFiles(e.target.files);
+                  e.target.value = '';
+                }
+              }}
+            />
+
             {/* Main Input Text Field (multiline, auto-grow) */}
             <textarea
               ref={inputTextareaRef}
@@ -3438,6 +3455,17 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     >
                       <ImagePlus size={16} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
                       <span>สแกนใบเสร็จ / สลิป</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAttachMenu(false);
+                        if (requireAccountBeforeScanUpload()) cameraInputRef.current?.click();
+                      }}
+                      className="lg:hidden w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      <Camera size={16} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
+                      <span>ถ่ายรูป</span>
                     </button>
                   </div>
                 )}
@@ -3628,6 +3656,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             >
               ปิดหน้าต่าง
             </button>
+      
           </div>
         </div>
       </div>,

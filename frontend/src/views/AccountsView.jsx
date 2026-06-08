@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSnackbar } from '../contexts/SnackbarContext';
 import { createPortal } from 'react-dom';
-import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Share2, Plus, X, ChevronDown, ReceiptText, Target } from 'lucide-react';
+import { DollarSign, Briefcase, Star, Smartphone, TrendingUp, Edit, Trash2, Plus, X, ChevronDown, ReceiptText, Target } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { accounts as accountsApi, transactions as txApi } from '../services/api';
@@ -116,12 +116,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   const [poolAddRows, setPoolAddRows]       = useState([newPoolRow()]);
   const [poolAddSaving, setPoolAddSaving]   = useState(false);
 
-  // Distribute modal
-  const [showDist, setShowDist]       = useState(false);
-  const [poolAmount, setPoolAmount]   = useState('');
-  const [distDate, setDistDate]       = useState(todayStr());
-  const [allocations, setAllocations] = useState([]);
-  const [distSaving, setDistSaving]   = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [accPage, setAccPage] = useState(1);
@@ -227,59 +221,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
     finally { setDeleting(false); }
   };
 
-  // ── Distribute ─────────────────────────────────────────────────────────────
-  const openDist = () => {
-    setPoolAmount(''); setDistDate(todayStr()); setAllocations(regularAccounts.map((a) => ({ account_id: a.id, name: a.name, kind: a.kind, amount: '' })));
-    setShowDist(true);
-  };
-  const setAlloc = (idx, val) =>
-    setAllocations((prev) => prev.map((a, i) => i === idx ? { ...a, amount: val } : a));
-
-  const pool      = parseFloat(poolAmount) || 0;
-  const allocated = allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
-  const remaining = pool - allocated;
-  const distValid = pool > 0 && Math.abs(remaining) < 0.01;
-
-  const saveDist = async () => {
-    if (pool <= 0)  { showError('กรุณาใส่ยอดเงินที่ต้องการกอง'); return; }
-    if (!distValid) { showError(`ยอดยังไม่ครบ: เหลืออีก ฿${fmt(Math.abs(remaining))}`); return; }
-    const lines = allocations.filter((a) => parseFloat(a.amount) > 0);
-    if (lines.length === 0) { showError('กรุณาใส่ยอดอย่างน้อย 1 บัญชี'); return; }
-    setDistSaving(true); try {
-      await Promise.all(lines.map((a) => txApi.create({
-        type: 'income', amount: parseFloat(a.amount), account_id: a.account_id,
-        transaction_date: distDate, note: 'กระจายเงินเข้ากระเป๋า',
-      })));
-      await onRefresh(); setShowDist(false);
-    } catch (err) { showError(err.message); }
-    finally { setDistSaving(false); }
-  };
-  const fillRemaining = (idx) => {
-    if (remaining <= 0) return;
-    setAlloc(idx, String((parseFloat(allocations[idx].amount) || 0) + remaining));
-  };
-
-  const handleDistributeEqually = () => {
-    const amt = parseFloat(poolAmount) || 0;
-    if (amt <= 0 || regularAccounts.length === 0) return;
-    const equalAmt = (amt / regularAccounts.length).toFixed(2);
-    setAllocations(
-      allocations.map((a) => ({
-        ...a,
-        amount: String(equalAmt),
-      }))
-    );
-  };
-
-  const handleClearAllocations = () => {
-    setAllocations(
-      allocations.map((a) => ({
-        ...a,
-        amount: '',
-      }))
-    );
-  };
-
   const AccountCard = ({ acc }) => {
     const k = getKind(acc.kind);
     
@@ -360,12 +301,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
             <Plus size={13} color="#ffffff" /> เพิ่มบัญชี
           </button>
-          {regularAccounts.length > 0 && (
-            <button onClick={openDist}
-              className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
-              <Share2 size={13} color="#ffffff" /> จัดสรรเงินเข้าบัญชี
-            </button>
-          )}
         </div>
       </div>
 
@@ -565,100 +500,6 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
         </Modal>
       )}
 
-      {/* Distribute modal */}
-      {showDist && (
-        <Modal title="จัดสรรเงินเข้าบัญชี" onClose={() => setShowDist(false)}>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">ยอดเงิน (฿)</label>
-                <input type="number" min="0" value={poolAmount} onChange={(e) => setPoolAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 font-bold text-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่</label>
-                <input type="date" value={distDate} onChange={(e) => setDistDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
-              </div>
-            </div>
-            {pool > 0 && (
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <span className="text-slate-500">จัดสรรแล้ว</span>
-                  <span className={`font-semibold ${distValid ? 'text-emerald-600' : remaining < 0 ? 'text-red-500' : 'text-[#2C6488]'}`}>
-                    ฿{fmt(allocated)} / ฿{fmt(pool)}
-                    {!distValid && remaining !== 0 && (
-                      <span className="ml-2 font-normal text-slate-400">
-                        ({remaining > 0 ? `เหลือ +฿${fmt(remaining)}` : `เกิน -฿${fmt(Math.abs(remaining))}`})
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${remaining < 0 ? 'bg-red-400' : distValid ? 'bg-emerald-400' : 'bg-[#6F9DB6]'}`}
-                    style={{ width: `${Math.min((allocated / pool) * 100, 100)}%` }} />
-                </div>
-              </div>
-            )}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-slate-500">จัดสรรเข้าบัญชี</label>
-                {pool > 0 && (
-                  <div className="flex gap-1.5">
-                    <button type="button" onClick={handleDistributeEqually}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-[#EAF3F7] text-[#2C6488] hover:bg-[#DCE8EE] transition-colors">
-                      แบ่งเท่ากัน
-                    </button>
-                    <button type="button" onClick={handleClearAllocations}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
-                      ล้างข้อมูล
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {allocations.map((alloc, idx) => {
-                  const k = getKind(alloc.kind);
-                  return (
-                    <div key={alloc.account_id}
-                      className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ background: k.color + '18' }}>
-                        <KindIcon icon={k.icon} color={k.color} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{alloc.name}</p>
-                        <p className="text-xs text-slate-400">{k.label}</p>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <span className="text-sm text-slate-400">฿</span>
-                        <input type="number" min="0" value={alloc.amount}
-                          onChange={(e) => setAlloc(idx, e.target.value)} placeholder="0"
-                          className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
-                        {pool > 0 && remaining > 0 && (
-                          <button onClick={() => fillRemaining(idx)} title="เติมยอดที่เหลือ"
-                            className="w-6 h-6 rounded-lg bg-[#EAF3F7] hover:bg-[#DCE8EE] flex items-center justify-center transition-colors flex-shrink-0">
-                            <Plus size={11} color="#2C6488" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex gap-3 pt-1">
-              <button onClick={() => setShowDist(false)}
-                className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
-              <button onClick={saveDist} disabled={distSaving || !distValid}
-                className="flex-1 btn-primary text-white py-2.5 rounded-xl text-sm font-medium disabled:opacity-50">
-                {distSaving ? 'กำลังบันทึก...' : `จัดสรร ฿${fmt(pool)} เข้ากระเป๋า`}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
       <ConfirmDialog
         open={!!deleteTarget}
         title="ลบบัญชี"

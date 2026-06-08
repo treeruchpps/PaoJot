@@ -47,7 +47,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 top-full mt-2 w-96 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden"
+      className="fixed inset-x-3 top-16 sm:inset-x-auto sm:absolute sm:right-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden"
     >
       {/* Header */}
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -66,7 +66,7 @@ export default function NotificationPanel({ list, onClose, onRefresh, onRefreshA
       </div>
 
       {/* List */}
-      <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-50">
+      <div className="max-h-[70vh] sm:max-h-[420px] overflow-y-auto divide-y divide-slate-50">
         {list.length === 0 ? (
           <div className="py-12 flex flex-col items-center gap-2 text-slate-400">
             <BellOff size={32} color="#cbd5e1" />

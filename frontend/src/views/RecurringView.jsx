@@ -178,100 +178,72 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
     const toAccMeta = accountMeta(toAcc?.kind);
 
     return (
-      <div className={`bg-white rounded-2xl p-5 shadow-sm border transition-all ${
+      <div className={`bg-white rounded-2xl p-4 sm:p-5 shadow-sm border transition-all ${
         r.is_active ? 'border-slate-100' : 'border-slate-100 opacity-60'
       }`}>
-        <div className="flex items-start justify-between gap-3">
-          {/* Left */}
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
-              style={{ background: TYPE_BG[r.type] }}>
-              {TYPE_ICON[r.type] === 'ArrowUp' && <ArrowUp size={20} color={TYPE_COLOR[r.type]} />}
-              {TYPE_ICON[r.type] === 'ArrowDown' && <ArrowDown size={20} color={TYPE_COLOR[r.type]} />}
-              {TYPE_ICON[r.type] === 'ArrowLeftRight' && <ArrowLeftRight size={20} color={TYPE_COLOR[r.type]} />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-slate-800 truncate">{r.name || '(ไม่มีชื่อ)'}</p>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={{ color: TYPE_COLOR[r.type], background: TYPE_BG[r.type] }}>
-                  {TYPE_LABEL[r.type]}
+        {/* Top: icon · name + meta · amount */}
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: TYPE_BG[r.type] }}>
+            {TYPE_ICON[r.type] === 'ArrowUp' && <ArrowUp size={20} color={TYPE_COLOR[r.type]} />}
+            {TYPE_ICON[r.type] === 'ArrowDown' && <ArrowDown size={20} color={TYPE_COLOR[r.type]} />}
+            {TYPE_ICON[r.type] === 'ArrowLeftRight' && <ArrowLeftRight size={20} color={TYPE_COLOR[r.type]} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-slate-800 truncate">{r.name || '(ไม่มีชื่อ)'}</p>
+            <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-400 min-w-0">
+              {cat && (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <Icon name={cat.icon || 'Tag'} size={12} color={cat.color || '#94a3b8'} />
+                  <span className="truncate">{cat.name}</span>
                 </span>
-                {cat && (
-                  <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
-                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                      style={{ background: (cat.color || '#94a3b8') + '20' }}>
-                      <Icon name={cat.icon || 'Tag'} size={12} color={cat.color || '#94a3b8'} />
-                    </span>
-                    <span className="truncate">{cat.name}</span>
-                  </span>
-                )}
-                {r.type === 'transfer' ? (
-                  <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
-                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                      style={{ background: accMeta.color + '20' }}>
-                      <Icon name={accMeta.icon} size={12} color={accMeta.color} />
-                    </span>
-                    <span className="truncate">{acc?.name || '?'}</span>
-                    <ArrowLeftRight size={11} color="#94a3b8" className="flex-shrink-0" />
-                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                      style={{ background: toAccMeta.color + '20' }}>
-                      <Icon name={toAccMeta.icon} size={12} color={toAccMeta.color} />
-                    </span>
-                    <span className="truncate">{toAcc?.name || '?'}</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
-                    <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                      style={{ background: accMeta.color + '20' }}>
-                      <Icon name={accMeta.icon} size={12} color={accMeta.color} />
-                    </span>
-                    <span className="truncate">{acc?.name || '?'}</span>
-                  </span>
-                )}
-              </div>
+              )}
+              {cat && <span className="text-slate-300 flex-shrink-0">·</span>}
+              {r.type === 'transfer' ? (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <Icon name={accMeta.icon} size={12} color={accMeta.color} />
+                  <span className="truncate">{acc?.name || '?'}</span>
+                  <ArrowLeftRight size={10} color="#cbd5e1" className="flex-shrink-0" />
+                  <Icon name={toAccMeta.icon} size={12} color={toAccMeta.color} />
+                  <span className="truncate">{toAcc?.name || '?'}</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <Icon name={accMeta.icon} size={12} color={accMeta.color} />
+                  <span className="truncate">{acc?.name || '?'}</span>
+                </span>
+              )}
             </div>
           </div>
-
-          {/* Amount */}
           <div className="text-right flex-shrink-0">
-            <p className="text-lg font-bold" style={{ color: TYPE_COLOR[r.type] }}>
+            <p className="text-lg font-bold leading-tight" style={{ color: TYPE_COLOR[r.type] }}>
               {r.type === 'expense' ? '-' : '+'}฿{fmt(r.amount)}
             </p>
+            <p className="text-[11px] font-medium mt-0.5" style={{ color: TYPE_COLOR[r.type] }}>{TYPE_LABEL[r.type]}</p>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="mt-4 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-3">
-            {/* Frequency */}
-            <div className="flex items-center gap-1.5">
+        {/* Footer: schedule · actions */}
+        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="inline-flex items-center gap-1.5 text-slate-500">
               {FREQ_ICON[r.frequency] === 'Sun' && <Sun size={13} color="#94a3b8" />}
               {FREQ_ICON[r.frequency] === 'CalendarDays' && <CalendarDays size={13} color="#94a3b8" />}
               {FREQ_ICON[r.frequency] === 'Calendar' && <CalendarIcon size={13} color="#94a3b8" />}
               {FREQ_ICON[r.frequency] === 'Star' && <Star size={13} color="#94a3b8" />}
-              <span className="text-xs text-slate-500">{FREQ_LABEL[r.frequency]}</span>
-            </div>
-            {/* Next due */}
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${
-              overdue && r.is_active
-                ? 'bg-red-50 text-red-500'
-                : 'bg-slate-50 text-slate-500'
+              {FREQ_LABEL[r.frequency]}
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium ${
+              overdue && r.is_active ? 'bg-red-50 text-red-500' : 'bg-slate-50 text-slate-500'
             }`}>
               <Clock size={12} color={overdue && r.is_active ? '#ef4444' : '#94a3b8'} />
-              {overdue && r.is_active ? 'ค้างชำระ · ' : 'ถัดไป · '}
-              {formatDisplayDate(r.next_due_date)}
-            </div>
+              {overdue && r.is_active ? 'ค้างชำระ · ' : 'ถัดไป · '}{formatDisplayDate(r.next_due_date)}
+            </span>
           </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-1.5">
-            {/* Toggle active */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <button onClick={() => toggle(r)}
               className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                r.is_active
-                  ? 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                  : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                r.is_active ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
               }`}>
               {r.is_active ? 'หยุดชั่วคราว' : 'เปิดใช้งาน'}
             </button>
@@ -292,18 +264,18 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
   };
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-slate-700">รายการประจำ</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             รายการที่เกิดซ้ำอัตโนมัติ — กดยืนยันในแจ้งเตือนเมื่อครบกำหนด
           </p>
         </div>
         <button onClick={openAdd}
-          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+          className="text-xs px-3 py-2 rounded-xl font-medium flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
           <Plus size={13} color="#ffffff" /> เพิ่มรายการ
         </button>
       </div>
@@ -319,7 +291,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
             <p className="text-xs text-slate-400 mt-1">เพิ่มรายการแรกเพื่อให้ระบบช่วยเตือนเมื่อถึงกำหนด</p>
           </div>
           <button onClick={openAdd}
-            className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
+            className="text-xs px-3 py-2 rounded-xl font-medium flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
             <Plus size={13} color="#ffffff" /> สร้างรายการแรก
           </button>
         </div>

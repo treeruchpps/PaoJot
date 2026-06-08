@@ -135,18 +135,18 @@ export default function CategoriesView({ onRefresh }) {
   };
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+    <div className="p-4 sm:p-6 space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full sm:w-auto bg-slate-100 rounded-xl p-1 gap-1">
           {['expense', 'income', 'transfer'].map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === t ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+              className={`flex-1 sm:flex-none whitespace-nowrap text-center px-3 sm:px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === t ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
               {TAB_LABELS[t]}
             </button>
           ))}
         </div>
         <button onClick={openModal} disabled={displayed.length >= CAT_MAX}
-          className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F] disabled:opacity-50 disabled:cursor-not-allowed">
+          className="text-xs px-3 py-2 rounded-xl font-medium flex w-full sm:w-auto justify-center whitespace-nowrap items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F] disabled:opacity-50 disabled:cursor-not-allowed">
           <Plus size={13} color="#ffffff" /> เพิ่มหมวดหมู่
         </button>
       </div>
@@ -177,7 +177,7 @@ export default function CategoriesView({ onRefresh }) {
                 onDragOver={(e)  => handleDragOver(e, idx)}
                 onDrop={(e)      => handleDrop(e, idx)}
                 onDragEnd={handleDragEnd}
-                className={`bg-white rounded-2xl p-4 shadow-sm border flex flex-col items-center gap-2.5 relative group select-none transition-all
+                className={`bg-white rounded-2xl p-3 sm:p-4 shadow-sm border flex flex-col items-center gap-2.5 relative group select-none transition-all
                   ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
                   ${isOver
                     ? 'border-[#6F9DB6] shadow-md scale-105 bg-[#EAF3F7]'
@@ -212,7 +212,7 @@ export default function CategoriesView({ onRefresh }) {
 
           {/* ปุ่มเพิ่มใหม่ */}
           <div onClick={openModal}
-            className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center gap-2.5 cursor-pointer hover:border-[#BFD8E4] hover:bg-[#EAF3F7] transition-all">
+            className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-3 sm:p-4 flex flex-col items-center gap-2.5 cursor-pointer hover:border-[#BFD8E4] hover:bg-[#EAF3F7] transition-all">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100">
               <Plus size={22} color="#94a3b8" />
             </div>
