@@ -311,6 +311,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const [scanJobDetails, setScanJobDetails] = useState({});
   const [scanReview, setScanReview] = useState({});
   const [scanSaving, setScanSaving] = useState({});
+  const [scanBulkSaving, setScanBulkSaving] = useState(false);
   const [scanEditMode, setScanEditMode] = useState({});
   const [scanItemState, setScanItemState] = useState({}); // key: `${resultId}-${itemIdx}`, val: 'saving'|'saved'|'skipped'
   const [scanImageViewer, setScanImageViewer] = useState(null);
@@ -855,6 +856,26 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       discountMode,
     };
   }, [assetAccounts, getDefaultCategoryId]);
+
+  const getReceiptReviewAdjustments = (review) => {
+    if (!review) return { vat: 0, discount: 0 };
+    return {
+      vat: review.vatMode === 'exclude' ? Math.max(0, Number(review.vatAmount) || 0) : 0,
+      discount: review.discountMode === 'prorate' ? Math.max(0, Number(review.discountAmount) || 0) : 0,
+    };
+  };
+
+  const getReceiptReviewFinalItems = (review) => {
+    const items = (review?.items || []).filter((it) => (it.amount || 0) > 0);
+    const baseTotal = items.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+    const { vat, discount } = getReceiptReviewAdjustments(review);
+    return items.map((it) => {
+      const amount = Number(it.amount || 0);
+      const ratio = baseTotal > 0 ? amount / baseTotal : 0;
+      const finalAmount = Math.max(0, amount + vat * ratio - discount * ratio);
+      return { ...it, amount, finalAmount: Number(finalAmount.toFixed(2)) };
+    });
+  };
 
   const ensureScanReview = useCallback((job) => {
     const results = job?.results || [];
@@ -1858,7 +1879,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       // Build new state and check if all items are resolved
       const newItemState = { ...scanItemState, [key]: 'saved' };
       setScanItemState(newItemState);
-      const totalItems = review?.items?.length ?? 0;
+      const totalItems = getReceiptReviewFinalItems(review).length;
       const allResolved = totalItems > 0 && Array.from({ length: totalItems }, (_, i) => {
         const st = newItemState[`${resultId}-${i}`];
         return st === 'saved' || st === 'skipped';
@@ -1873,11 +1894,74 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     }
   };
 
+  const saveReceiptAll = async (jobId, resultId, review) => {
+    const account = assetAccounts.find((a) => String(a.id) === String(review?.account_id));
+    if (!account) {
+      addMessage({ role: 'bot', text: 'กรุณาเลือกบัญชีที่จะใช้บันทึกรายการนี้ก่อนครับ' });
+      return;
+    }
+
+    const finalItems = getReceiptReviewFinalItems(review);
+    const activeItems = finalItems
+      .map((item, itemIdx) => ({ item, itemIdx }))
+      .filter(({ itemIdx }) => {
+        const itemStatus = scanItemState[`${resultId}-${itemIdx}`];
+        return itemStatus !== 'saved' && itemStatus !== 'skipped';
+      });
+
+    if (activeItems.length === 0) return;
+    if (activeItems.some(({ item }) => !item.category_id)) {
+      addMessage({ role: 'bot', text: 'กรุณาเลือกหมวดหมู่ให้ครบก่อนบันทึกทั้งหมดครับ' });
+      return;
+    }
+
+    const totalAmount = activeItems.reduce((sum, { item }) => sum + Number(item.finalAmount || item.amount || 0), 0);
+    if (totalAmount <= 0) {
+      addMessage({ role: 'bot', text: 'จำนวนเงินต้องมากกว่า 0 บาทครับ' });
+      return;
+    }
+    if (totalAmount > Number(account.balance || 0)) {
+      addMessage({ role: 'bot', text: `ยอดเงินในบัญชี "${account.name}" ไม่เพียงพอครับ คงเหลือ ฿${fmt(account.balance || 0)}` });
+      return;
+    }
+
+    setScanSaving((prev) => ({ ...prev, [resultId]: true }));
+    try {
+      for (const { item, itemIdx } of activeItems) {
+        await transactions.create({
+          type: 'expense',
+          account_id: review.account_id,
+          category_id: item.category_id,
+          amount: item.finalAmount ?? item.amount ?? 0,
+          name: item.name || `รายการ ${itemIdx + 1}`,
+          transaction_date: review.transaction_date || todayStr(),
+        });
+      }
+
+      const nextItemState = { ...scanItemState };
+      activeItems.forEach(({ itemIdx }) => {
+        nextItemState[`${resultId}-${itemIdx}`] = 'saved';
+      });
+      setScanItemState(nextItemState);
+      await scanJobsApi.skip(jobId, resultId);
+      await Promise.all([onRefresh?.(), fetchAuxData(), refreshScanJob(jobId)]);
+      addMessage({
+        role: 'bot',
+        text: `บันทึกทั้งหมด ${activeItems.length} รายการ รวม ฿${fmt(totalAmount)} เรียบร้อยแล้วครับ`,
+        success: true,
+      });
+    } catch (err) {
+      addMessage({ role: 'bot', text: err.message || 'บันทึกทั้งหมดไม่สำเร็จครับ' });
+    } finally {
+      setScanSaving((prev) => ({ ...prev, [resultId]: false }));
+    }
+  };
+
   const skipReceiptItem = async (jobId, resultId, itemIndex, review) => {
     const key = `${resultId}-${itemIndex}`;
     const newItemState = { ...scanItemState, [key]: 'skipped' };
     setScanItemState(newItemState);
-    const totalItems = review?.items?.length ?? 0;
+    const totalItems = getReceiptReviewFinalItems(review).length;
     const allResolved = totalItems > 0 && Array.from({ length: totalItems }, (_, i) => {
       const st = newItemState[`${resultId}-${i}`];
       return st === 'saved' || st === 'skipped';
@@ -2034,25 +2118,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       };
 
       // Receipt VAT/discount calculation
-      const getReceiptAdjustments = () => {
-        if (!review) return { vat: 0, discount: 0 };
-        return {
-          vat: review.vatMode === 'exclude' ? Math.max(0, Number(review.vatAmount) || 0) : 0,
-          discount: review.discountMode === 'prorate' ? Math.max(0, Number(review.discountAmount) || 0) : 0,
-        };
-      };
-      const getReceiptFinalItems = () => {
-        const items = (review?.items || []).filter((it) => (it.amount || 0) > 0);
-        const baseTotal = items.reduce((sum, it) => sum + it.amount, 0);
-        const { vat, discount } = getReceiptAdjustments();
-        return items.map((it) => {
-          const ratio = baseTotal > 0 ? it.amount / baseTotal : 0;
-          const finalAmount = Math.max(0, it.amount + vat * ratio - discount * ratio);
-          return { ...it, finalAmount: Number(finalAmount.toFixed(2)) };
-        });
-      };
+      const getReceiptFinalItems = () => getReceiptReviewFinalItems(review);
 
-      const fieldClass = "rounded-xl border border-[#DCE8EE] bg-white px-3 py-2 text-xs text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488]/50 transition";
       const compactFieldClass = "rounded-lg border border-[#DCE8EE] bg-white px-2 py-1.5 text-xs text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488]/50 transition";
       const getCategoryName = (categoryId) => categories.find((c) => c.id === categoryId)?.name || 'ยังไม่เลือกหมวดหมู่';
       const slipCategoryName = getCategoryName(review?.category_id || '');
@@ -2134,95 +2201,102 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] px-3 py-2.5 space-y-2.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="inline-flex rounded-full bg-white border border-[#DCE8EE] px-2 py-0.5 text-[10px] font-bold text-[#2C6488]">
-                          {slipTypeLabel}
-                        </span>
-                        {isDuplicateSlip && (
-                          <span className="inline-flex rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
-                            สลิปซ้ำ
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] font-semibold text-slate-400">ผู้รับเงิน</p>
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate mt-0.5">
-                        {review.name || slip.receiver || 'สลิปโอนเงิน'}
-                      </p>
+                      <p className="text-[11px] font-semibold text-slate-400">ชื่อรายการ</p>
+                      {isEditing && isDone ? (
+                        <input
+                          value={review.name || ''}
+                          onChange={(e) => updateScanReview(resultId, { name: e.target.value })}
+                          className={`mt-1 w-full ${compactFieldClass}`}
+                          placeholder={slip.receiver || slip.sender || 'สลิปโอนเงิน'}
+                        />
+                      ) : (
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate mt-0.5">
+                          {review.name || slip.receiver || 'สลิปโอนเงิน'}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-[11px] font-semibold text-slate-400">จำนวนเงิน</p>
-                      <p className="text-xl font-bold text-[#2C6488] whitespace-nowrap">฿{fmt(Number(review.amount || 0))}</p>
+                      <p className="text-[11px] font-semibold text-slate-400">ยอดเงิน</p>
+                      {isEditing && isDone ? (
+                        <input
+                          value={review.amount || ''}
+                          onChange={(e) => updateScanReview(resultId, { amount: e.target.value })}
+                          className={`mt-1 w-24 text-right ${compactFieldClass}`}
+                          placeholder="0.00" type="number" min="0" step="0.01"
+                        />
+                      ) : (
+                        <p className="text-xl font-bold text-[#2C6488] whitespace-nowrap">฿{fmt(Number(review.amount || 0))}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <div className="min-w-0">
+                      {isEditing && isDone ? (
+                        <input
+                          type="date"
+                          value={review.transaction_date || todayStr()}
+                          onChange={(e) => updateScanReview(resultId, { transaction_date: e.target.value })}
+                          className={`w-32 ${compactFieldClass}`}
+                        />
+                      ) : (
+                        <span>{fmtDate(review.transaction_date)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="inline-flex rounded-full bg-white border border-[#DCE8EE] px-2 py-0.5 text-[10px] font-bold text-[#2C6488]">
+                        {slipTypeLabel}
+                      </span>
+                      {isDuplicateSlip && (
+                        <span className="inline-flex rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                          สลิปซ้ำ
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
-                      <p className="text-[10px] font-semibold text-slate-400">วันที่</p>
-                      <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate">{fmtDate(review.transaction_date)}</p>
-                    </div>
-                    <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
-                      <p className="text-[10px] font-semibold text-slate-400">ธนาคาร</p>
-                      <p className="mt-0.5 text-xs font-semibold text-slate-700 truncate">{slip.bank || '-'}</p>
-                    </div>
-                    <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
                       <p className="text-[10px] font-semibold text-slate-400">หมวดหมู่</p>
-                      <p className="mt-0.5 text-xs font-semibold text-[#2C6488] truncate">{slipCategoryName}</p>
+                      {isEditing && isDone ? (
+                        <div className="mt-1">
+                          <ScanCatSelect
+                            value={review.category_id || ''}
+                            onChange={(v) => updateScanReview(resultId, { category_id: v })}
+                            categories={slipCategoryOptions}
+                            compact
+                          />
+                        </div>
+                      ) : (
+                        <p className="mt-0.5 text-xs font-semibold text-[#2C6488] truncate">{slipCategoryName}</p>
+                      )}
                     </div>
                     <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
                       <p className="text-[10px] font-semibold text-slate-400">บัญชี</p>
-                      <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
-                        {scanAccountMeta && (
-                          <span className="w-4 h-4 rounded-md flex items-center justify-center flex-shrink-0"
-                            style={{ background: `${scanAccountMeta.color}22` }}>
-                            <Icon name={scanAccountMeta.icon} size={10} color={scanAccountMeta.color} />
-                          </span>
-                        )}
-                        <p className="text-xs font-semibold text-slate-700 truncate">{scanAccount?.name || 'ยังไม่เลือกบัญชี'}</p>
-                      </div>
+                      {isEditing && isDone ? (
+                        <div className="mt-1">
+                          <ScanAccSelect
+                            value={review.account_id || ''}
+                            onChange={(v) => updateScanReview(resultId, { account_id: v })}
+                            accounts={assetAccounts}
+                          />
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
+                          {scanAccountMeta && (
+                            <span className="w-4 h-4 rounded-md flex items-center justify-center flex-shrink-0"
+                              style={{ background: `${scanAccountMeta.color}22` }}>
+                              <Icon name={scanAccountMeta.icon} size={10} color={scanAccountMeta.color} />
+                            </span>
+                          )}
+                          <p className="text-xs font-semibold text-slate-700 truncate">{scanAccount?.name || 'ยังไม่เลือกบัญชี'}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {slip.sender && (
-                    <div className="space-y-1.5 border-t border-[#DCE8EE]/70 pt-2">
-                      <div className="flex items-center justify-between gap-2 text-[11px]">
-                        <span className="text-slate-400 flex-shrink-0">ผู้โอน</span>
-                        <span className="font-medium text-slate-600 truncate">{slip.sender}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {isDuplicateSlip && isDone && (
-                  <div className="rounded-2xl bg-amber-50 border border-amber-100 px-3 py-2.5">
-                    <p className="text-xs font-semibold text-amber-700">สลิปนี้อาจเคยบันทึกแล้ว</p>
-                    <p className="text-[11px] text-amber-600 mt-0.5">
-                      พบเลขอ้างอิงซ้ำในระบบ ตรวจสอบก่อนบันทึกซ้ำอีกครั้ง
-                    </p>
-                  </div>
-                )}
-                {isDone && isEditing && (
-                  <div className="rounded-2xl bg-[#F6FAFC] border border-[#EAF3F7] p-2.5 space-y-2.5">
-                    {/* ชื่อรายการ */}
-                    <div>
-                      <p className="text-[10px] text-slate-400 font-medium mb-1">ชื่อรายการ</p>
-                      <input
-                        value={review.name || ''}
-                        onChange={(e) => updateScanReview(resultId, { name: e.target.value })}
-                        className={`w-full ${fieldClass}`}
-                        placeholder={slip.receiver || slip.sender || 'สลิปโอนเงิน'}
-                      />
-                    </div>
-                    {/* วันที่ */}
-                    <div>
-                      <p className="text-[10px] text-slate-400 font-medium mb-1">วันที่</p>
-                      <input
-                        type="date"
-                        value={review.transaction_date || todayStr()}
-                        onChange={(e) => updateScanReview(resultId, { transaction_date: e.target.value })}
-                        className={`w-full ${fieldClass}`}
-                      />
-                    </div>
-                    {/* ประเภท toggle */}
-                    <div className="flex gap-1.5">
+                  {isEditing && isDone && (
+                    <div className="flex gap-1.5 border-t border-[#DCE8EE]/70 pt-2">
                       {['expense', 'income'].map((t) => (
                         <button
                           key={t}
@@ -2246,32 +2320,23 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                         </button>
                       ))}
                     </div>
-                    {/* บัญชี + หมวดหมู่ */}
-                    <div>
-                      <p className="text-[10px] text-slate-400 font-medium mb-1">บัญชี / หมวดหมู่</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <ScanAccSelect
-                          value={review.account_id || ''}
-                          onChange={(v) => updateScanReview(resultId, { account_id: v })}
-                          accounts={assetAccounts}
-                        />
-                        <ScanCatSelect
-                          value={review.category_id || ''}
-                          onChange={(v) => updateScanReview(resultId, { category_id: v })}
-                          categories={slipCategoryOptions}
-                        />
+                  )}
+
+                  {slip.sender && (
+                    <div className="space-y-1.5 border-t border-[#DCE8EE]/70 pt-2">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-slate-400 flex-shrink-0">ผู้โอน</span>
+                        <span className="font-medium text-slate-600 truncate">{slip.sender}</span>
                       </div>
                     </div>
-                    {/* ยอดเงิน */}
-                    <div>
-                      <p className="text-[10px] text-slate-400 font-medium mb-1">ยอดเงิน</p>
-                      <input
-                        value={review.amount || ''}
-                        onChange={(e) => updateScanReview(resultId, { amount: e.target.value })}
-                        className={`w-full ${fieldClass}`}
-                        placeholder="0.00" type="number" min="0" step="0.01"
-                      />
-                    </div>
+                  )}
+                </div>
+                {isDuplicateSlip && isDone && (
+                  <div className="rounded-2xl bg-amber-50 border border-amber-100 px-3 py-2.5">
+                    <p className="text-xs font-semibold text-amber-700">สลิปนี้อาจเคยบันทึกแล้ว</p>
+                    <p className="text-[11px] text-amber-600 mt-0.5">
+                      พบเลขอ้างอิงซ้ำในระบบ ตรวจสอบก่อนบันทึกซ้ำอีกครั้ง
+                    </p>
                   </div>
                 )}
                 {isDone && (
@@ -2293,9 +2358,13 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     </button>
                     <button
                       onClick={() => setScanEditMode((prev) => ({ ...prev, [resultId]: !prev[resultId] }))}
-                      className="px-3 py-2 rounded-xl bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[#2C6488] text-xs border border-[#DCE8EE] transition-colors flex items-center justify-center"
+                      className={`px-3 py-2 rounded-xl text-xs border transition-colors flex items-center justify-center ${
+                        isEditing
+                          ? 'bg-[#2C6488] hover:bg-[#25536F] text-white border-[#2C6488]'
+                          : 'bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[#2C6488] border-[#DCE8EE]'
+                      }`}
                     >
-                      <Edit3 size={12} />
+                      {isEditing ? <Check size={12} /> : <Edit3 size={12} />}
                     </button>
                   </div>
                 )}
@@ -2317,14 +2386,32 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-[11px] font-semibold text-slate-400">ชื่อร้าน</p>
-                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate mt-0.5">
-                          {receipt.merchant || review.name || 'ใบเสร็จ'}
-                        </p>
+                        {isEditing && isDone ? (
+                          <input
+                            value={review.name || ''}
+                            onChange={(e) => updateScanReview(resultId, { name: e.target.value })}
+                            className={`mt-1 w-full ${compactFieldClass}`}
+                            placeholder={receipt.merchant || 'ใบเสร็จ'}
+                          />
+                        ) : (
+                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate mt-0.5">
+                            {review.name || receipt.merchant || 'ใบเสร็จ'}
+                          </p>
+                        )}
                       </div>
                       <p className="text-lg font-bold text-[#2C6488] whitespace-nowrap">฿{fmt(receiptTotal)}</p>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                      <span>{fmtDate(review.transaction_date)}</span>
+                      {isEditing && isDone ? (
+                        <input
+                          type="date"
+                          value={review.transaction_date || todayStr()}
+                          onChange={(e) => updateScanReview(resultId, { transaction_date: e.target.value })}
+                          className={`w-32 ${compactFieldClass}`}
+                        />
+                      ) : (
+                        <span>{fmtDate(review.transaction_date)}</span>
+                      )}
                       <span>{finalItems.length} รายการ</span>
                     </div>
                   </div>
@@ -2467,47 +2554,77 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                   {/* VAT + Discount */}
                   {isDone && !allReceiptItemsHandled && (
                     <div className="bg-[#F6FAFC] border border-[#EAF3F7] rounded-2xl p-2 space-y-1.5">
-                      <p className="text-[10px] font-semibold text-slate-400 mb-0.5">VAT และส่วนลด</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-500 w-14 flex-shrink-0">VAT (฿)</span>
-                        <input
-                          value={review.vatAmount || ''}
-                          onChange={(e) => updateScanReview(resultId, { vatAmount: e.target.value })}
-                          type="number" min="0" step="0.01" placeholder="0"
-                          className={`w-20 text-right ${compactFieldClass}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => updateScanReview(resultId, { vatMode: review.vatMode === 'include' ? 'exclude' : 'include' })}
-                          className={`flex-1 min-w-0 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
-                            review.vatMode === 'include'
-                              ? 'bg-[#2C6488] text-white border-[#2C6488]'
-                              : 'bg-white text-[#2C6488] border-[#DCE8EE] hover:bg-[#EAF3F7]'
-                          }`}
-                        >
-                          {review.vatMode === 'include' ? 'รวมในราคา' : 'บวกเพิ่ม'}
-                        </button>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-semibold text-slate-400">VAT และส่วนลด</p>
+                        {!isEditing && (
+                          <span className="text-[10px] font-semibold text-slate-400">กดแก้ไขเพื่อปรับค่า</span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-500 w-14 flex-shrink-0">ส่วนลด (฿)</span>
-                        <input
-                          value={review.discountAmount || ''}
-                          onChange={(e) => updateScanReview(resultId, { discountAmount: e.target.value })}
-                          type="number" min="0" step="0.01" placeholder="0"
-                          className={`w-20 text-right ${compactFieldClass}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => updateScanReview(resultId, { discountMode: review.discountMode === 'prorate' ? 'ignore' : 'prorate' })}
-                          className={`flex-1 min-w-0 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
-                            review.discountMode === 'prorate'
-                              ? 'bg-[#2C6488] text-white border-[#2C6488]'
-                              : 'bg-white text-[#2C6488] border-[#DCE8EE] hover:bg-[#EAF3F7]'
-                          }`}
-                        >
-                          {review.discountMode === 'prorate' ? 'กระจาย' : 'ไม่คิด'}
-                        </button>
-                      </div>
+                      {isEditing ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-500 w-14 flex-shrink-0">VAT (฿)</span>
+                            <input
+                              value={review.vatAmount || ''}
+                              onChange={(e) => updateScanReview(resultId, { vatAmount: e.target.value })}
+                              type="number" min="0" step="0.01" placeholder="0"
+                              className={`w-20 text-right ${compactFieldClass}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateScanReview(resultId, { vatMode: review.vatMode === 'include' ? 'exclude' : 'include' })}
+                              className={`flex-1 min-w-0 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                                review.vatMode === 'include'
+                                  ? 'bg-[#2C6488] text-white border-[#2C6488]'
+                                  : 'bg-white text-[#2C6488] border-[#DCE8EE] hover:bg-[#EAF3F7]'
+                              }`}
+                            >
+                              {review.vatMode === 'include' ? 'รวมในราคา' : 'บวกเพิ่ม'}
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-500 w-14 flex-shrink-0">ส่วนลด (฿)</span>
+                            <input
+                              value={review.discountAmount || ''}
+                              onChange={(e) => updateScanReview(resultId, { discountAmount: e.target.value })}
+                              type="number" min="0" step="0.01" placeholder="0"
+                              className={`w-20 text-right ${compactFieldClass}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateScanReview(resultId, { discountMode: review.discountMode === 'prorate' ? 'ignore' : 'prorate' })}
+                              className={`flex-1 min-w-0 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                                review.discountMode === 'prorate'
+                                  ? 'bg-[#2C6488] text-white border-[#2C6488]'
+                                  : 'bg-white text-[#2C6488] border-[#DCE8EE] hover:bg-[#EAF3F7]'
+                              }`}
+                            >
+                              {review.discountMode === 'prorate' ? 'กระจาย' : 'ไม่คิด'}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div className="rounded-xl bg-white border border-[#EAF3F7] px-2.5 py-2">
+                            <p className="text-[10px] font-semibold text-slate-400">VAT</p>
+                            <p className="text-xs font-bold text-slate-700">
+                              {Number(review.vatAmount || 0) > 0 ? `฿${fmt(review.vatAmount)}` : 'ไม่มี'}
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              {review.vatMode === 'exclude' ? 'บวกเพิ่ม' : 'รวมในราคา'}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-white border border-[#EAF3F7] px-2.5 py-2">
+                            <p className="text-[10px] font-semibold text-slate-400">ส่วนลด</p>
+                            <p className="text-xs font-bold text-slate-700">
+                              {Number(review.discountAmount || 0) > 0 ? `฿${fmt(review.discountAmount)}` : 'ไม่มี'}
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              {review.discountMode === 'prorate' ? 'กระจายตามรายการ' : 'ไม่คิดส่วนลด'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2519,35 +2636,35 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                         onChange={(v) => updateScanReview(resultId, { account_id: v })}
                         accounts={assetAccounts}
                       />
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => saveReceiptAll(message.job_id, resultId, review)}
+                          disabled={isBusy || !review.account_id}
+                          className="py-2 rounded-xl bg-[#2C6488] hover:bg-[#25536F] text-white text-xs font-semibold disabled:opacity-60 transition-colors"
+                        >
+                          บันทึกทั้งหมด
+                        </button>
                         <button
                           onClick={() => skipScanResult(message.job_id, resultId)}
                           disabled={isBusy}
-                          className="flex-1 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-500 text-xs font-semibold border border-slate-200 disabled:opacity-60 transition-colors"
+                          className="py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-500 text-xs font-semibold border border-slate-200 disabled:opacity-60 transition-colors"
                         >
                           ไม่บันทึกทั้งหมด
                         </button>
+                      </div>
+                      <div className="flex">
                         <button
                           onClick={() => setScanEditMode((prev) => ({ ...prev, [resultId]: !prev[resultId] }))}
-                          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[#2C6488] text-xs font-semibold border border-[#DCE8EE] transition-colors"
+                          className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                            isEditing
+                              ? 'bg-[#2C6488] hover:bg-[#25536F] text-white border-[#2C6488]'
+                              : 'bg-[#EAF3F7] hover:bg-[#DCE8EE] text-[#2C6488] border-[#DCE8EE]'
+                          }`}
                         >
-                          <Edit3 size={12} />
-                          {isEditing ? 'ซ่อน' : 'แก้ไข'}
+                          {isEditing ? <Check size={12} /> : <Edit3 size={12} />}
+                          {isEditing ? 'เสร็จ' : 'แก้ไข'}
                         </button>
                       </div>
-                      {isEditing && (
-                        <div className="pt-1.5 space-y-1.5 border-t border-[#EAF3F7]">
-                          <div>
-                            <p className="text-[10px] text-slate-400 font-medium mb-1">วันที่</p>
-                            <input
-                              type="date"
-                              value={review.transaction_date || todayStr()}
-                              onChange={(e) => updateScanReview(resultId, { transaction_date: e.target.value })}
-                              className={`w-full ${fieldClass}`}
-                            />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -2944,6 +3061,47 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const canGoNextScanImage = scanImageViewer && scanImageViewer.index < scanImageCount - 1;
   const expandedSummary = expandedAiSummary?.summary || null;
   const expandedIsWeekly = expandedAiSummary?.period === 'weekly';
+  const pendingReadyScanMessages = messages.filter((msg) => {
+    if (msg.role !== 'scan_result' || msg.status !== 'done' || !msg.result_id) return false;
+    if (msg.document_type === 'receipt') {
+      const review = scanReview[msg.result_id];
+      const finalItems = getReceiptReviewFinalItems(review);
+      if (finalItems.length === 0) return false;
+      return finalItems.some((_, itemIdx) => {
+        const itemStatus = scanItemState[`${msg.result_id}-${itemIdx}`];
+        return itemStatus !== 'saved' && itemStatus !== 'skipped';
+      });
+    }
+    return msg.document_type === 'slip';
+  });
+  const pendingReadyScanCount = pendingReadyScanMessages.length;
+
+  const handleSaveAllReadyScans = async () => {
+    if (scanBulkSaving || pendingReadyScanMessages.length === 0) return;
+    setScanBulkSaving(true);
+    try {
+      for (const msg of pendingReadyScanMessages) {
+        if (msg.document_type === 'receipt') {
+          const review = scanReview[msg.result_id] || buildScanReviewValue({
+            id: msg.result_id,
+            document_type: msg.document_type,
+            data: msg.data,
+          });
+          await saveReceiptAll(msg.job_id, msg.result_id, review);
+        } else if (msg.document_type === 'slip') {
+          await saveScanResult(msg.job_id, {
+            id: msg.result_id,
+            document_type: msg.document_type,
+            slip: msg.slip,
+            data: msg.data,
+            image_path: msg.image_path,
+          });
+        }
+      }
+    } finally {
+      setScanBulkSaving(false);
+    }
+  };
   const goToScanImage = (direction) => {
     setScanImageViewer((prev) => {
       const count = prev?.images?.length || 0;
@@ -3080,7 +3238,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         )}
 
         {/* Quick Action Chips Bar */}
-        <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-1.5 flex-shrink-0">
+        <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-center gap-1.5 flex-shrink-0">
           <button 
             onClick={() => changeMode('expense')}
             className={`px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 shadow-sm ${
@@ -3156,6 +3314,22 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             <HelpCircle size={12} />
             <span>ดูคู่มือใช้งาน</span>
           </button>
+
+          {pendingReadyScanCount > 0 && (
+            <button
+              type="button"
+              onClick={handleSaveAllReadyScans}
+              disabled={scanBulkSaving}
+              className="px-2.5 py-1 rounded-full bg-[#2C6488] border border-[#2C6488] text-[11px] font-bold text-white hover:bg-[#25536F] transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {scanBulkSaving ? (
+                <RefreshCw size={12} className="animate-spin" />
+              ) : (
+                <CheckCircle2 size={12} />
+              )}
+              <span>{scanBulkSaving ? 'กำลังบันทึก...' : `บันทึกทั้งหมด ${pendingReadyScanCount}`}</span>
+            </button>
+          )}
         </div>
 
         {/* Chat Text Input Bar & Upload triggers */}

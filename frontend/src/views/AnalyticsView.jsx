@@ -368,6 +368,13 @@ function isSavingTransfer(tx, savingAccountIds) {
   return tx?.type === 'transfer' && tx.to_account_id && savingAccountIds.has(tx.to_account_id);
 }
 
+function signedBaht(value, positivePrefix = '+') {
+  const amount = Number(value || 0);
+  if (amount < 0) return `−฿${fmt(Math.abs(amount))}`;
+  if (amount > 0) return `${positivePrefix}฿${fmt(amount)}`;
+  return `฿${fmt(0)}`;
+}
+
 function getYearCashflowTrend(txs, savingAccountIds) {
   const monthly = MONTH_LABELS.map((month) => ({ month, income: 0, expense: 0, saving: 0 }));
   (txs || []).forEach((tx) => {
@@ -549,7 +556,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               <p className="text-xs font-semibold mb-2 text-[#2C6488]">ภาพรวมการเงิน</p>
               <h2 className="text-sm text-slate-500 mb-1">กระแสเงินสุทธิ · ปี {selectedYear}</h2>
               <p className="text-4xl font-bold" style={{ color: yearNetCashflow >= 0 ? '#15803d' : '#dc2626' }}>
-                {yearNetCashflow >= 0 ? '+' : '−'}฿{fmt(Math.abs(yearNetCashflow))}
+                {signedBaht(yearNetCashflow)}
               </p>
               <p className="text-xs text-slate-400 mt-2">
                 ยอดเงินปัจจุบันรวม ฿{fmt(totalAssets)} · {accounts.filter((a) => a.type === 'asset').length} บัญชี
@@ -755,7 +762,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                       <span className="text-xs text-slate-500">รายรับ</span>
                     </div>
-                    <span className="text-xs font-bold text-emerald-600">+฿{fmt(stats.inc)}</span>
+                    <span className="text-xs font-bold text-emerald-600">{signedBaht(stats.inc)}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
@@ -777,6 +784,144 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
           );
         })}
       </div>
+
+      {/* ── Charts ──────────────────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลดข้อมูล...</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            {/* Donut */}
+            <div className="col-span-1 lg:col-span-2 order-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
+                  <p className="text-xs text-slate-400">
+                    {donutPeriodLabel}
+                    {' · '}฿{fmt(donutExpense)}
+                  </p>
+                </div>
+                <select
+                  value={donutMonth}
+                  onChange={(e) => setDonutMonth(Number(e.target.value))}
+                  className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-[#2C6488] focus:ring-2 focus:ring-[#EAF3F7]"
+                >
+                  <option value={0}>ทั้งปี</option>
+                  {MONTH_LABELS.map((m, i) => (
+                    <option key={i} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              {donutData.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>
+              ) : (
+                <div className="flex items-start gap-4">
+                  <DonutChart data={donutData} isDarkMode={isDarkMode} />
+                  <div className="flex-1 space-y-2 mt-1">
+                    {donutData.slice(0, 6).map((d, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{ background: d.color || FALLBACK_CATEGORY_COLOR }} />
+                          <span className="text-xs text-slate-600 truncate">{d.label}</span>
+                        </div>
+                        <span className="text-xs font-medium text-slate-700 flex-shrink-0">฿{fmt(d.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bar & Line Chart Container */}
+            <div className="col-span-1 lg:col-span-3 order-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-between">
+              <div>
+                <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700">แนวโน้มการเงิน</h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {chartTab === 'compare'
+                        ? `เปรียบเทียบรายเดือน ปี ${selectedYear}`
+                        : `รายรับ รายจ่าย และการออมรายเดือน ปี ${selectedYear}`}
+                    </p>
+                  </div>
+                  <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setChartTab('trend')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        chartTab === 'trend'
+                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          : 'text-slate-500 hover:text-[#2C6488]'
+                      }`}
+                    >
+                      แนวโน้ม
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartTab('compare')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        chartTab === 'compare'
+                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          : 'text-slate-500 hover:text-[#2C6488]'
+                      }`}
+                    >
+                      รายเดือน
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                  {chartTab === 'compare' ? (
+                    <div className="flex gap-3 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#10b981' }} />
+                        <span className="text-slate-500">รายรับ</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#f43f5e' }} />
+                        <span className="text-slate-500">รายจ่าย</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: SAVING_COLOR }} />
+                        <span className="text-slate-500">การออม</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#34c986' }} />
+                        <span className="text-slate-500">รายรับ</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#fb7185' }} />
+                        <span className="text-slate-500">รายจ่าย</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: SAVING_COLOR }} />
+                        <span className="text-slate-500">การออม</span>
+                      </div>
+                    </div>
+                  )}
+                  <span className="text-xs text-slate-400">
+                    {chartTab === 'compare'
+                      ? `รายรับ ฿${fmt(barIncomeTotal)} · รายจ่าย ฿${fmt(barExpenseTotal)} · การออม ฿${fmt(barSavingTotal)}`
+                      : 'ม.ค. - ธ.ค.'}
+                  </span>
+                </div>
+              </div>
+
+              {chartTab === 'compare' ? (
+                <BarChart data={barData} isDarkMode={isDarkMode} />
+              ) : (
+                <TrendLineChart data={yearTrendData} isDarkMode={isDarkMode} />
+              )}
+
+            </div>
+          </div>
+
+        </>
+      )}
 
       {/* ── Budgets & Goals ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -920,144 +1065,6 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
         </div>
 
       </div>
-
-      {/* ── Charts ──────────────────────────────────────────────────────────── */}
-      {loading ? (
-        <div className="py-16 text-center text-slate-400 text-sm">กำลังโหลดข้อมูล...</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            {/* Donut */}
-            <div className="col-span-1 lg:col-span-2 order-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
-                  <p className="text-xs text-slate-400">
-                    {donutPeriodLabel}
-                    {' · '}฿{fmt(donutExpense)}
-                  </p>
-                </div>
-                <select
-                  value={donutMonth}
-                  onChange={(e) => setDonutMonth(Number(e.target.value))}
-                  className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-[#2C6488] focus:ring-2 focus:ring-[#EAF3F7]"
-                >
-                  <option value={0}>ทั้งปี</option>
-                  {MONTH_LABELS.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              {donutData.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>
-              ) : (
-                <div className="flex items-start gap-4">
-                  <DonutChart data={donutData} isDarkMode={isDarkMode} />
-                  <div className="flex-1 space-y-2 mt-1">
-                    {donutData.slice(0, 6).map((d, i) => (
-                      <div key={i} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ background: d.color || FALLBACK_CATEGORY_COLOR }} />
-                          <span className="text-xs text-slate-600 truncate">{d.label}</span>
-                        </div>
-                        <span className="text-xs font-medium text-slate-700 flex-shrink-0">฿{fmt(d.value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Bar & Line Chart Container */}
-            <div className="col-span-1 lg:col-span-3 order-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-between">
-              <div>
-                <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-700">แนวโน้มการเงิน</h3>
-                    <p className="text-xs text-slate-400 mt-1">
-                      {chartTab === 'compare'
-                        ? `เปรียบเทียบรายเดือน ปี ${selectedYear}`
-                        : `รายรับ รายจ่าย และการออมรายเดือน ปี ${selectedYear}`}
-                    </p>
-                  </div>
-                  <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setChartTab('trend')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                        chartTab === 'trend'
-                          ? 'bg-white text-[#2C6488] shadow-sm'
-                          : 'text-slate-500 hover:text-[#2C6488]'
-                      }`}
-                    >
-                      แนวโน้ม
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartTab('compare')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                        chartTab === 'compare'
-                          ? 'bg-white text-[#2C6488] shadow-sm'
-                          : 'text-slate-500 hover:text-[#2C6488]'
-                      }`}
-                    >
-                      รายเดือน
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                  {chartTab === 'compare' ? (
-                    <div className="flex gap-3 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#10b981' }} />
-                        <span className="text-slate-500">รายรับ</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#f43f5e' }} />
-                        <span className="text-slate-500">รายจ่าย</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: SAVING_COLOR }} />
-                        <span className="text-slate-500">การออม</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-3 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#34c986' }} />
-                        <span className="text-slate-500">รายรับ</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#fb7185' }} />
-                        <span className="text-slate-500">รายจ่าย</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: SAVING_COLOR }} />
-                        <span className="text-slate-500">การออม</span>
-                      </div>
-                    </div>
-                  )}
-                  <span className="text-xs text-slate-400">
-                    {chartTab === 'compare'
-                      ? `รายรับ ฿${fmt(barIncomeTotal)} · รายจ่าย ฿${fmt(barExpenseTotal)} · การออม ฿${fmt(barSavingTotal)}`
-                      : 'ม.ค. - ธ.ค.'}
-                  </span>
-                </div>
-              </div>
-
-              {chartTab === 'compare' ? (
-                <BarChart data={barData} isDarkMode={isDarkMode} />
-              ) : (
-                <TrendLineChart data={yearTrendData} isDarkMode={isDarkMode} />
-              )}
-
-            </div>
-          </div>
-
-        </>
-      )}
 
       {/* AI Summary Full Screen Modal */}
       {showAiSummaryModal && hasAiSummary && createPortal(
