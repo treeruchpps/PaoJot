@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"paomoney/internal/models"
 	"strconv"
@@ -25,7 +26,11 @@ func (h *NotificationHandler) ensureNotificationSchema(ctx context.Context) erro
 	_, err := h.db.Exec(ctx, `
 		ALTER TABLE notifications ADD COLUMN IF NOT EXISTS goal_id UUID REFERENCES savings_goals(id) ON DELETE CASCADE;
 		ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type VARCHAR(50) NOT NULL DEFAULT 'recurring';
+		ALTER TABLE notifications ADD COLUMN IF NOT EXISTS reference_key VARCHAR(120);
 		CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(user_id, notification_type, created_at);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_reference_key
+			ON notifications(user_id, notification_type, reference_key)
+			WHERE reference_key IS NOT NULL;
 	`)
 	return err
 }
@@ -211,9 +216,12 @@ func (h *NotificationHandler) generateAISummaryNotifications(ctx context.Context
 	).Scan(&enabled, &weekStart); err != nil || !enabled {
 		return
 	}
+	if weekStart < 0 || weekStart > 6 {
+		weekStart = 1
+	}
 	today := time.Now()
 	weekStartDate := today.AddDate(0, 0, -((int(today.Weekday()) - weekStart + 7) % 7))
-	
+
 	// Previous Completed Week
 	prevWeekStart := weekStartDate.AddDate(0, 0, -7)
 	prevWeekEnd := weekStartDate.AddDate(0, 0, -1)
@@ -228,29 +236,48 @@ func (h *NotificationHandler) generateAISummaryNotifications(ctx context.Context
 }
 
 func (h *NotificationHandler) insertAISummaryIfEligible(ctx context.Context, userID, notiType, title string, start, end time.Time, minCount int) {
-	var count int
-	if err := h.db.QueryRow(ctx, `
-		SELECT COUNT(*) FROM transactions
-		WHERE user_id = $1 AND type IN ('income', 'expense')
-		  AND transaction_date >= $2 AND transaction_date <= $3
-	`, userID, budgetDateString(start), budgetDateString(end)).Scan(&count); err != nil || count < minCount {
+	today := time.Now()
+	todayDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	nextPeriodDate := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, today.Location()).AddDate(0, 0, 1)
+	if notiType == "ai_weekly" && !todayDate.Equal(nextPeriodDate) {
 		return
 	}
+	if notiType == "ai_monthly" && todayDate.Day() != 1 {
+		return
+	}
+	if notiType == "ai_monthly" && minCount > 11 {
+		minCount = 11
+	}
+
+	var count, expenseCount int
+	if err := h.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE type IN ('income', 'expense')),
+			COUNT(*) FILTER (WHERE type = 'expense')
+		FROM transactions
+		WHERE user_id = $1 AND type IN ('income', 'expense')
+		  AND transaction_date >= $2 AND transaction_date <= $3
+	`, userID, budgetDateString(start), budgetDateString(end)).Scan(&count, &expenseCount); err != nil || count < minCount || expenseCount == 0 {
+		return
+	}
+	referenceKey := notiType + ":" + budgetDateString(start) + ":" + budgetDateString(end)
 	var exists bool
 	_ = h.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM notifications
-			WHERE user_id = $1 AND notification_type = $2 AND action_taken = FALSE
+			WHERE user_id = $1 AND notification_type = $2 AND reference_key = $3
 		)
-	`, userID, notiType).Scan(&exists)
+	`, userID, notiType, referenceKey).Scan(&exists)
 	if exists {
 		return
 	}
 	msg := "มีข้อมูลเพียงพอสำหรับให้ AI ช่วยสรุปภาพรวม"
+	msg = fmt.Sprintf("%s (%s - %s)", msg, budgetDateString(start), budgetDateString(end))
 	h.db.Exec(ctx, //nolint
-		`INSERT INTO notifications (user_id, notification_type, title, message)
-		 VALUES ($1, $2, $3, $4)`,
-		userID, notiType, title, msg,
+		`INSERT INTO notifications (user_id, notification_type, reference_key, title, message)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT DO NOTHING`,
+		userID, notiType, referenceKey, title, msg,
 	)
 }
 

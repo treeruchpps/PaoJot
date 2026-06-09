@@ -131,9 +131,7 @@ CREATE TABLE budgets (
     CHECK (end_date >= start_date)
 );
 
--- ============================================================
 -- ตาราง recurring_transactions
--- ============================================================
 CREATE TYPE recur_frequency AS ENUM ('daily', 'weekly', 'monthly', 'yearly');
 
 CREATE TABLE recurring_transactions (
@@ -162,6 +160,7 @@ CREATE TABLE notifications (
     budget_id      UUID             REFERENCES budgets(id) ON DELETE CASCADE,
     goal_id        UUID             REFERENCES savings_goals(id) ON DELETE CASCADE,
     notification_type VARCHAR(50)    NOT NULL DEFAULT 'recurring',
+    reference_key  VARCHAR(120),
     title          VARCHAR(200)     NOT NULL,
     message        TEXT,
     is_read        BOOLEAN          NOT NULL DEFAULT FALSE,
@@ -169,9 +168,7 @@ CREATE TABLE notifications (
     created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
 -- ตาราง slip_ref_log (duplicate ref_no detection)
--- ============================================================
 CREATE TABLE slip_ref_log (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -184,9 +181,7 @@ CREATE TABLE slip_ref_log (
 -- image_path บน transactions (เก็บ path รูปสลิปที่แนบมา)
 ALTER TABLE transactions ADD COLUMN image_path TEXT;
 
--- ============================================================
 -- Unified scan jobs (receipt/slip auto classification)
--- ============================================================
 CREATE TABLE scan_jobs (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -214,9 +209,7 @@ CREATE TABLE scan_results (
     updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
 -- ตาราง ai_summaries (cache สรุปการเงินจาก LLM)
--- ============================================================
 CREATE TABLE ai_summaries (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -232,9 +225,7 @@ CREATE TABLE ai_summaries (
     UNIQUE (user_id, period_type, period_start, period_end, week_start_day)
 );
 
--- ============================================================
 -- ตาราง quick_entry_chat_logs (ประวัติแชทผู้ช่วยบันทึกเร็ว แยกตามผู้ใช้และโหมด)
--- ============================================================
 CREATE TABLE quick_entry_chat_logs (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -245,9 +236,7 @@ CREATE TABLE quick_entry_chat_logs (
     UNIQUE (user_id, mode)
 );
 
--- ============================================================
 -- INDEXES
--- ============================================================
 CREATE INDEX idx_users_email           ON users(email);
 CREATE INDEX idx_users_username        ON users(username);
 CREATE INDEX idx_accounts_user_id      ON accounts(user_id);
@@ -265,15 +254,15 @@ CREATE INDEX idx_recurring_next_due          ON recurring_transactions(next_due_
 CREATE INDEX idx_notifications_user_id       ON notifications(user_id);
 CREATE INDEX idx_notifications_is_read       ON notifications(user_id, is_read);
 CREATE INDEX idx_notifications_type          ON notifications(user_id, notification_type, created_at);
+CREATE UNIQUE INDEX idx_notifications_reference_key ON notifications(user_id, notification_type, reference_key)
+WHERE reference_key IS NOT NULL;
 CREATE INDEX idx_scan_jobs_user_id            ON scan_jobs(user_id);
 CREATE INDEX idx_scan_results_job_id          ON scan_results(job_id);
 CREATE INDEX idx_slip_ref_log_user           ON slip_ref_log(user_id, ref_no);
 CREATE INDEX idx_ai_summaries_user_period    ON ai_summaries(user_id, period_type, period_start, period_end);
 CREATE INDEX idx_quick_entry_chat_logs_user  ON quick_entry_chat_logs(user_id, mode);
 
--- ============================================================
 -- FUNCTION + TRIGGER: auto-update updated_at
--- ============================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -318,9 +307,7 @@ CREATE TRIGGER trg_recurring_updated_at
     BEFORE UPDATE ON recurring_transactions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- ============================================================
 -- TRIGGER: สร้าง user_profiles อัตโนมัติเมื่อ insert users
--- ============================================================
 CREATE OR REPLACE FUNCTION create_user_profile()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -334,9 +321,7 @@ CREATE TRIGGER trg_create_user_profile
     AFTER INSERT ON users
     FOR EACH ROW EXECUTE FUNCTION create_user_profile();
 
--- ============================================================
 -- DEFAULT CATEGORIES
--- ============================================================
 INSERT INTO categories (id, user_id, name, type, icon, color) VALUES
     -- รายจ่าย (expense) — เรียงตามลำดับที่กำหนด
     (uuid_generate_v4(), NULL, 'อาหาร',               'expense', 'UtensilsCrossed', '#f97316'),

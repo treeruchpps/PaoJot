@@ -869,7 +869,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   };
 
   const getReceiptReviewFinalItems = (review) => {
-    const items = (review?.items || []).filter((it) => (it.amount || 0) > 0);
+    const items = (review?.items || []).filter((it) => it.is_manual || (it.amount || 0) > 0);
     const baseTotal = items.reduce((sum, it) => sum + Number(it.amount || 0), 0);
     const { vat, discount } = getReceiptReviewAdjustments(review);
     return items.map((it) => {
@@ -1795,6 +1795,24 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     });
   };
 
+  const addReceiptItemToReview = (resultId) => {
+    setScanReview((prev) => {
+      const review = prev[resultId] || {};
+      const items = [
+        ...(review.items || []),
+        {
+          name: '',
+          amount: '',
+          note: '',
+          category_id: getDefaultCategoryId('expense'),
+          is_manual: true,
+        },
+      ];
+      return { ...prev, [resultId]: { ...review, items } };
+    });
+    setScanEditMode((prev) => ({ ...prev, [resultId]: true }));
+  };
+
   const refreshScanJob = async (jobId) => {
     const job = await scanJobsApi.get(jobId);
     setScanJobDetails((prev) => ({ ...prev, [jobId]: job }));
@@ -1873,13 +1891,22 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
   const saveReceiptItem = async (jobId, resultId, itemIndex, itemData, review) => {
     const key = `${resultId}-${itemIndex}`;
+    const itemAmount = Number(itemData.finalAmount ?? itemData.amount ?? 0);
+    if (itemAmount <= 0) {
+      addMessage({ role: 'bot', text: 'กรุณากรอกราคาของรายการให้มากกว่า 0 บาทก่อนบันทึกครับ' });
+      return;
+    }
+    if (!(itemData.category_id || review.category_id)) {
+      addMessage({ role: 'bot', text: 'กรุณาเลือกหมวดหมู่ของรายการก่อนบันทึกครับ' });
+      return;
+    }
     setScanItemState((prev) => ({ ...prev, [key]: 'saving' }));
     try {
       await transactions.create({
         type: 'expense',
         account_id: review.account_id,
         category_id: itemData.category_id || review.category_id,
-        amount: itemData.finalAmount ?? itemData.amount ?? 0,
+        amount: itemAmount,
         name: itemData.name || `รายการ ${itemIndex + 1}`,
         transaction_date: review.transaction_date || todayStr(),
       });
@@ -1919,6 +1946,10 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     if (activeItems.length === 0) return;
     if (activeItems.some(({ item }) => !item.category_id)) {
       addMessage({ role: 'bot', text: 'กรุณาเลือกหมวดหมู่ให้ครบก่อนบันทึกทั้งหมดครับ' });
+      return;
+    }
+    if (activeItems.some(({ item }) => Number(item.finalAmount ?? item.amount ?? 0) <= 0)) {
+      addMessage({ role: 'bot', text: 'กรุณากรอกราคาของทุกรายการให้มากกว่า 0 บาทก่อนบันทึกทั้งหมดครับ' });
       return;
     }
 
@@ -2439,6 +2470,16 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                       )}
                       <span>{finalItems.length} รายการ</span>
                     </div>
+                    {isDone && !allReceiptItemsHandled && (
+                      <button
+                        type="button"
+                        onClick={() => addReceiptItemToReview(resultId)}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-[#DCE8EE] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#2C6488] hover:bg-[#EAF3F7] transition-colors"
+                      >
+                        <Plus size={12} />
+                        เพิ่มรายการ
+                      </button>
+                    )}
                   </div>
 
                   {/* Items */}
@@ -2490,7 +2531,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                                   />
                                   <button
                                     onClick={() => saveReceiptItem(message.job_id, resultId, itemIdx, item, review)}
-                                    disabled={isSavingItem || !review.account_id || !itemCatId}
+                                    disabled={isSavingItem || !review.account_id || !itemCatId || Number(item.finalAmount ?? item.amount ?? 0) <= 0}
                                     className="px-2 py-1.5 rounded-lg bg-[#2C6488] hover:bg-[#25536F] text-white text-[10px] font-semibold disabled:opacity-50 transition-colors flex-shrink-0"
                                   >
                                     {isSavingItem ? '...' : 'บันทึก'}
@@ -2548,7 +2589,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                                     />
                                     <button
                                       onClick={() => saveReceiptItem(message.job_id, resultId, itemIdx, item, review)}
-                                      disabled={isSavingItem || !review.account_id || !itemCatId}
+                                      disabled={isSavingItem || !review.account_id || !itemCatId || Number(item.finalAmount ?? item.amount ?? 0) <= 0}
                                       className="px-2.5 py-1 rounded-lg bg-[#2C6488] hover:bg-[#25536F] text-white text-[10px] font-semibold disabled:opacity-50 transition-colors flex-shrink-0"
                                     >
                                       {isSavingItem ? '...' : 'บันทึก'}
