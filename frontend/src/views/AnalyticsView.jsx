@@ -4,6 +4,7 @@ import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X,
 import { transactions as txApi, profile as profileApi, savingsGoals as goalsApi, budgets as budgetsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
+import { getCategoryStyle } from '../constants/categoryStyles';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const MONTH_LABELS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -369,8 +370,12 @@ function TrendLineChart({ data, isDarkMode }) {
   return <div className="h-56"><canvas ref={canvasRef} /></div>;
 }
 
-function isSavingTransfer(tx, savingAccountIds) {
-  return tx?.type === 'transfer' && tx.to_account_id && savingAccountIds.has(tx.to_account_id);
+function savingActivityAmount(tx, savingAccountIds) {
+  const amount = Number(tx?.amount || 0);
+  if (tx?.type === 'goal_deposit') return amount;
+  if (tx?.type === 'goal_withdrawal') return -amount;
+  if (tx?.type === 'transfer' && tx.to_account_id && savingAccountIds.has(tx.to_account_id)) return amount;
+  return 0;
 }
 
 function signedBaht(value, positivePrefix = '+') {
@@ -390,15 +395,28 @@ function getYearCashflowTrend(txs, savingAccountIds) {
     if (monthIndex < 0 || monthIndex > 11) return;
     if (tx.type === 'income') monthly[monthIndex].income += Number(tx.amount || 0);
     if (tx.type === 'expense') monthly[monthIndex].expense += Number(tx.amount || 0);
-    if (isSavingTransfer(tx, savingAccountIds)) monthly[monthIndex].saving += Number(tx.amount || 0);
+    monthly[monthIndex].saving += savingActivityAmount(tx, savingAccountIds);
   });
   return monthly;
+}
+
+async function fetchDashboardTransactions(params = {}) {
+  const [normal, deposits, withdrawals] = await Promise.all([
+    txApi.list(params),
+    txApi.list({ ...params, type: 'goal_deposit' }),
+    txApi.list({ ...params, type: 'goal_withdrawal' }),
+  ]);
+  return [
+    ...(normal?.data || []),
+    ...(deposits?.data || []),
+    ...(withdrawals?.data || []),
+  ];
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 
-export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, onGoBudgets, onGoGoals, isDarkMode }) {
+export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, onGoBudgets, onGoGoals, isDarkMode, quickEntryRefreshKey = 0 }) {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [donutMonth,   setDonutMonth]   = useState(0); // 0 = ทั้งปี, 1-12 = เดือน
@@ -435,19 +453,17 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       const summaryResults = await Promise.all(
         PERIOD_CONFIG.map(async (pc) => {
           const { from, to } = getDateRange(pc.id, wsd);
-          const r = await txApi.list({ date_from: from, date_to: to, limit: 500 });
-          const data = r?.data || [];
+          const data = await fetchDashboardTransactions({ date_from: from, date_to: to, limit: 10000 });
           const inc  = data.filter((t) => t.type === 'income').reduce((s, t)  => s + t.amount, 0);
           const exp  = data.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-          const sav  = data.filter((t) => isSavingTransfer(t, savingAccountIds)).reduce((s, t) => s + t.amount, 0);
+          const sav  = data.reduce((s, t) => s + savingActivityAmount(t, savingAccountIds), 0);
           return [pc.id, { inc, exp, sav, data }];
         })
       );
       const stats = Object.fromEntries(summaryResults);
       setPeriodStats(stats);
 
-      const allResult = await txApi.list({ limit: 10000 });
-      const allData = allResult?.data || [];
+      const allData = await fetchDashboardTransactions({ limit: 10000 });
       setAllTxList(allData);
     } catch {
       setPeriodStats({});
@@ -459,7 +475,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
     }
   }, []);
 
-  useEffect(() => { fetchAll(weekStartDay); }, [weekStartDay, fetchAll]);
+  useEffect(() => { fetchAll(weekStartDay); }, [weekStartDay, quickEntryRefreshKey, fetchAll]);
 
   // AI summary is now surfaced in the chat page through AI notifications.
 
@@ -484,7 +500,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   );
   const yearIncome = yearTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const yearExpense = yearTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const yearSaving = yearTx.filter((t) => isSavingTransfer(t, activeSavingAccountIds)).reduce((s, t) => s + t.amount, 0);
+  const yearSaving = yearTx.reduce((s, t) => s + savingActivityAmount(t, activeSavingAccountIds), 0);
   const yearNetCashflow = totalAssets;
   const yearMonthly = getYearCashflowTrend(yearTx, activeSavingAccountIds);
   const barData = yearMonthly;
@@ -508,10 +524,11 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
 
   const getCatInfo = (id) => {
     const cat = id ? (categories || []).find((c) => c.id === id) : null;
+    const style = getCategoryStyle(cat);
     return {
       name: cat?.name || 'อื่นๆ',
-      icon: cat?.icon || 'Tag',
-      color: cat?.color || FALLBACK_CATEGORY_COLOR,
+      icon: style.icon,
+      color: style.color,
     };
   };
 

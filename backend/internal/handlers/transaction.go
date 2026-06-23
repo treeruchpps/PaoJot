@@ -43,6 +43,7 @@ func (h *TransactionHandler) List(c *gin.Context) {
 	dateFrom := c.Query("date_from")
 	dateTo := c.Query("date_to")
 	search := strings.TrimSpace(c.Query("search"))
+	includeGoal := c.Query("include_goal") == "true"
 	sortBy := c.DefaultQuery("sort_by", "date")
 	sortDir := strings.ToLower(c.DefaultQuery("sort_dir", "desc"))
 	if sortDir != "asc" {
@@ -59,10 +60,10 @@ func (h *TransactionHandler) List(c *gin.Context) {
 		idx++
 	}
 	if txType != "" {
-		where += " AND type = $" + strconv.Itoa(idx)
+		where += " AND type::text = $" + strconv.Itoa(idx)
 		args = append(args, txType)
 		idx++
-	} else {
+	} else if !includeGoal {
 		// ซ่อน goal_deposit / goal_withdrawal จากหน้ารายการธุรกรรมปกติ
 		// ใช้ type::text เพราะ type เป็น ENUM — ต้อง cast ก่อน compare string literal
 		where += " AND type::text NOT IN ('goal_deposit','goal_withdrawal')"

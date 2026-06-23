@@ -71,8 +71,10 @@ export function applySavedCategoryOrder(type, cats = []) {
     if (!order || order.length === 0) return sortCategoriesLikeCategoryPage(cats, type);
     const lookup = Object.fromEntries(cats.map((c) => [c.id, c]));
     const ordered = order.filter((id) => lookup[id]).map((id) => lookup[id]);
-    const remainder = cats.filter((c) => !order.includes(c.id));
-    return sortCategoriesLikeCategoryPage([...ordered, ...remainder], type);
+    // หมวดที่ยังไม่เคยถูกจัดลำดับ (เพิ่งสร้างใหม่) เรียงด้วยลำดับเริ่มต้นแล้วต่อท้าย
+    const remainder = sortCategoriesLikeCategoryPage(cats.filter((c) => !order.includes(c.id)), type);
+    // เคารพลำดับที่ผู้ใช้ลากไว้ทั้งหมด (รวมหมวดเริ่มต้น) — ไม่ re-sort ทับ
+    return [...ordered, ...remainder];
   } catch {
     return sortCategoriesLikeCategoryPage(cats, type);
   }

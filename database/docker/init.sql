@@ -74,8 +74,6 @@ CREATE TABLE categories (
     user_id    UUID             REFERENCES users(id) ON DELETE CASCADE,
     name       VARCHAR(100)     NOT NULL,
     type       transaction_type NOT NULL,
-    icon       VARCHAR(50),
-    color      VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -322,37 +320,37 @@ CREATE TRIGGER trg_create_user_profile
     FOR EACH ROW EXECUTE FUNCTION create_user_profile();
 
 -- DEFAULT CATEGORIES
-INSERT INTO categories (id, user_id, name, type, icon, color) VALUES
+INSERT INTO categories (id, user_id, name, type) VALUES
     -- รายจ่าย (expense) — เรียงตามลำดับที่กำหนด
-    (uuid_generate_v4(), NULL, 'อาหาร',               'expense', 'UtensilsCrossed', '#f97316'),
-    (uuid_generate_v4(), NULL, 'เดินทาง',              'expense', 'Car',             '#3b82f6'),
-    (uuid_generate_v4(), NULL, 'ของใช้',               'expense', 'Package',         '#64748b'),
-    (uuid_generate_v4(), NULL, 'ช้อปปิ้ง',             'expense', 'ShoppingBag',     '#ec4899'),
-    (uuid_generate_v4(), NULL, 'บันเทิง',              'expense', 'Gamepad2',        '#8b5cf6'),
-    (uuid_generate_v4(), NULL, 'ที่อยู่อาศัย',        'expense', 'Home',            '#84cc16'),
-    (uuid_generate_v4(), NULL, 'ชำระบิล',              'expense', 'ReceiptText',     '#06b6d4'),
-    (uuid_generate_v4(), NULL, 'สุขภาพ',               'expense', 'HeartPulse',      '#10b981'),
-    (uuid_generate_v4(), NULL, 'ครอบครัว',             'expense', 'Users',           '#f59e0b'),
-    (uuid_generate_v4(), NULL, 'สัตว์เลี้ยง',          'expense', 'PawPrint',        '#5F9A7A'),
-    (uuid_generate_v4(), NULL, 'ของขวัญ',              'expense', 'Gift',            '#f59e0b'),
-    (uuid_generate_v4(), NULL, 'การบริจาค',            'expense', 'HandHeart',       '#ef4444'),
-    (uuid_generate_v4(), NULL, 'การศึกษา',             'expense', 'GraduationCap',   '#6366f1'),
-    (uuid_generate_v4(), NULL, 'ท่องเที่ยว',           'expense', 'Plane',           '#2C6488'),
-    (uuid_generate_v4(), NULL, 'งาน',                  'expense', 'BriefcaseBusiness','#475569'),
-    (uuid_generate_v4(), NULL, 'ลงทุน',                'expense', 'TrendingUp',      '#5F9A7A'),
-    (uuid_generate_v4(), NULL, 'ชำระหนี้',             'expense', 'CreditCard',      '#2C6488'),
-    (uuid_generate_v4(), NULL, 'อื่นๆ',                'expense', 'Tag',             '#94a3b8'),
+    (uuid_generate_v4(), NULL, 'อาหาร',               'expense'),
+    (uuid_generate_v4(), NULL, 'เดินทาง',              'expense'),
+    (uuid_generate_v4(), NULL, 'ของใช้',               'expense'),
+    (uuid_generate_v4(), NULL, 'ช้อปปิ้ง',             'expense'),
+    (uuid_generate_v4(), NULL, 'บันเทิง',              'expense'),
+    (uuid_generate_v4(), NULL, 'ที่อยู่อาศัย',        'expense'),
+    (uuid_generate_v4(), NULL, 'ชำระบิล',              'expense'),
+    (uuid_generate_v4(), NULL, 'สุขภาพ',               'expense'),
+    (uuid_generate_v4(), NULL, 'ครอบครัว',             'expense'),
+    (uuid_generate_v4(), NULL, 'สัตว์เลี้ยง',          'expense'),
+    (uuid_generate_v4(), NULL, 'ของขวัญ',              'expense'),
+    (uuid_generate_v4(), NULL, 'การบริจาค',            'expense'),
+    (uuid_generate_v4(), NULL, 'การศึกษา',             'expense'),
+    (uuid_generate_v4(), NULL, 'ท่องเที่ยว',           'expense'),
+    (uuid_generate_v4(), NULL, 'งาน',                  'expense'),
+    (uuid_generate_v4(), NULL, 'ลงทุน',                'expense'),
+    (uuid_generate_v4(), NULL, 'ชำระหนี้',             'expense'),
+    (uuid_generate_v4(), NULL, 'อื่นๆ',                'expense'),
     -- รายรับ (income)
-    (uuid_generate_v4(), NULL, 'เงินเดือน',            'income',  'Briefcase',       '#10b981'),
-    (uuid_generate_v4(), NULL, 'รายได้พิเศษ',          'income',  'Star',            '#f59e0b'),
-    (uuid_generate_v4(), NULL, 'โบนัส',                'income',  'Gift',            '#6366f1'),
-    (uuid_generate_v4(), NULL, 'ค่าล่วงเวลา',          'income',  'Zap',             '#f97316'),
-    (uuid_generate_v4(), NULL, 'การลงทุน',             'income',  'DollarSign',      '#3b82f6'),
-    (uuid_generate_v4(), NULL, 'อื่นๆ',                'income',  'Tag',             '#94a3b8'),
+    (uuid_generate_v4(), NULL, 'เงินเดือน',            'income'),
+    (uuid_generate_v4(), NULL, 'รายได้พิเศษ',          'income'),
+    (uuid_generate_v4(), NULL, 'โบนัส',                'income'),
+    (uuid_generate_v4(), NULL, 'ค่าล่วงเวลา',          'income'),
+    (uuid_generate_v4(), NULL, 'การลงทุน',             'income'),
+    (uuid_generate_v4(), NULL, 'อื่นๆ',                'income'),
     -- การโอน (transfer)
-    (uuid_generate_v4(), NULL, 'โอนผ่านธนาคาร',        'transfer','ArrowLeftRight',  '#6366f1'),
-    (uuid_generate_v4(), NULL, 'ฝากและถอน',            'transfer','PiggyBank',       '#10b981'),
-    (uuid_generate_v4(), NULL, 'การยืมเงิน',           'transfer','Banknote',        '#f59e0b'),
-    (uuid_generate_v4(), NULL, 'การให้ยืมเงิน',        'transfer','Wallet',          '#3b82f6'),
-    (uuid_generate_v4(), NULL, 'การชำระคืน',           'transfer','Landmark',        '#f97316'),
-    (uuid_generate_v4(), NULL, 'อื่นๆ',                'transfer','Tag',             '#94a3b8');
+    (uuid_generate_v4(), NULL, 'โอนผ่านธนาคาร',        'transfer'),
+    (uuid_generate_v4(), NULL, 'ฝากและถอน',            'transfer'),
+    (uuid_generate_v4(), NULL, 'การยืมเงิน',           'transfer'),
+    (uuid_generate_v4(), NULL, 'การให้ยืมเงิน',        'transfer'),
+    (uuid_generate_v4(), NULL, 'การชำระคืน',           'transfer'),
+    (uuid_generate_v4(), NULL, 'อื่นๆ',                'transfer');

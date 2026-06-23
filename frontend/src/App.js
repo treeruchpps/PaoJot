@@ -189,6 +189,7 @@ function AppShell() {
                 onGoBudgets={() => setView('budgets')}
                 onGoGoals={() => setView('goals')}
                 isDarkMode={isDarkMode}
+                quickEntryRefreshKey={quickEntryRefreshKey}
               />
             )}
             {view === 'accounts'     && (

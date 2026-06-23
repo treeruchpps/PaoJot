@@ -17,6 +17,7 @@ import { getTransactionAccounts } from '../utils/accountFilters';
 import { convertHeicFilesToJpeg } from '../utils/heicToJpeg';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
 import { formatDisplayDateRange } from '../utils/dateFormat';
+import { getCategoryStyle } from '../constants/categoryStyles';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (s) => {
@@ -58,6 +59,11 @@ const getAiSummaryChatError = (message) => {
   return `ไม่สามารถดึงข้อมูลสรุปได้ในขณะนี้: ${text || 'ลองใหม่อีกครั้งภายหลัง'}`;
 };
 
+const getAiSummaryFailureMessage = (err) => {
+  if (err?.status === 503) return 'เกิดข้อผิดพลาดกรุณาลองใหม่อีกครั้ง';
+  return getAiSummaryChatError(err?.message);
+};
+
 const aiNotificationPeriod = (type) => {
   if (type === 'ai_weekly') return 'weekly';
   if (type === 'ai_monthly') return 'monthly';
@@ -74,7 +80,7 @@ const closeChoiceMessages = (messages, targetId = null) =>
   });
 
 // Component: Budget Impact progress bar overlay
-function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [] }) {
+function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [], readonly = false }) {
   if (!categoryId || amount <= 0) return null;
   const cat = categories.find((c) => c.id === categoryId);
   
@@ -96,12 +102,13 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [] }) 
   const spent = budget.spent || 0;
   const limit = budget.amount;
   const pctBefore = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0;
-  const pctAfter = limit > 0 ? Math.min(100, Math.round(((spent + amount) / limit) * 100)) : 0;
+  const projectedSpent = readonly ? spent : spent + amount;
+  const pctAfter = limit > 0 ? Math.min(100, Math.round((projectedSpent / limit) * 100)) : 0;
   
   const spentWidth = `${Math.min(100, (spent / limit) * 100)}%`;
-  const additionWidth = `${Math.min(100 - (spent / limit) * 100, (amount / limit) * 100)}%`;
-  const isOver = (spent + amount) > limit;
-  const overAmount = (spent + amount) - limit;
+  const additionWidth = readonly ? '0%' : `${Math.min(100 - (spent / limit) * 100, (amount / limit) * 100)}%`;
+  const isOver = projectedSpent > limit;
+  const overAmount = projectedSpent - limit;
 
   return (
     <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200/60 dark:bg-slate-850 dark:border-slate-700/50 space-y-2">
@@ -128,9 +135,9 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [] }) 
 
       <div className="flex justify-between items-center text-[11px]">
         <span className="text-slate-500 dark:text-slate-400 inline-flex items-center gap-1 flex-wrap">
-          ใช้ไปแล้ว ฿{fmt(spent)} ({pctBefore}%) {amount > 0 && (
+          ใช้ไปแล้ว ฿{fmt(spent)} ({pctBefore}%) {!readonly && amount > 0 && (
             <>
-              + ฿{fmt(amount)} <ArrowRight size={11} className="inline text-slate-400" /> ฿{fmt(spent + amount)} ({pctAfter}%)
+              + ฿{fmt(amount)} <ArrowRight size={11} className="inline text-slate-400" /> ฿{fmt(projectedSpent)} ({pctAfter}%)
             </>
           )}
         </span>
@@ -172,8 +179,8 @@ function ScanCatSelect({ value, onChange, categories, compact = false }) {
         {selected ? (
           <>
             <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-              style={{ background: (selected.color || '#94a3b8') + '25' }}>
-              <Icon name={selected.icon} size={11} color={selected.color || '#94a3b8'} />
+              style={{ background: getCategoryStyle(selected).color + '25' }}>
+              <Icon name={getCategoryStyle(selected).icon} size={11} color={getCategoryStyle(selected).color} />
             </div>
             <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
           </>
@@ -185,23 +192,26 @@ function ScanCatSelect({ value, onChange, categories, compact = false }) {
       </button>
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-          {categories.map((c) => (
+          {categories.map((c) => {
+            const cStyle = getCategoryStyle(c);
+            return (
             <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
               className="w-full flex items-center gap-2 px-2.5 py-2 text-xs hover:bg-slate-50 transition-colors"
-              style={{ background: String(value) === String(c.id) ? (c.color || '#94a3b8') + '10' : undefined }}>
+              style={{ background: String(value) === String(c.id) ? cStyle.color + '10' : undefined }}>
               <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                style={{ background: (c.color || '#94a3b8') + '25' }}>
-                <Icon name={c.icon} size={11} color={c.color || '#94a3b8'} />
+                style={{ background: cStyle.color + '25' }}>
+                <Icon name={cStyle.icon} size={11} color={cStyle.color} />
               </div>
               <span className="flex-1 text-left font-medium"
-                style={{ color: String(value) === String(c.id) ? (c.color || '#374151') : '#374151' }}>
+                style={{ color: String(value) === String(c.id) ? cStyle.color : '#374151' }}>
                 {c.name}
               </span>
               {String(value) === String(c.id) && (
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: cStyle.color }} />
               )}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1709,7 +1719,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
           {
             id: messageId(),
             role: 'bot',
-            text: getAiSummaryChatError(err.message)
+            text: getAiSummaryFailureMessage(err)
           }
         ];
         saveChatLog(next);
@@ -2871,6 +2881,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                 amount={Number(message.result.amount || 0)} 
                 budgets={budgets}
                 categories={categories}
+                readonly={!!message.readonly}
               />
             )}
 

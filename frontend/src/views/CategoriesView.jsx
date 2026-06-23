@@ -6,9 +6,8 @@ import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { categories as categoriesApi } from '../services/api';
 import { CATEGORY_ORDER_KEY, applySavedCategoryOrder } from '../utils/categoryOrder';
+import { getCategoryStyle } from '../constants/categoryStyles';
 
-const ICON_OPTS  = ['UtensilsCrossed','Car','Package','ShoppingBag','Gamepad2','Home','ReceiptText','HeartPulse','Users','PawPrint','Gift','HandHeart','GraduationCap','Plane','BriefcaseBusiness','TrendingUp','CreditCard','Tv','Heart','Zap','Briefcase','Laptop','Smartphone','Shield','Monitor','Tag','Star','DollarSign','PiggyBank','Landmark','ArrowLeftRight','Wallet','Banknote'];
-const COLOR_OPTS = ['#2C6488','#10b981','#f59e0b','#2C6488','#ef4444','#ec4899','#5F9A7A','#06b6d4','#f97316','#84cc16'];
 const TAB_LABELS = { expense: 'รายจ่าย', income: 'รายรับ', transfer: 'โอนเงิน' };
 const CAT_MAX = 30;
 
@@ -18,7 +17,7 @@ export default function CategoriesView({ onRefresh }) {
   const [catList, setCatList]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm]           = useState({ name: '', icon: 'Tag', color: '#2C6488' });
+  const [form, setForm]           = useState({ name: '' });
   const [saving, setSaving]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -105,18 +104,18 @@ export default function CategoriesView({ onRefresh }) {
 
   // ── Modal ─────────────────────────────────────────────────────────────────
   const openModal = () => {
-    setForm({ name: '', icon: 'Tag', color: '#2C6488' });
+    setForm({ name: '' });
     setShowModal(true);
   };
 
   const save = async () => {
     if (!form.name.trim()) { showError('กรุณาใส่ชื่อหมวดหมู่'); return; }
     setSaving(true); try {
-      await categoriesApi.create({ name: form.name, type: tab, icon: form.icon, color: form.color });
+      await categoriesApi.create({ name: form.name, type: tab });
       await fetchCats();
       if (onRefresh) onRefresh();
       setShowModal(false);
-      setForm({ name: '', icon: 'Tag', color: '#2C6488' });
+      setForm({ name: '' });
     } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
@@ -165,7 +164,8 @@ export default function CategoriesView({ onRefresh }) {
             onDragLeave={handleDragLeave}
           >
           {displayed.map((c, idx) => {
-            const cardColor  = c.color || '#2C6488';
+            const cStyle     = getCategoryStyle(c);
+            const cardColor  = cStyle.color;
             const isDragging = dragIdx === idx;
             const isOver     = dragOverIdx === idx && dragIdx !== idx;
 
@@ -192,7 +192,7 @@ export default function CategoriesView({ onRefresh }) {
 
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
                   style={{ background: cardColor + '22' }}>
-                  <Icon name={c.icon || 'Tag'} size={24} color={cardColor} />
+                  <Icon name={cStyle.icon} size={24} color={cardColor} />
                 </div>
                 <p className="text-xs font-medium text-slate-700 text-center leading-snug">{c.name}</p>
 
@@ -234,30 +234,22 @@ export default function CategoriesView({ onRefresh }) {
             </div>
 
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-2 block">ไอคอน</label>
-              <div className="flex gap-2 flex-wrap">
-                {ICON_OPTS.map((ico) => (
-                  <button key={ico} onClick={() => setForm({ ...form, icon: ico })}
-                    className="w-9 h-9 rounded-xl flex items-center justify-center border-2 transition-all"
-                    style={{
-                      background:  form.icon === ico ? form.color + '22' : '#f8fafc',
-                      borderColor: form.icon === ico ? form.color : '#e2e8f0',
-                    }}>
-                    <Icon name={ico} size={16} color={form.icon === ico ? form.color : '#94a3b8'} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-2 block">สี</label>
-              <div className="flex gap-2 flex-wrap">
-                {COLOR_OPTS.map((c) => (
-                  <button key={c} onClick={() => setForm({ ...form, color: c })}
-                    className="w-7 h-7 rounded-full border-2 transition-all"
-                    style={{ background: c, borderColor: form.color === c ? '#1e293b' : 'transparent' }} />
-                ))}
-              </div>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">ตัวอย่าง</label>
+              {(() => {
+                const preview = getCategoryStyle({ name: form.name, type: tab });
+                return (
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: preview.color + '22' }}>
+                      <Icon name={preview.icon} size={20} color={preview.color} />
+                    </div>
+                    <span className="text-sm font-medium text-slate-700 truncate">
+                      {form.name.trim() || 'ชื่อหมวดหมู่'}
+                    </span>
+                  </div>
+                );
+              })()}
+              <p className="text-[11px] text-slate-400 mt-1.5">ไอคอนและสีถูกกำหนดให้อัตโนมัติ</p>
             </div>
 
             <div className="flex gap-3 pt-2">

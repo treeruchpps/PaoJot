@@ -10,6 +10,7 @@ import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
 import { getTransactionAccounts } from '../utils/accountFilters';
+import { getCategoryStyle } from '../constants/categoryStyles';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2C6488' };
@@ -194,7 +195,7 @@ export default function RecurringView({ accounts, categories, onNotificationRefr
             <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-400 min-w-0">
               {cat && (
                 <span className="inline-flex items-center gap-1 min-w-0">
-                  <Icon name={cat.icon || 'Tag'} size={12} color={cat.color || '#94a3b8'} />
+                  <Icon name={getCategoryStyle(cat).icon} size={12} color={getCategoryStyle(cat).color} />
                   <span className="truncate">{cat.name}</span>
                 </span>
               )}

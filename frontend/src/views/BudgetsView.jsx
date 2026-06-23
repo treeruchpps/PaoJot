@@ -4,44 +4,55 @@ import { Plus, Edit, Trash2, AlertCircle, Wallet, ChartPie, CheckCircle2, Repeat
 import Icon from '../components/common/Icon';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
-import { budgets as budgetsApi } from '../services/api';
+import { budgets as budgetsApi, profile as profileApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
+import { getCategoryStyle } from '../constants/categoryStyles';
 
 const getColor = (pct) => pct <= 50 ? '#10b981' : pct <= 80 ? '#f59e0b' : '#ef4444';
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const addDays = (date, days) => {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+const formatLocalDate = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
-const getPresetRange = (preset) => {
+const parseLocalDate = (value) => {
+  const [y, m, d] = String(value).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
+const todayStr = () => formatLocalDate(new Date());
+const addDays = (date, days) => {
+  const d = parseLocalDate(date);
+  d.setDate(d.getDate() + days);
+  return formatLocalDate(d);
+};
+const getPresetRange = (preset, weekStartDay = 1) => {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
-  const d = now.getDate();
 
   if (preset === 'week') {
     const day = now.getDay();
-    const diffToMon = day === 0 ? -6 : 1 - day;
+    let diff = day - weekStartDay;
+    if (diff < 0) diff += 7;
     const start = new Date(now);
-    start.setDate(d + diffToMon);
+    start.setDate(now.getDate() - diff);
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
-    return { start_date: start.toISOString().slice(0, 10), end_date: end.toISOString().slice(0, 10) };
+    return { start_date: formatLocalDate(start), end_date: formatLocalDate(end) };
   }
   if (preset === 'month') {
     return {
-      start_date: new Date(y, m, 1).toISOString().slice(0, 10),
-      end_date: new Date(y, m + 1, 0).toISOString().slice(0, 10),
+      start_date: formatLocalDate(new Date(y, m, 1)),
+      end_date: formatLocalDate(new Date(y, m + 1, 0)),
     };
   }
   if (preset === 'year') {
     return {
-      start_date: new Date(y, 0, 1).toISOString().slice(0, 10),
-      end_date: new Date(y, 11, 31).toISOString().slice(0, 10),
+      start_date: formatLocalDate(new Date(y, 0, 1)),
+      end_date: formatLocalDate(new Date(y, 11, 31)),
     };
   }
   return { start_date: todayStr(), end_date: addDays(todayStr(), 29) };
@@ -86,6 +97,7 @@ export default function BudgetsView({ categories }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const [weekStartDay, setWeekStartDay] = useState(1);
 
   const expenseCategories = useMemo(
     () => applySavedCategoryOrder('expense', (categories || []).filter((c) => c.type === 'expense')),
@@ -105,6 +117,13 @@ export default function BudgetsView({ categories }) {
   };
 
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    profileApi.get()
+      .then((p) => {
+        if (p?.week_start_day !== undefined) setWeekStartDay(p.week_start_day);
+      })
+      .catch(() => {});
+  }, []);
 
   const getCat = (id) => expenseCategories.find((c) => c.id === id);
   const getCatName = (id) => getCat(id)?.name || 'ไม่พบหมวดหมู่';
@@ -124,7 +143,7 @@ export default function BudgetsView({ categories }) {
       category_id: expenseCategories[0]?.id || '',
       range_preset: defaultType,
       budget_type: defaultType,
-      ...getPresetRange(defaultType),
+      ...getPresetRange(defaultType, weekStartDay),
     });
     setShowModal(true);
   };
@@ -178,7 +197,7 @@ export default function BudgetsView({ categories }) {
       setForm({ ...form, range_preset: preset, budget_type: 'custom' });
       return;
     }
-    setForm({ ...form, range_preset: preset, budget_type: preset, ...getPresetRange(preset) });
+    setForm({ ...form, range_preset: preset, budget_type: preset, ...getPresetRange(preset, weekStartDay) });
   };
 
   const remove = async () => {
@@ -304,9 +323,9 @@ export default function BudgetsView({ categories }) {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: (cat?.color || '#2C6488') + '18' }}>
+                      style={{ background: (cat ? getCategoryStyle(cat).color : '#2C6488') + '18' }}>
                       {cat
-                        ? <Icon name={cat.icon || 'Tag'} size={18} color={cat.color || '#2C6488'} />
+                        ? <Icon name={getCategoryStyle(cat).icon} size={18} color={getCategoryStyle(cat).color} />
                         : <Wallet size={18} color="#64748b" />}
                     </div>
                     <div className="min-w-0">
@@ -405,16 +424,19 @@ export default function BudgetsView({ categories }) {
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1 block">หมวดหมู่</label>
               <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                {expenseCategories.map((cat) => (
+                {expenseCategories.map((cat) => {
+                  const cStyle = getCategoryStyle(cat);
+                  return (
                   <button key={cat.id} type="button" onClick={() => setForm({ ...form, category_id: cat.id })}
                     className="flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-colors"
-                    style={{ borderColor: form.category_id === cat.id ? (cat.color || '#2C6488') : '#e2e8f0', background: form.category_id === cat.id ? (cat.color || '#2C6488') + '12' : '#f8fafc' }}>
-                    <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: (cat.color || '#2C6488') + '22' }}>
-                      <Icon name={cat.icon || 'Tag'} size={15} color={cat.color || '#2C6488'} />
+                    style={{ borderColor: form.category_id === cat.id ? cStyle.color : '#e2e8f0', background: form.category_id === cat.id ? cStyle.color + '12' : '#f8fafc' }}>
+                    <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: cStyle.color + '22' }}>
+                      <Icon name={cStyle.icon} size={15} color={cStyle.color} />
                     </span>
                     <span className="font-medium text-slate-700 truncate">{cat.name}</span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

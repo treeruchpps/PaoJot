@@ -9,6 +9,7 @@ import { fmt } from '../constants/data';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { applySavedCategoryOrder } from '../utils/categoryOrder';
 import { getTransactionAccounts } from '../utils/accountFilters';
+import { getCategoryStyle } from '../constants/categoryStyles';
 
 const TYPE_LABEL = { income: 'รายรับ', expense: 'รายจ่าย', transfer: 'โอนเงิน', adjustment: 'ปรับยอด' };
 const TYPE_COLOR = { income: '#10b981', expense: '#ef4444', transfer: '#2563eb', adjustment: '#f59e0b' };
@@ -56,8 +57,8 @@ function CatSelect({ value, onChange, categories, placeholder = 'เลือก
         {selected ? (
           <>
             <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: (selected.color || '#94a3b8') + '25' }}>
-              <Icon name={selected.icon} size={13} color={selected.color || '#94a3b8'} />
+              style={{ background: getCategoryStyle(selected).color + '25' }}>
+              <Icon name={getCategoryStyle(selected).icon} size={13} color={getCategoryStyle(selected).color} />
             </div>
             <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
           </>
@@ -69,20 +70,23 @@ function CatSelect({ value, onChange, categories, placeholder = 'เลือก
       </button>
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-          {categories.map((c) => (
+          {categories.map((c) => {
+            const cStyle = getCategoryStyle(c);
+            return (
             <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"
-              style={{ background: value === c.id ? (c.color || '#94a3b8') + '10' : undefined }}>
+              style={{ background: value === c.id ? cStyle.color + '10' : undefined }}>
               <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: (c.color || '#94a3b8') + '25' }}>
-                <Icon name={c.icon} size={13} color={c.color || '#94a3b8'} />
+                style={{ background: cStyle.color + '25' }}>
+                <Icon name={cStyle.icon} size={13} color={cStyle.color} />
               </div>
-              <span className="flex-1 text-left font-medium" style={{ color: value === c.id ? (c.color || '#374151') : '#374151' }}>
+              <span className="flex-1 text-left font-medium" style={{ color: value === c.id ? cStyle.color : '#374151' }}>
                 {c.name}
               </span>
-              {value === c.id && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />}
+              {value === c.id && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cStyle.color }} />}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -323,8 +327,8 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
                         {cat ? (
                           <div className="flex items-center gap-1.5">
                             <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                              style={{ background: (cat.color || '#2C6488') + '22' }}>
-                              <Icon name={cat.icon || 'Tag'} size={11} color={cat.color || '#2C6488'} />
+                              style={{ background: getCategoryStyle(cat).color + '22' }}>
+                              <Icon name={getCategoryStyle(cat).icon} size={11} color={getCategoryStyle(cat).color} />
                             </div>
                             <span className="text-xs text-slate-700">{cat.name}</span>
                           </div>
@@ -409,8 +413,8 @@ function TxSwipeRow({ tx, cat, acc, toAcc, onEdit, onDelete }) {
         onTouchEnd={onEnd}
         onClick={handleTap}
       >
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: (cat?.color || '#2C6488') + '22' }}>
-          <Icon name={cat?.icon || 'Tag'} size={16} color={cat?.color || '#2C6488'} />
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: getCategoryStyle(cat).color + '22' }}>
+          <Icon name={getCategoryStyle(cat).icon} size={16} color={getCategoryStyle(cat).color} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
@@ -1048,8 +1052,8 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                         {cat ? (
                           <div className="flex items-center gap-1.5">
                             <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
-                              style={{ background: (cat.color || '#2C6488') + '22' }}>
-                              <Icon name={cat.icon || 'Tag'} size={11} color={cat.color || '#2C6488'} />
+                              style={{ background: getCategoryStyle(cat).color + '22' }}>
+                              <Icon name={getCategoryStyle(cat).icon} size={11} color={getCategoryStyle(cat).color} />
                             </div>
                             <span className="text-xs text-slate-700">{cat.name}</span>
                           </div>

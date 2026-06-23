@@ -20,29 +20,29 @@ func NewCategoryHandler(db *pgxpool.Pool) *CategoryHandler {
 
 func ensureDefaultCategories(ctx context.Context, db *pgxpool.Pool) {
 	_, _ = db.Exec(ctx, `
-		WITH defaults (name, type, icon, color) AS (
+		WITH defaults (name, type) AS (
 			VALUES
-				('อาหาร', 'expense', 'UtensilsCrossed', '#f97316'),
-				('เดินทาง', 'expense', 'Car', '#3b82f6'),
-				('ของใช้', 'expense', 'Package', '#64748b'),
-				('ช้อปปิ้ง', 'expense', 'ShoppingBag', '#ec4899'),
-				('บันเทิง', 'expense', 'Gamepad2', '#8b5cf6'),
-				('ที่อยู่อาศัย', 'expense', 'Home', '#84cc16'),
-				('ชำระบิล', 'expense', 'ReceiptText', '#06b6d4'),
-				('สุขภาพ', 'expense', 'HeartPulse', '#10b981'),
-				('ครอบครัว', 'expense', 'Users', '#f59e0b'),
-				('สัตว์เลี้ยง', 'expense', 'PawPrint', '#5F9A7A'),
-				('ของขวัญ', 'expense', 'Gift', '#f59e0b'),
-				('การบริจาค', 'expense', 'HandHeart', '#ef4444'),
-				('การศึกษา', 'expense', 'GraduationCap', '#6366f1'),
-				('ท่องเที่ยว', 'expense', 'Plane', '#2C6488'),
-				('งาน', 'expense', 'BriefcaseBusiness', '#475569'),
-				('ลงทุน', 'expense', 'TrendingUp', '#5F9A7A'),
-				('ชำระหนี้', 'expense', 'CreditCard', '#2C6488'),
-				('อื่นๆ', 'expense', 'Tag', '#94a3b8')
+				('อาหาร', 'expense'),
+				('เดินทาง', 'expense'),
+				('ของใช้', 'expense'),
+				('ช้อปปิ้ง', 'expense'),
+				('บันเทิง', 'expense'),
+				('ที่อยู่อาศัย', 'expense'),
+				('ชำระบิล', 'expense'),
+				('สุขภาพ', 'expense'),
+				('ครอบครัว', 'expense'),
+				('สัตว์เลี้ยง', 'expense'),
+				('ของขวัญ', 'expense'),
+				('การบริจาค', 'expense'),
+				('การศึกษา', 'expense'),
+				('ท่องเที่ยว', 'expense'),
+				('งาน', 'expense'),
+				('ลงทุน', 'expense'),
+				('ชำระหนี้', 'expense'),
+				('อื่นๆ', 'expense')
 		)
-		INSERT INTO categories (user_id, name, type, icon, color)
-		SELECT NULL, d.name, d.type::transaction_type, d.icon, d.color
+		INSERT INTO categories (user_id, name, type)
+		SELECT NULL, d.name, d.type::transaction_type
 		FROM defaults d
 		WHERE NOT EXISTS (
 			SELECT 1 FROM categories
@@ -56,7 +56,7 @@ func (h *CategoryHandler) List(c *gin.Context) {
 	userID := c.GetString("user_id")
 	typeFilter := c.Query("type")
 
-	query := `SELECT id, user_id, name, type, icon, color, created_at
+	query := `SELECT id, user_id, name, type, created_at
 			  FROM categories
 			  WHERE (user_id = $1 OR user_id IS NULL)`
 	args := []interface{}{userID}
@@ -112,7 +112,7 @@ func (h *CategoryHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var cat models.Category
 		if err := rows.Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type,
-			&cat.Icon, &cat.Color, &cat.CreatedAt); err != nil {
+			&cat.CreatedAt); err != nil {
 			continue
 		}
 		categories = append(categories, cat)
@@ -133,12 +133,12 @@ func (h *CategoryHandler) Create(c *gin.Context) {
 
 	var cat models.Category
 	err := h.db.QueryRow(context.Background(),
-		`INSERT INTO categories (user_id, name, type, icon, color)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, user_id, name, type, icon, color, created_at`,
-		userID, req.Name, req.Type, req.Icon, req.Color,
+		`INSERT INTO categories (user_id, name, type)
+		 VALUES ($1, $2, $3)
+		 RETURNING id, user_id, name, type, created_at`,
+		userID, req.Name, req.Type,
 	).Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type,
-		&cat.Icon, &cat.Color, &cat.CreatedAt)
+		&cat.CreatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create category"})
@@ -162,14 +162,12 @@ func (h *CategoryHandler) Update(c *gin.Context) {
 	var cat models.Category
 	err := h.db.QueryRow(context.Background(),
 		`UPDATE categories
-		 SET name  = COALESCE($1, name),
-		     icon  = COALESCE($2, icon),
-		     color = COALESCE($3, color)
-		 WHERE id = $4 AND user_id = $5
-		 RETURNING id, user_id, name, type, icon, color, created_at`,
-		req.Name, req.Icon, req.Color, id, userID,
+		 SET name = COALESCE($1, name)
+		 WHERE id = $2 AND user_id = $3
+		 RETURNING id, user_id, name, type, created_at`,
+		req.Name, id, userID,
 	).Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type,
-		&cat.Icon, &cat.Color, &cat.CreatedAt)
+		&cat.CreatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "category not found or not editable"})

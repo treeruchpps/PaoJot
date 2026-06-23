@@ -75,6 +75,55 @@ func budgetDateString(t time.Time) string {
 	return t.Format("2006-01-02")
 }
 
+func dateOnly(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
+}
+
+func currentWeekRange(today time.Time, weekStartDay int) (time.Time, time.Time) {
+	today = dateOnly(today)
+	diff := int(today.Weekday()) - weekStartDay
+	if diff < 0 {
+		diff += 7
+	}
+	start := today.AddDate(0, 0, -diff)
+	return start, start.AddDate(0, 0, 6)
+}
+
+func calendarBudgetWindow(budgetType string, today time.Time, weekStartDay int) (time.Time, time.Time) {
+	today = dateOnly(today)
+	switch budgetType {
+	case "week":
+		return currentWeekRange(today, weekStartDay)
+	case "month":
+		start := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.Local)
+		return start, start.AddDate(0, 1, -1)
+	case "year":
+		start := time.Date(today.Year(), 1, 1, 0, 0, 0, 0, time.Local)
+		return start, time.Date(today.Year(), 12, 31, 0, 0, 0, 0, time.Local)
+	default:
+		return time.Time{}, time.Time{}
+	}
+}
+
+func normalizeBudgetRange(budgetType string, referenceDate time.Time, weekStartDay int) (time.Time, time.Time, bool) {
+	start, end := calendarBudgetWindow(budgetType, referenceDate, weekStartDay)
+	if start.IsZero() {
+		return time.Time{}, time.Time{}, false
+	}
+	return start, end, true
+}
+
+func (h *BudgetHandler) getWeekStartDay(ctx context.Context, userID string) int {
+	var day int
+	if err := h.db.QueryRow(ctx, `SELECT week_start_day FROM user_profiles WHERE user_id = $1`, userID).Scan(&day); err != nil {
+		return 1
+	}
+	if day < 0 || day > 6 {
+		return 1
+	}
+	return day
+}
+
 func (h *BudgetHandler) budgetCategoryExists(ctx context.Context, userID, categoryID, budgetType string, excludeID *string) bool {
 	query := `
 		SELECT EXISTS (
@@ -97,7 +146,11 @@ func (h *BudgetHandler) budgetCategoryExists(ctx context.Context, userID, catego
 	return exists
 }
 
-func nextBudgetWindow(start, end time.Time, today time.Time) (time.Time, time.Time) {
+func nextBudgetWindow(start, end time.Time, today time.Time, budgetType string, weekStartDay int) (time.Time, time.Time) {
+	if nextStart, nextEnd := calendarBudgetWindow(budgetType, today, weekStartDay); !nextStart.IsZero() {
+		return nextStart, nextEnd
+	}
+
 	durationDays := int(end.Sub(start).Hours()/24) + 1
 	if durationDays < 1 {
 		durationDays = 1
@@ -110,9 +163,10 @@ func nextBudgetWindow(start, end time.Time, today time.Time) (time.Time, time.Ti
 }
 
 func (h *BudgetHandler) refreshBudgetWindows(ctx context.Context, userID string) {
-	today := time.Now().Truncate(24 * time.Hour)
+	today := dateOnly(time.Now())
+	weekStartDay := h.getWeekStartDay(ctx, userID)
 	rows, err := h.db.Query(ctx, `
-		SELECT id, start_date, end_date, is_recurring
+		SELECT id, budget_type, start_date, end_date, is_recurring
 		FROM budgets
 		WHERE user_id = $1 AND is_active = TRUE AND end_date < CURRENT_DATE
 	`, userID)
@@ -123,16 +177,17 @@ func (h *BudgetHandler) refreshBudgetWindows(ctx context.Context, userID string)
 
 	for rows.Next() {
 		var id string
+		var budgetType string
 		var start, end time.Time
 		var recurring bool
-		if err := rows.Scan(&id, &start, &end, &recurring); err != nil {
+		if err := rows.Scan(&id, &budgetType, &start, &end, &recurring); err != nil {
 			continue
 		}
 		if !recurring {
 			h.db.Exec(ctx, `UPDATE budgets SET is_active = FALSE WHERE id = $1 AND user_id = $2`, id, userID) //nolint
 			continue
 		}
-		nextStart, nextEnd := nextBudgetWindow(start, end, today)
+		nextStart, nextEnd := nextBudgetWindow(start, end, today, budgetType, weekStartDay)
 		h.db.Exec(ctx, `UPDATE budgets SET start_date = $1, end_date = $2 WHERE id = $3 AND user_id = $4`, budgetDateString(nextStart), budgetDateString(nextEnd), id, userID) //nolint
 	}
 }
@@ -196,6 +251,7 @@ func (h *BudgetHandler) List(c *gin.Context) {
 // POST /api/v1/budgets
 func (h *BudgetHandler) Create(c *gin.Context) {
 	userID := c.GetString("user_id")
+	ctx := context.Background()
 
 	var req models.CreateBudgetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -212,6 +268,12 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid end_date, use YYYY-MM-DD"})
 		return
 	}
+	if normalizedStart, normalizedEnd, ok := normalizeBudgetRange(req.BudgetType, start, h.getWeekStartDay(ctx, userID)); ok {
+		start = normalizedStart
+		end = normalizedEnd
+		req.StartDate = budgetDateString(start)
+		req.EndDate = budgetDateString(end)
+	}
 	if end.Before(start) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "end_date must be after start_date"})
 		return
@@ -220,13 +282,13 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "category_id is required"})
 		return
 	}
-	if h.budgetCategoryExists(context.Background(), userID, *req.CategoryID, req.BudgetType, nil) {
+	if h.budgetCategoryExists(ctx, userID, *req.CategoryID, req.BudgetType, nil) {
 		c.JSON(http.StatusConflict, gin.H{"error": "หมวดหมู่นี้มีงบประมาณประเภทเดียวกันอยู่แล้ว"})
 		return
 	}
 
 	var b models.Budget
-	err = h.db.QueryRow(context.Background(),
+	err = h.db.QueryRow(ctx,
 		`INSERT INTO budgets (user_id, category_id, amount, budget_type, start_date, end_date, is_recurring)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id, user_id, category_id, amount, budget_type, start_date, end_date, is_recurring, is_active, created_at, updated_at`,
@@ -270,6 +332,7 @@ func (h *BudgetHandler) Get(c *gin.Context) {
 func (h *BudgetHandler) Update(c *gin.Context) {
 	userID := c.GetString("user_id")
 	id := c.Param("id")
+	ctx := context.Background()
 
 	var req models.UpdateBudgetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -291,10 +354,11 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 
 	var currentCategoryID *string
 	var currentBudgetType string
-	err := h.db.QueryRow(context.Background(),
-		`SELECT category_id, budget_type FROM budgets WHERE id = $1 AND user_id = $2`,
+	var currentStart, currentEnd time.Time
+	err := h.db.QueryRow(ctx,
+		`SELECT category_id, budget_type, start_date, end_date FROM budgets WHERE id = $1 AND user_id = $2`,
 		id, userID,
-	).Scan(&currentCategoryID, &currentBudgetType)
+	).Scan(&currentCategoryID, &currentBudgetType, &currentStart, &currentEnd)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "budget not found"})
 		return
@@ -307,18 +371,38 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 	if req.BudgetType != nil {
 		nextBudgetType = *req.BudgetType
 	}
+	nextStart := currentStart
+	nextEnd := currentEnd
+	if req.StartDate != nil {
+		nextStart, _ = parseBudgetDate(*req.StartDate)
+	}
+	if req.EndDate != nil {
+		nextEnd, _ = parseBudgetDate(*req.EndDate)
+	}
+	if normalizedStart, normalizedEnd, ok := normalizeBudgetRange(nextBudgetType, nextStart, h.getWeekStartDay(ctx, userID)); ok {
+		nextStart = normalizedStart
+		nextEnd = normalizedEnd
+		startValue := budgetDateString(nextStart)
+		endValue := budgetDateString(nextEnd)
+		req.StartDate = &startValue
+		req.EndDate = &endValue
+	}
+	if nextEnd.Before(nextStart) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "end_date must be after start_date"})
+		return
+	}
 	if nextCategoryID == nil || *nextCategoryID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "category_id is required"})
 		return
 	}
-	if h.budgetCategoryExists(context.Background(), userID, *nextCategoryID, nextBudgetType, &id) {
+	if h.budgetCategoryExists(ctx, userID, *nextCategoryID, nextBudgetType, &id) {
 		c.JSON(http.StatusConflict, gin.H{"error": "หมวดหมู่นี้มีงบประมาณประเภทเดียวกันอยู่แล้ว"})
 		return
 	}
 
 	var b models.Budget
 	var start, end time.Time
-	err = h.db.QueryRow(context.Background(),
+	err = h.db.QueryRow(ctx,
 		`UPDATE budgets
 		 SET category_id  = $1,
 		     amount       = COALESCE($2, amount),
@@ -330,7 +414,7 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 		 WHERE id = $8 AND user_id = $9
 		   AND COALESCE($5, end_date) >= COALESCE($4, start_date)
 		 RETURNING id, user_id, category_id, amount, budget_type, start_date, end_date, is_recurring, is_active, created_at, updated_at`,
-		req.CategoryID, req.Amount, req.BudgetType, req.StartDate, req.EndDate, req.IsRecurring, req.IsActive, id, userID,
+		nextCategoryID, req.Amount, nextBudgetType, req.StartDate, req.EndDate, req.IsRecurring, req.IsActive, id, userID,
 	).Scan(&b.ID, &b.UserID, &b.CategoryID, &b.Amount, &b.BudgetType, &start, &end, &b.IsRecurring, &b.IsActive, &b.CreatedAt, &b.UpdatedAt)
 
 	if err != nil {

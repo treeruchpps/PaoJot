@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Briefcase, ChevronDown, DollarSign, Smartphone, Star, TrendingUp } from 'lucide-react';
 import Icon from './Icon';
 import { fmt } from '../../constants/data';
+import { getCategoryStyle } from '../../constants/categoryStyles';
 
 const ACC_KIND_META = {
   cash:         { icon: 'DollarSign', color: '#10b981' },
@@ -39,8 +40,8 @@ export function CategorySelect({ value, onChange, categories = [], placeholder =
         {selected ? (
           <>
             <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: (selected.color || '#94a3b8') + '25' }}>
-              <Icon name={selected.icon} size={13} color={selected.color || '#94a3b8'} />
+              style={{ background: getCategoryStyle(selected).color + '25' }}>
+              <Icon name={getCategoryStyle(selected).icon} size={13} color={getCategoryStyle(selected).color} />
             </div>
             <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
           </>
@@ -52,20 +53,23 @@ export function CategorySelect({ value, onChange, categories = [], placeholder =
       </button>
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-          {categories.map((c) => (
+          {categories.map((c) => {
+            const cStyle = getCategoryStyle(c);
+            return (
             <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"
-              style={{ background: value === c.id ? (c.color || '#94a3b8') + '10' : undefined }}>
+              style={{ background: value === c.id ? cStyle.color + '10' : undefined }}>
               <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: (c.color || '#94a3b8') + '25' }}>
-                <Icon name={c.icon} size={13} color={c.color || '#94a3b8'} />
+                style={{ background: cStyle.color + '25' }}>
+                <Icon name={cStyle.icon} size={13} color={cStyle.color} />
               </div>
-              <span className="flex-1 text-left font-medium" style={{ color: value === c.id ? (c.color || '#374151') : '#374151' }}>
+              <span className="flex-1 text-left font-medium" style={{ color: value === c.id ? cStyle.color : '#374151' }}>
                 {c.name}
               </span>
-              {value === c.id && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />}
+              {value === c.id && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cStyle.color }} />}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

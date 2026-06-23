@@ -40,7 +40,9 @@ async function request(path, options = {}, retry = true, isFormData = false) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const apiError = new Error(err.error || `HTTP ${res.status}`);
+    apiError.status = res.status;
+    throw apiError;
   }
 
   // 204 No Content
@@ -127,6 +129,7 @@ export const transactions = {
     if (params.search)     qs.set('search',     params.search);
     if (params.sort_by)    qs.set('sort_by',    params.sort_by);
     if (params.sort_dir)   qs.set('sort_dir',   params.sort_dir);
+    if (params.include_goal) qs.set('include_goal', 'true');
     const q = qs.toString();
     return request(`/transactions${q ? `?${q}` : ''}`);
   },
