@@ -1,9 +1,20 @@
 package router
 
 import (
+	"paomoney/internal/account"
+	"paomoney/internal/aisummary"
+	"paomoney/internal/auth"
+	"paomoney/internal/budget"
+	"paomoney/internal/category"
 	"paomoney/internal/config"
-	"paomoney/internal/handlers"
 	"paomoney/internal/middleware"
+	"paomoney/internal/notification"
+	"paomoney/internal/profile"
+	"paomoney/internal/quickentry"
+	"paomoney/internal/recurring"
+	"paomoney/internal/savingsgoal"
+	"paomoney/internal/scan"
+	"paomoney/internal/transaction"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,19 +36,18 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	})
 
 	// Handlers
-	authH := handlers.NewAuthHandler(db, cfg)
-	googleAuthH := handlers.NewGoogleAuthHandler(db, cfg)
-	profileH := handlers.NewProfileHandler(db)
-	accountH := handlers.NewAccountHandler(db)
-	categoryH := handlers.NewCategoryHandler(db)
-	txH := handlers.NewTransactionHandler(db)
-	goalH := handlers.NewSavingsGoalHandler(db)
-	budgetH := handlers.NewBudgetHandler(db)
-	recurH := handlers.NewRecurringHandler(db)
-	notiH := handlers.NewNotificationHandler(db)
-	scanH := handlers.NewScanHandler(db, cfg)
-	aiSummaryH := handlers.NewAISummaryHandler(db, cfg)
-	quickEntryH := handlers.NewQuickEntryHandler(db, cfg)
+	authH := auth.NewHandler(db, cfg)
+	profileH := profile.NewHandler(db)
+	accountH := account.NewHandler(db)
+	categoryH := category.NewHandler(db)
+	txH := transaction.NewHandler(db)
+	goalH := savingsgoal.NewHandler(db)
+	budgetH := budget.NewHandler(db)
+	recurH := recurring.NewHandler(db)
+	notiH := notification.NewHandler(db)
+	scanH := scan.NewScanHandler(db, cfg)
+	aiSummaryH := aisummary.NewAISummaryHandler(db, cfg)
+	quickEntryH := quickentry.NewQuickEntryHandler(db, cfg)
 
 	// Static file serving for uploaded slip images
 	r.Static("/uploads", "./uploads")
@@ -45,13 +55,13 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	v1 := r.Group("/api/v1")
 
 	// Auth (public)
-	auth := v1.Group("/auth")
+	authGroup := v1.Group("/auth")
 	{
-		auth.POST("/register", authH.Register)
-		auth.POST("/login", authH.Login)
-		auth.POST("/refresh", authH.Refresh)
-		auth.GET("/google", googleAuthH.Redirect)
-		auth.GET("/google/callback", googleAuthH.Callback)
+		authGroup.POST("/register", authH.Register)
+		authGroup.POST("/login", authH.Login)
+		authGroup.POST("/refresh", authH.Refresh)
+		authGroup.GET("/google", authH.Redirect)
+		authGroup.GET("/google/callback", authH.Callback)
 	}
 
 	// Protected routes
