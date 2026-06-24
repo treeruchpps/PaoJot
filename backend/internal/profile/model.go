@@ -11,6 +11,7 @@ type Profile struct {
 	WeekStartDay       int        `json:"week_start_day"` // 0=Sun, 1=Mon, 6=Sat
 	AISummaryEnabled   bool       `json:"ai_summary_enabled"`
 	AISummaryConsentAt *time.Time `json:"ai_summary_consent_at"`
+	Onboarded          bool       `json:"onboarded"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
@@ -20,4 +21,5 @@ type UpdateRequest struct {
 	AvatarURL        *string `json:"avatar_url"`
 	WeekStartDay     *int    `json:"week_start_day"`
 	AISummaryEnabled *bool   `json:"ai_summary_enabled"`
+	Onboarded        *bool   `json:"onboarded"`
 }

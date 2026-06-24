@@ -19,9 +19,10 @@ CREATE TABLE user_profiles (
     user_id        UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     display_name   VARCHAR(50),
     avatar_url     TEXT,
-    week_start_day SMALLINT NOT NULL DEFAULT 1,  -- 0=อาทิตย์, 1=จันทร์, 6=เสาร์
+    week_start_day SMALLINT NOT NULL DEFAULT 1, 
     ai_summary_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     ai_summary_consent_at TIMESTAMP WITH TIME ZONE,
+    onboarded      BOOLEAN NOT NULL DEFAULT FALSE,
     created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

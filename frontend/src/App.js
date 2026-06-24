@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import './index.css';
 
 import { AuthProvider, useAuth }  from './contexts/AuthContext';
@@ -21,7 +22,19 @@ import RecurringView    from './views/RecurringView';
 import CategoriesView   from './views/CategoriesView';
 import ProfileView      from './views/ProfileView';
 
-
+// ─── view id ↔ URL path ───────────────────────────────────────────────────────
+const VIEW_TO_PATH = {
+  analytics:    '/dashboard',
+  assistant:    '/assistant',
+  accounts:     '/accounts',
+  transactions: '/transactions',
+  budgets:      '/budgets',
+  goals:        '/goals',
+  recurring:    '/recurring',
+  categories:   '/categories',
+  profile:      '/profile',
+};
+const PATH_TO_VIEW = Object.fromEntries(Object.entries(VIEW_TO_PATH).map(([v, p]) => [p, v]));
 
 // ─── Loading Spinner ──────────────────────────────────────────────────────────
 function Spinner() {
@@ -35,13 +48,20 @@ function Spinner() {
   );
 }
 
+// ─── Page container (max width) ───────────────────────────────────────────────
+function Container({ children }) {
+  return <div className="mx-auto w-full max-w-7xl">{children}</div>;
+}
+
 // ─── Main App Shell (requires auth) ──────────────────────────────────────────
 function AppShell() {
   const { isAuthenticated, loading: authLoading, clearError } = useAuth();
-  const [authPage, setAuthPage]     = useState('login'); // 'login' | 'register'
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [authNotice, setAuthNotice] = useState('');
-  const [appState, setAppState]     = useState('checking'); // 'checking'|'setup'|'app'
-  const [view, setView]             = useState('analytics');
+  const [appState, setAppState]     = useState('checking'); // 'checking' | 'ready'
+  const [onboarded, setOnboarded]   = useState(false);
   const [initialAccountId, setInitialAccountId] = useState(null);
 
   const [accounts,      setAccounts]      = useState([]);
@@ -62,7 +82,7 @@ function AppShell() {
     }
   }, [isDarkMode]);
 
-  // Bootstrap: check if user has accounts already
+  // Bootstrap: load accounts/categories/profile (incl. onboarded flag)
   const bootstrap = useCallback(async () => {
     setAppState('checking');
     try {
@@ -76,23 +96,21 @@ function AppShell() {
       setAccounts(accs || []);
       setCategories(cats || []);
       setAvatarUrl(prof?.avatar_url || null);
-      setAppState(accs && accs.length > 0 ? 'app' : 'setup');
-      // โหลด notifications (generate จาก recurring ที่ครบกำหนดด้วย)
+      setOnboarded(!!prof?.onboarded);
+      setAppState('ready');
       notiApi.list().then((n) => setNotiList(n || [])).catch(() => {});
     } catch {
       if (!getAccessToken()) return; // unauthorized → redirect happening
-      setAppState('setup');
+      setAccounts([]);
+      setOnboarded(false);
+      setAppState('ready');
     }
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      setView('analytics'); // always start at dashboard on login
-      bootstrap();
-    }
+    if (isAuthenticated) bootstrap();
   }, [isAuthenticated, bootstrap]);
 
-  // Refresh accounts (called by views after CRUD)
   const refreshAccounts = useCallback(async () => {
     try {
       const accs = await accountsApi.list();
@@ -100,7 +118,6 @@ function AppShell() {
     } catch {}
   }, []);
 
-  // Refresh notifications (generate + fetch)
   const refreshNotifications = useCallback(async () => {
     try {
       const list = await notiApi.list();
@@ -108,7 +125,6 @@ function AppShell() {
     } catch {}
   }, []);
 
-  // Refresh categories (called by CategoriesView)
   const refreshCategories = useCallback(async () => {
     try {
       const cats = await categoriesApi.list();
@@ -116,47 +132,65 @@ function AppShell() {
     } catch {}
   }, []);
 
+  const goView = useCallback((id) => navigate(VIEW_TO_PATH[id] || '/dashboard'), [navigate]);
+
   if (authLoading) return <Spinner />;
 
-  // ── Not authenticated: show login / register ──
+  // ── Not authenticated: login / register routes ──
   if (!isAuthenticated) {
-    if (authPage === 'login') {
-      return <LoginPage
-        notice={authNotice}
-        onNoticeClear={() => setAuthNotice('')}
-        onSwitch={() => { clearError(); setAuthNotice(''); setAuthPage('register'); }}
-      />;
-    }
-    return <RegisterPage
-      onSwitch={() => { clearError(); setAuthPage('login'); }}
-      onRegisterSuccess={() => {
-        clearError();
-        setAuthNotice('สมัครสมาชิกสำเร็จ กรุณาเข้าสู่ระบบ');
-        setAuthPage('login');
-      }}
-    />;
+    return (
+      <Routes>
+        <Route path="/register" element={
+          <RegisterPage
+            onSwitch={() => { clearError(); navigate('/login'); }}
+            onRegisterSuccess={() => {
+              clearError();
+              setAuthNotice('สมัครสมาชิกสำเร็จ กรุณาเข้าสู่ระบบ');
+              navigate('/login');
+            }}
+          />
+        } />
+        <Route path="/login" element={
+          <LoginPage
+            notice={authNotice}
+            onNoticeClear={() => setAuthNotice('')}
+            onSwitch={() => { clearError(); setAuthNotice(''); navigate('/register'); }}
+          />
+        } />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
 
   // ── Authenticated: loading ──
   if (appState === 'checking') return <Spinner />;
 
-  // ── Authenticated but no accounts: onboarding ──
-  if (appState === 'setup') {
+  // ── Authenticated but not onboarded (และยังไม่มีบัญชี): welcome page ──
+  const needsOnboarding = !onboarded && accounts.length === 0;
+  if (needsOnboarding) {
     return (
-      <SetupAccountPage
-        onComplete={() => setAppState('app')}
-      />
+      <Routes>
+        <Route path="/welcome" element={
+          <SetupAccountPage onComplete={async () => {
+            try { await profileApi.update({ onboarded: true }); } catch {}
+            setOnboarded(true);
+            navigate('/dashboard');
+          }} />
+        } />
+        <Route path="*" element={<Navigate to="/welcome" replace />} />
+      </Routes>
     );
   }
 
   // ── Full app ──
-
+  const isAssistant = location.pathname === VIEW_TO_PATH.assistant;
+  const currentView = PATH_TO_VIEW[location.pathname] || 'analytics';
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[#F6FAFC] dark:bg-slate-900 transition-colors">
       <Navbar
-        view={view}
-        setView={setView}
+        view={currentView}
+        setView={goView}
         accounts={accounts}
         notifications={notiList}
         onNotificationRefresh={refreshNotifications}
@@ -165,76 +199,96 @@ function AppShell() {
         onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         avatarUrl={avatarUrl}
       />
-      <main className={`flex-1 min-w-0 ${view === 'assistant' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'}`}>
-        {view === 'assistant' ? (
-          <AssistantView
-            accounts={accounts}
-            categories={categories}
-            onGoAccounts={() => setView('accounts')}
-            onGoGoals={() => setView('goals')}
-            onGoProfile={() => setView('profile')}
-            onRefresh={async () => {
-              await Promise.all([refreshAccounts(), refreshNotifications()]);
-              setQuickEntryRefreshKey((v) => v + 1);
-            }}
-          />
-        ) : (
-          <div className="mx-auto w-full max-w-7xl">
-            {view === 'analytics'    && (
+      <main className={`flex-1 min-w-0 ${isAssistant ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'}`}>
+        <Routes>
+          <Route path="/assistant" element={
+            <AssistantView
+              accounts={accounts}
+              categories={categories}
+              onGoAccounts={() => goView('accounts')}
+              onGoGoals={() => goView('goals')}
+              onGoProfile={() => goView('profile')}
+              onRefresh={async () => {
+                await Promise.all([refreshAccounts(), refreshNotifications()]);
+                setQuickEntryRefreshKey((v) => v + 1);
+              }}
+            />
+          } />
+
+          <Route path="/dashboard" element={
+            <Container>
               <AnalyticsView
                 accounts={accounts}
                 categories={categories}
-                onGoProfile={() => setView('profile')}
-                onGoAccounts={() => setView('accounts')}
-                onGoBudgets={() => setView('budgets')}
-                onGoGoals={() => setView('goals')}
+                onGoProfile={() => goView('profile')}
+                onGoAccounts={() => goView('accounts')}
+                onGoBudgets={() => goView('budgets')}
+                onGoGoals={() => goView('goals')}
                 isDarkMode={isDarkMode}
                 quickEntryRefreshKey={quickEntryRefreshKey}
               />
-            )}
-            {view === 'accounts'     && (
+            </Container>
+          } />
+
+          <Route path="/accounts" element={
+            <Container>
               <AccountsView
                 accounts={accounts}
                 onRefresh={refreshAccounts}
-                onGoTransactions={(accId) => {
-                  setInitialAccountId(accId);
-                  setView('transactions');
-                }}
+                onGoTransactions={(accId) => { setInitialAccountId(accId); goView('transactions'); }}
               />
-            )}
-            {view === 'transactions' && (
+            </Container>
+          } />
+
+          <Route path="/transactions" element={
+            <Container>
               <TransactionsView
                 accounts={accounts}
                 categories={categories}
                 onRefreshAccounts={refreshAccounts}
                 onNotificationRefresh={refreshNotifications}
-                onGoAccounts={() => setView('accounts')}
+                onGoAccounts={() => goView('accounts')}
                 initialAccountId={initialAccountId}
                 onClearInitialAccountId={() => setInitialAccountId(null)}
                 quickEntryRefreshKey={quickEntryRefreshKey}
               />
-            )}
-            {view === 'budgets'      && (
-              <BudgetsView categories={categories} />
-            )}
-            {view === 'goals'        && (
+            </Container>
+          } />
+
+          <Route path="/budgets" element={
+            <Container><BudgetsView categories={categories} /></Container>
+          } />
+
+          <Route path="/goals" element={
+            <Container>
               <GoalsView accounts={accounts} onRefreshAccounts={refreshAccounts} quickEntryRefreshKey={quickEntryRefreshKey} />
-            )}
-            {view === 'recurring'    && (
+            </Container>
+          } />
+
+          <Route path="/recurring" element={
+            <Container>
               <RecurringView
                 accounts={accounts}
                 categories={categories}
                 onNotificationRefresh={refreshNotifications}
               />
-            )}
-            {view === 'categories'   && (
-              <CategoriesView onRefresh={refreshCategories} />
-            )}
-            {view === 'profile'      && (
-              <ProfileView />
-            )}
-          </div>
-        )}
+            </Container>
+          } />
+
+          <Route path="/categories" element={
+            <Container><CategoriesView onRefresh={refreshCategories} /></Container>
+          } />
+
+          <Route path="/profile" element={
+            <Container><ProfileView /></Container>
+          } />
+
+          {/* auth/onboarding paths → กลับเข้าแอป */}
+          <Route path="/welcome"  element={<Navigate to="/dashboard" replace />} />
+          <Route path="/login"    element={<Navigate to="/dashboard" replace />} />
+          <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*"         element={<Navigate to="/dashboard" replace />} />
+        </Routes>
       </main>
     </div>
   );

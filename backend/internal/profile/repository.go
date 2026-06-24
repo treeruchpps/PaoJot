@@ -17,12 +17,13 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// EnsureConsentColumns เติมคอลัมน์ ai_summary_* ถ้ายังไม่มี
+// EnsureConsentColumns เติมคอลัมน์ ai_summary_* และ onboarded ถ้ายังไม่มี
 func (r *Repository) EnsureConsentColumns(ctx context.Context) {
 	_, _ = r.db.Exec(ctx, `
 		ALTER TABLE user_profiles
 		ADD COLUMN IF NOT EXISTS ai_summary_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-		ADD COLUMN IF NOT EXISTS ai_summary_consent_at TIMESTAMPTZ
+		ADD COLUMN IF NOT EXISTS ai_summary_consent_at TIMESTAMPTZ,
+		ADD COLUMN IF NOT EXISTS onboarded BOOLEAN NOT NULL DEFAULT FALSE
 	`)
 }
 
@@ -30,11 +31,11 @@ func (r *Repository) GetByUser(ctx context.Context, userID string) (Profile, err
 	var p Profile
 	err := r.db.QueryRow(ctx,
 		`SELECT id, user_id, display_name, avatar_url, week_start_day,
-		        ai_summary_enabled, ai_summary_consent_at, created_at, updated_at
+		        ai_summary_enabled, ai_summary_consent_at, onboarded, created_at, updated_at
 		 FROM user_profiles WHERE user_id = $1`,
 		userID,
 	).Scan(&p.ID, &p.UserID, &p.DisplayName, &p.AvatarURL,
-		&p.WeekStartDay, &p.AISummaryEnabled, &p.AISummaryConsentAt,
+		&p.WeekStartDay, &p.AISummaryEnabled, &p.AISummaryConsentAt, &p.Onboarded,
 		&p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return Profile{}, ErrNotFound
@@ -54,13 +55,14 @@ func (r *Repository) Update(ctx context.Context, userID string, req UpdateReques
 		       WHEN $4::boolean IS TRUE AND ai_summary_consent_at IS NULL THEN NOW()
 		       WHEN $4::boolean IS FALSE THEN NULL
 		       ELSE ai_summary_consent_at
-		     END
-		 WHERE user_id = $5
+		     END,
+		     onboarded      = COALESCE($5, onboarded)
+		 WHERE user_id = $6
 		 RETURNING id, user_id, display_name, avatar_url, week_start_day,
-		           ai_summary_enabled, ai_summary_consent_at, created_at, updated_at`,
-		req.DisplayName, req.AvatarURL, req.WeekStartDay, req.AISummaryEnabled, userID,
+		           ai_summary_enabled, ai_summary_consent_at, onboarded, created_at, updated_at`,
+		req.DisplayName, req.AvatarURL, req.WeekStartDay, req.AISummaryEnabled, req.Onboarded, userID,
 	).Scan(&p.ID, &p.UserID, &p.DisplayName, &p.AvatarURL,
-		&p.WeekStartDay, &p.AISummaryEnabled, &p.AISummaryConsentAt,
+		&p.WeekStartDay, &p.AISummaryEnabled, &p.AISummaryConsentAt, &p.Onboarded,
 		&p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return Profile{}, err
