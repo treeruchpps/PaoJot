@@ -216,6 +216,7 @@ export const notifications = {
 export const aiSummary = {
   get: (periodType = 'monthly') =>
     request(`/ai-summary?period_type=${encodeURIComponent(periodType)}`),
+  eligibility: () => request('/ai-summary/eligibility'),
   generate: (periodType = 'monthly') =>
     request('/ai-summary', {
       method: 'POST',

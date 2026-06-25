@@ -176,6 +176,70 @@ func (h *AISummaryHandler) Generate(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+type eligibilityPeriod struct {
+	PeriodStart      string `json:"period_start"`
+	PeriodEnd        string `json:"period_end"`
+	TransactionCount int    `json:"transaction_count"`
+	ExpenseCount     int    `json:"expense_count"`
+	Eligible         bool   `json:"eligible"`
+	Reason           string `json:"reason,omitempty"`
+}
+
+type eligibilityResponse struct {
+	AIConsent bool              `json:"ai_consent"`
+	Weekly    eligibilityPeriod `json:"weekly"`
+	Monthly   eligibilityPeriod `json:"monthly"`
+}
+
+// GET /api/v1/ai-summary/eligibility
+// คืนสถานะว่าช่วง "ปัจจุบัน" ของแต่ละ period มีข้อมูลพอจะสร้างสรุปด้วย AI ได้หรือยัง
+// ใช้เกณฑ์เดียวกับตอนกดสร้างจริง (generate) เพื่อให้ปุ่มในหน้าแชทเปิด/ปิดได้ตรงกัน
+func (h *AISummaryHandler) Eligibility(c *gin.Context) {
+	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
+
+	weekStartDay, _ := h.getWeekStartDay(ctx, userID)
+	consent, _, _ := h.getAIConsent(ctx, userID)
+
+	build := func(periodType string) (eligibilityPeriod, error) {
+		start, end := currentPeriodRange(periodType, weekStartDay)
+		_, _, txCount, expenseCount, err := h.periodTotals(ctx, userID, start, end)
+		if err != nil {
+			return eligibilityPeriod{}, err
+		}
+		eligible, reason := summaryEligibility(&aiSummaryInput{
+			PeriodType:       periodType,
+			TransactionCount: txCount,
+			ExpenseCount:     expenseCount,
+		})
+		return eligibilityPeriod{
+			PeriodStart:      start.Format("2006-01-02"),
+			PeriodEnd:        end.Format("2006-01-02"),
+			TransactionCount: txCount,
+			ExpenseCount:     expenseCount,
+			Eligible:         eligible,
+			Reason:           reason,
+		}, nil
+	}
+
+	weekly, err := build("weekly")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	monthly, err := build("monthly")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, eligibilityResponse{
+		AIConsent: consent,
+		Weekly:    weekly,
+		Monthly:   monthly,
+	})
+}
+
 func (h *AISummaryHandler) buildResponse(ctx context.Context, userID, periodType string, generate bool) (*aiSummaryResponse, error) {
 	weekStartDay, _ := h.getWeekStartDay(ctx, userID)
 	consent, consentAt, err := h.getAIConsent(ctx, userID)

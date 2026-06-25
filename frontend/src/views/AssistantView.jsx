@@ -77,6 +77,10 @@ const aiNotificationPeriod = (type) => {
   return '';
 };
 
+// notification ที่ไม่ต้องการให้แสดงในหน้าแชท (ยังโชว์ใน panel กระดิ่งตามปกติ)
+const CHAT_HIDDEN_NOTI_TYPES = new Set(['goal_due', 'budget_near_limit', 'budget_over']);
+const isChatHiddenNoti = (type) => CHAT_HIDDEN_NOTI_TYPES.has(type);
+
 const closeChoiceMessages = (messages, targetId = null) =>
   messages.map((msg) => {
     const isTarget = targetId ? msg.id === targetId : true;
@@ -118,13 +122,13 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [], re
   const overAmount = projectedSpent - limit;
 
   return (
-    <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200/60 dark:bg-slate-850 dark:border-slate-700/50 space-y-2">
-      <div className="flex justify-between items-center text-xs">
-        <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+    <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200/60 dark:bg-slate-850 dark:border-slate-700/50 space-y-3">
+      <div className="flex justify-between items-center gap-3 text-xs">
+        <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 min-w-0">
           <BarChart2 size={13} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
-          <span>ผลกระทบต่องบประมาณ: {cat?.name}</span>
+          <span className="truncate">ผลกระทบต่องบประมาณ: {cat?.name}</span>
         </span>
-        <span className="text-[11px] text-slate-400 font-medium">
+        <span className="text-[11px] text-slate-400 font-medium flex-shrink-0 whitespace-nowrap">
           วงเงิน ฿{fmt(limit)}
         </span>
       </div>
@@ -295,7 +299,7 @@ function quickParseFallback(mode, text) {
   return { mode, amount, title, category_id: null, confidence: 0.3, needs_review: true };
 }
 
-export default function AssistantView({ accounts = [], categories = [], onRefresh, onGoAccounts, onGoGoals, onGoProfile }) {
+export default function AssistantView({ accounts = [], categories = [], notifications: sharedNotifications = [], onRefresh, onGoAccounts, onGoGoals, onGoProfile }) {
   const [mode, setMode] = useState('expense');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState(() => [firstBotMessage('expense')]);
@@ -303,6 +307,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const [goals, setGoals] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  // ความพร้อมของการสรุป AI ต่อรอบ (current period) — ใช้เปิด/ปิดปุ่มในหน้าแชท
+  const [aiEligibility, setAiEligibility] = useState({ weekly: null, monthly: null });
   
   // Custom transaction editing state inside preview cards
   const [accountId, setAccountId] = useState('');
@@ -341,6 +347,8 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   // Composer (input bar) UI state
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  // อุปกรณ์ที่ถ่ายรูปได้จริง (มือถือ/แท็บเล็ต) — ไม่อิงความกว้างจอ
+  const [canCapture, setCanCapture] = useState(false);
   const attachMenuRef = useRef(null);
   const inputTextareaRef = useRef(null);
 
@@ -349,6 +357,14 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
       scanPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       scanPreviewUrlsRef.current = [];
     };
+  }, []);
+
+  // ตรวจว่าเป็นอุปกรณ์แบบสัมผัส/มีกล้อง (รองรับ iPadOS ที่ report เป็น desktop ผ่าน maxTouchPoints)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches;
+    const touch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+    setCanCapture(Boolean(coarsePointer || touch));
   }, []);
 
   // Close the attach (+) menu when clicking outside
@@ -388,6 +404,12 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   const selectedAccount = assetAccounts.find((a) => a.id === accountId);
   const selectedToAccount = assetAccounts.find((a) => a.id === toAccountId);
   const selectedGoal = goals.find((g) => g.id === goalId);
+
+  // ปุ่มสรุป AI: เปิดใช้ได้ต่อเมื่อข้อมูลรอบปัจจุบันถึงเกณฑ์ (ค่า null = ยังไม่รู้ผล → ไม่ล็อกไว้ก่อน)
+  const weeklyEligible = aiEligibility.weekly?.eligible !== false;
+  const monthlyEligible = aiEligibility.monthly?.eligible !== false;
+  const weeklyHint = aiEligibility.weekly?.reason || 'ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในสัปดาห์นี้ก่อน จึงจะสรุปด้วย AI ได้';
+  const monthlyHint = aiEligibility.monthly?.reason || 'ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้';
 
   // Sync back chat log changes to database
   const saveChatLog = useCallback(async (msgs) => {
@@ -493,14 +515,18 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
   // Fetch helper lists
   const fetchAuxData = useCallback(async () => {
     try {
-      const [goalsList, budgetsList, notiList] = await Promise.all([
+      const [goalsList, budgetsList, notiList, eligibility] = await Promise.all([
         savingsGoals.list().catch(() => []),
         budgetsApi.list().catch(() => []),
         notiApi.list().catch(() => []),
+        aiSummaryApi.eligibility().catch(() => null),
       ]);
       setGoals((goalsList || []).filter((g) => g.status === 'in_progress'));
       setBudgets(budgetsList || []);
       setNotifications(notiList || []);
+      if (eligibility) {
+        setAiEligibility({ weekly: eligibility.weekly || null, monthly: eligibility.monthly || null });
+      }
     } catch {}
   }, []);
 
@@ -521,11 +547,13 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         ]);
         if (cancelled) return;
         
-        const storedMessages = Array.isArray(chatData?.messages) ? chatData.messages : [];
+        const storedMessages = (Array.isArray(chatData?.messages) ? chatData.messages : [])
+          .filter((m) => !(m.role === 'notification' && isChatHiddenNoti(m.notification_type)));
         let merged = storedMessages.length > 0 ? [...storedMessages] : [firstBotMessage('chat')];
         
         if (Array.isArray(notiList)) {
           notiList.forEach((noti) => {
+            if (isChatHiddenNoti(noti.notification_type)) return;
             const exists = merged.some((m) => m.id === noti.id || m.notification_id === noti.id);
             if (!exists) {
               merged.push({
@@ -559,15 +587,31 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     return () => { cancelled = true; };
   }, []);
 
-  // Append new notifications to chat log when they arrive dynamically
+  // Append new notifications to chat log when they arrive, and keep action_taken
+  // in sync (e.g. when a recurring item is confirmed/skipped from the navbar panel).
   useEffect(() => {
-    if (!chatLoaded || notifications.length === 0) return;
+    if (!chatLoaded) return;
+
+    // Merge the locally-fetched list with the shared list from the navbar panel,
+    // preferring whichever copy has already been acted on.
+    const byId = new Map();
+    [...notifications, ...sharedNotifications].forEach((noti) => {
+      if (!noti?.id || isChatHiddenNoti(noti.notification_type)) return;
+      const existing = byId.get(noti.id);
+      if (!existing || (noti.action_taken && !existing.action_taken)) {
+        byId.set(noti.id, noti);
+      }
+    });
+    const merged = Array.from(byId.values());
+    if (merged.length === 0) return;
+
     setMessages((prev) => {
       let updated = [...prev];
       let changed = false;
-      notifications.forEach((noti) => {
-        const exists = updated.some((m) => m.id === noti.id || m.notification_id === noti.id);
-        if (!exists) {
+
+      merged.forEach((noti) => {
+        const idx = updated.findIndex((m) => m.id === noti.id || m.notification_id === noti.id);
+        if (idx === -1) {
           updated.push({
             id: noti.id,
             notification_id: noti.id,
@@ -580,14 +624,17 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             originalNoti: noti,
           });
           changed = true;
+        } else if (noti.action_taken && !updated[idx].action_taken) {
+          // Already shown in chat but resolved elsewhere (e.g. from the panel) — sync it.
+          updated[idx] = { ...updated[idx], action_taken: true, originalNoti: noti };
+          changed = true;
         }
       });
-      if (changed) {
-        saveChatLog(updated);
-      }
-      return updated;
+
+      if (changed) saveChatLog(updated);
+      return changed ? updated : prev;
     });
-  }, [notifications, chatLoaded, saveChatLog]);
+  }, [notifications, sharedNotifications, chatLoaded, saveChatLog]);
 
   // When an AI summary notification arrives, fetch the completed-period summary and show it in chat.
   useEffect(() => {
@@ -1740,9 +1787,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     try {
       await notiApi.confirm(noti.id);
       setMessages((prev) => {
-        const next = prev.map((m) => 
-          m.id === notiMsgId || m.notification_id === noti.id 
-            ? { ...m, action_taken: true } 
+        const next = prev.map((m) =>
+          m.id === notiMsgId || m.notification_id === noti.id
+            ? { ...m, action_taken: true, recurringAction: 'confirmed' }
             : m
         );
         saveChatLog(next);
@@ -1759,9 +1806,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     try {
       await notiApi.skip(noti.id);
       setMessages((prev) => {
-        const next = prev.map((m) => 
-          m.id === notiMsgId || m.notification_id === noti.id 
-            ? { ...m, action_taken: true } 
+        const next = prev.map((m) =>
+          m.id === notiMsgId || m.notification_id === noti.id
+            ? { ...m, action_taken: true, recurringAction: 'skipped' }
             : m
         );
         saveChatLog(next);
@@ -2943,6 +2990,9 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     }
 
     if (message.role === 'notification') {
+      // ซ่อน noti บางชนิดไม่ให้แสดงในแชท (รวมถึงที่เคยถูกบันทึกไว้ใน chat log เดิม)
+      if (isChatHiddenNoti(message.notification_type)) return null;
+
       let badgeBg = 'bg-slate-50 text-slate-500';
       let iconElement = <HelpCircle size={13} />;
       let label = 'การแจ้งเตือน';
@@ -2990,10 +3040,22 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
             {message.notification_type === 'recurring' && (
               <div className="pt-1 flex gap-2">
                 {message.action_taken ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-500 font-semibold bg-emerald-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-slate-700">
-                    <Check size={13} />
-                    <span>บันทึกสำเร็จเรียบร้อย</span>
-                  </span>
+                  message.recurringAction === 'skipped' ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-semibold bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <ArrowRight size={13} />
+                      <span>ข้ามรอบนี้แล้ว · เลื่อนไปงวดถัดไป</span>
+                    </span>
+                  ) : message.recurringAction === 'confirmed' ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-500 font-semibold bg-emerald-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-slate-700">
+                      <Check size={13} />
+                      <span>บันทึกสำเร็จเรียบร้อย</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-semibold bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <Check size={13} />
+                      <span>ดำเนินการแล้ว</span>
+                    </span>
+                  )
                 ) : (
                   <>
                     <button
@@ -3389,19 +3451,21 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
 
           <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 self-center" />
 
-          <button 
+          <button
             onClick={() => handleGenerateSummaryInline('weekly')}
-            disabled={aiLoading}
-            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
+            disabled={aiLoading || !weeklyEligible}
+            title={weeklyEligible ? 'สร้างสรุปการเงินรายสัปดาห์ด้วย AI' : weeklyHint}
+            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Sparkles size={12} className="text-yellow-500" />
             <span>สร้างสรุปรายสัปดาห์</span>
           </button>
-          
-          <button 
+
+          <button
             onClick={() => handleGenerateSummaryInline('monthly')}
-            disabled={aiLoading}
-            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60"
+            disabled={aiLoading || !monthlyEligible}
+            title={monthlyEligible ? 'สร้างสรุปการเงินรายเดือนด้วย AI' : monthlyHint}
+            className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-[11px] font-bold text-[#2C6488] dark:text-[#4da2db] hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Calendar size={12} className="text-blue-500" />
             <span>สร้างสรุปรายเดือน</span>
@@ -3527,17 +3591,19 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
                       <ImagePlus size={16} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
                       <span>สแกนใบเสร็จ / สลิป</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAttachMenu(false);
-                        if (requireAccountBeforeScanUpload()) cameraInputRef.current?.click();
-                      }}
-                      className="lg:hidden w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      <Camera size={16} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
-                      <span>ถ่ายรูป</span>
-                    </button>
+                    {canCapture && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAttachMenu(false);
+                          if (requireAccountBeforeScanUpload()) cameraInputRef.current?.click();
+                        }}
+                        className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <Camera size={16} className="text-[#2C6488] dark:text-[#4da2db] flex-shrink-0" />
+                        <span>ถ่ายรูป</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

@@ -205,6 +205,7 @@ function AppShell() {
             <AssistantView
               accounts={accounts}
               categories={categories}
+              notifications={notiList}
               onGoAccounts={() => goView('accounts')}
               onGoGoals={() => goView('goals')}
               onGoProfile={() => goView('profile')}

@@ -220,24 +220,28 @@ func (r *Repository) GenerateAISummary(ctx context.Context, userID string) {
 	prevWeekStart := weekStartDate.AddDate(0, 0, -7)
 	prevWeekEnd := weekStartDate.AddDate(0, 0, -1)
 
+	currWeekStart := weekStartDate
+	currWeekEnd := weekStartDate.AddDate(0, 0, 6)
+
 	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, today.Location())
 	prevMonthStart := monthStart.AddDate(0, -1, 0)
 	prevMonthEnd := monthStart.AddDate(0, 0, -1)
+	currMonthStart := monthStart
+	currMonthEnd := monthStart.AddDate(0, 1, -1)
 
+	// รอบที่จบแล้ว (เดิม)
 	r.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", prevWeekStart, prevWeekEnd, 11)
 	r.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", prevMonthStart, prevMonthEnd, 31)
+	// รอบปัจจุบัน — ยิง noti ทันทีที่ข้อมูลครบเกณฑ์ ให้ตรงกับปุ่มสร้างสรุปที่สว่างขึ้น
+	// reference_key อิงช่วงวันที่ จึงไม่ชนกับรอบที่จบแล้ว และไม่สร้างซ้ำเมื่อรอบนี้กลายเป็นรอบก่อนหน้า
+	r.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", currWeekStart, currWeekEnd, 11)
+	r.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", currMonthStart, currMonthEnd, 31)
 }
 
 func (r *Repository) insertAISummaryIfEligible(ctx context.Context, userID, notiType, title string, start, end time.Time, minCount int) {
-	today := time.Now()
-	todayDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
-	nextPeriodDate := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, today.Location()).AddDate(0, 0, 1)
-	if notiType == "ai_weekly" && !todayDate.Equal(nextPeriodDate) {
-		return
-	}
-	if notiType == "ai_monthly" && todayDate.Day() != 1 {
-		return
-	}
+	// ไม่บังคับว่าต้องเป็นวันแรกของสัปดาห์/เดือนพอดี — start/end ถูกคำนวณเป็นรอบ
+	// สัปดาห์/เดือน "ก่อนหน้า" ที่จบไปแล้วอยู่แล้ว และมี reference_key กันสร้างซ้ำ
+	// ดังนั้นเปิดแอปวันไหนของรอบปัจจุบันก็จะได้สรุปของรอบที่เพิ่งจบ (สร้างครั้งเดียว)
 	if notiType == "ai_monthly" && minCount > 11 {
 		minCount = 11
 	}

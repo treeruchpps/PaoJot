@@ -129,6 +129,7 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 
 		// AI financial summary
 		protected.GET("/ai-summary", aiSummaryH.Get)
+		protected.GET("/ai-summary/eligibility", aiSummaryH.Eligibility)
 		protected.POST("/ai-summary", aiSummaryH.Generate)
 
 		// Quick entry assistant
