@@ -3207,6 +3207,16 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [scanImageViewer]);
 
+  // ล้างประวัติแชทไม่ได้ถ้ากำลังทำงานอยู่ หรือมีรายการที่ยังไม่บันทึก
+  const hasInFlightScans = messages.some(
+    (msg) => msg.role === 'scan_result' && (msg.status === 'uploading' || msg.status === 'scanning')
+  );
+  const canClearChat = chatLoaded
+    && !parsing && !saving && !aiLoading && !scanUploading && !scanBulkSaving
+    && !Object.values(scanSaving).some(Boolean)
+    && !hasInFlightScans
+    && parsed == null && pendingText.trim() === '' && pendingReadyScanCount === 0;
+
   return (
     <>
     <div className="p-3 md:p-4 w-full max-w-5xl mx-auto flex-1 flex flex-col min-h-0 relative">
@@ -3216,10 +3226,11 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
         {/* Header (centered minimal) */}
         <div className="relative px-5 pt-1 pb-1.5 flex flex-col items-center text-center flex-shrink-0 border-b border-slate-200/70 dark:border-slate-800">
           <button
-            onClick={clearChatLog}
-            title="ล้างประวัติแชท"
+            onClick={() => { if (canClearChat) clearChatLog(); }}
+            disabled={!canClearChat}
+            title={canClearChat ? "ล้างประวัติแชท" : "ล้างไม่ได้ขณะกำลังทำงานหรือมีรายการที่ยังไม่บันทึก"}
             aria-label="ล้างประวัติแชท"
-            className="absolute right-4 top-2 w-9 h-9 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
+            className="absolute right-4 top-2 w-9 h-9 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
           >
             <Trash2 size={16} />
           </button>
@@ -3473,6 +3484,7 @@ export default function AssistantView({ accounts = [], categories = [], onRefres
               placeholder={MODE_META[mode].placeholder}
               disabled={!chatLoaded || parsing || aiLoading}
               rows={1}
+              maxLength={80}
               className="block w-full resize-none overflow-hidden border-none bg-transparent px-1.5 py-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-60"
               style={{ minHeight: '48px' }}
             />

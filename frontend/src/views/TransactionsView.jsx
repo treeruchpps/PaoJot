@@ -1175,6 +1175,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               <input value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="เช่น ค่าข้าวกลางวัน, เติมน้ำมัน"
+                maxLength={100}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
             </div>
 

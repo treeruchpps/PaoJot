@@ -224,8 +224,8 @@ CREATE TABLE ai_summaries (
     UNIQUE (user_id, period_type, period_start, period_end, week_start_day)
 );
 
--- ตาราง quick_entry_chat_logs (ประวัติแชทผู้ช่วยบันทึกเร็ว แยกตามผู้ใช้และโหมด)
-CREATE TABLE quick_entry_chat_logs (
+-- ตาราง chat_logs (ประวัติแชทผู้ช่วยบันทึกเร็ว แยกตามผู้ใช้และโหมด)
+CREATE TABLE chat_logs (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'transfer', 'chat')),
@@ -259,7 +259,7 @@ CREATE INDEX idx_scan_jobs_user_id            ON scan_jobs(user_id);
 CREATE INDEX idx_scan_results_job_id          ON scan_results(job_id);
 CREATE INDEX idx_slip_ref_log_user           ON slip_ref_log(user_id, ref_no);
 CREATE INDEX idx_ai_summaries_user_period    ON ai_summaries(user_id, period_type, period_start, period_end);
-CREATE INDEX idx_quick_entry_chat_logs_user  ON quick_entry_chat_logs(user_id, mode);
+CREATE INDEX idx_chat_logs_user  ON chat_logs(user_id, mode);
 
 -- FUNCTION + TRIGGER: auto-update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -290,8 +290,8 @@ CREATE TRIGGER trg_ai_summaries_updated_at
     BEFORE UPDATE ON ai_summaries
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER trg_quick_entry_chat_logs_updated_at
-    BEFORE UPDATE ON quick_entry_chat_logs
+CREATE TRIGGER trg_chat_logs_updated_at
+    BEFORE UPDATE ON chat_logs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER trg_savings_goals_updated_at

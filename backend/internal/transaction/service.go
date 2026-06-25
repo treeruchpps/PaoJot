@@ -22,6 +22,18 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
+// clampName ตัดชื่อให้ไม่เกิน 100 ตัวอักษร (ตรงกับ VARCHAR(100) กัน DB error)
+func clampName(name *string) *string {
+	if name == nil {
+		return nil
+	}
+	if r := []rune(*name); len(r) > 100 {
+		v := string(r[:100])
+		return &v
+	}
+	return name
+}
+
 func (s *Service) List(ctx context.Context, userID string, p ListParams) (ListResult, error) {
 	if p.Page < 1 {
 		p.Page = 1
@@ -83,6 +95,7 @@ func (s *Service) Create(ctx context.Context, userID string, req CreateRequest) 
 		}
 	}
 
+	req.Name = clampName(req.Name)
 	return s.repo.Create(ctx, userID, req, txDate)
 }
 
@@ -95,6 +108,7 @@ func (s *Service) Update(ctx context.Context, id, userID string, req UpdateReque
 		}
 		txDate = &parsed
 	}
+	req.Name = clampName(req.Name)
 	return s.repo.Update(ctx, id, userID, req, txDate)
 }
 

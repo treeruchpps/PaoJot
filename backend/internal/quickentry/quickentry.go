@@ -28,8 +28,8 @@ type QuickEntryHandler struct {
 }
 
 func NewQuickEntryHandler(db *pgxpool.Pool, cfg *config.Config) *QuickEntryHandler {
-	if err := ensureQuickEntryChatLogsTable(db); err != nil {
-		log.Printf("failed to ensure quick_entry_chat_logs table: %v", err)
+	if err := ensureChatLogsTable(db); err != nil {
+		log.Printf("failed to ensure chat_logs table: %v", err)
 	}
 	return &QuickEntryHandler{db: db, cfg: cfg}
 }
@@ -55,12 +55,12 @@ type quickEntryParseResponse struct {
 	NeedsReview  bool    `json:"needs_review"`
 }
 
-type quickEntryChatLogRequest struct {
+type chatLogRequest struct {
 	Mode     string          `json:"mode" binding:"required"`
 	Messages json.RawMessage `json:"messages" binding:"required"`
 }
 
-type quickEntryChatLogResponse struct {
+type chatLogResponse struct {
 	Mode     string          `json:"mode"`
 	Messages json.RawMessage `json:"messages"`
 }
@@ -77,11 +77,11 @@ type quickEntryLLMResult struct {
 	Confidence   float64 `json:"confidence"`
 }
 
-func ensureQuickEntryChatLogsTable(db *pgxpool.Pool) error {
+func ensureChatLogsTable(db *pgxpool.Pool) error {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-		CREATE TABLE IF NOT EXISTS quick_entry_chat_logs (
+		CREATE TABLE IF NOT EXISTS chat_logs (
 			id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			mode       VARCHAR(20) NOT NULL CHECK (mode IN ('income', 'expense', 'saving', 'transfer', 'chat')),
@@ -90,11 +90,11 @@ func ensureQuickEntryChatLogsTable(db *pgxpool.Pool) error {
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE (user_id, mode)
 		);
-		ALTER TABLE quick_entry_chat_logs DROP CONSTRAINT IF EXISTS quick_entry_chat_logs_mode_check;
-		ALTER TABLE quick_entry_chat_logs
-			ADD CONSTRAINT quick_entry_chat_logs_mode_check
+		ALTER TABLE chat_logs DROP CONSTRAINT IF EXISTS chat_logs_mode_check;
+		ALTER TABLE chat_logs
+			ADD CONSTRAINT chat_logs_mode_check
 			CHECK (mode IN ('income', 'expense', 'saving', 'transfer', 'chat'));
-		CREATE INDEX IF NOT EXISTS idx_quick_entry_chat_logs_user ON quick_entry_chat_logs(user_id, mode);
+		CREATE INDEX IF NOT EXISTS idx_chat_logs_user ON chat_logs(user_id, mode);
 	`)
 	return err
 }
@@ -103,7 +103,7 @@ func validQuickEntryMode(mode string) bool {
 	return mode == "income" || mode == "expense" || mode == "saving" || mode == "transfer" || mode == "chat"
 }
 
-func normalizeQuickEntryMessages(raw json.RawMessage) (json.RawMessage, error) {
+func normalizeChatMessages(raw json.RawMessage) (json.RawMessage, error) {
 	var messages []map[string]interface{}
 	if err := json.Unmarshal(raw, &messages); err != nil {
 		return nil, err
@@ -124,12 +124,12 @@ func (h *QuickEntryHandler) GetChatLog(c *gin.Context) {
 
 	var messages json.RawMessage
 	err := h.db.QueryRow(context.Background(),
-		`SELECT messages FROM quick_entry_chat_logs WHERE user_id=$1 AND mode=$2`,
+		`SELECT messages FROM chat_logs WHERE user_id=$1 AND mode=$2`,
 		userID, mode,
 	).Scan(&messages)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			c.JSON(http.StatusOK, quickEntryChatLogResponse{Mode: mode, Messages: json.RawMessage("[]")})
+			c.JSON(http.StatusOK, chatLogResponse{Mode: mode, Messages: json.RawMessage("[]")})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "โหลดประวัติแชทไม่สำเร็จ"})
@@ -138,24 +138,24 @@ func (h *QuickEntryHandler) GetChatLog(c *gin.Context) {
 	if len(messages) == 0 {
 		messages = json.RawMessage("[]")
 	}
-	c.JSON(http.StatusOK, quickEntryChatLogResponse{Mode: mode, Messages: messages})
+	c.JSON(http.StatusOK, chatLogResponse{Mode: mode, Messages: messages})
 }
 
 func (h *QuickEntryHandler) SaveChatLog(c *gin.Context) {
 	userID := c.GetString("user_id")
-	var req quickEntryChatLogRequest
+	var req chatLogRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	messages, err := normalizeQuickEntryMessages(req.Messages)
+	messages, err := normalizeChatMessages(req.Messages)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "messages ต้องเป็น JSON array"})
 		return
 	}
 
 	_, err = h.db.Exec(context.Background(),
-		`INSERT INTO quick_entry_chat_logs (user_id, mode, messages)
+		`INSERT INTO chat_logs (user_id, mode, messages)
 		 VALUES ($1, $2, $3::jsonb)
 		 ON CONFLICT (user_id, mode)
 		 DO UPDATE SET messages = EXCLUDED.messages, updated_at = CURRENT_TIMESTAMP`,
@@ -165,7 +165,7 @@ func (h *QuickEntryHandler) SaveChatLog(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกประวัติแชทไม่สำเร็จ"})
 		return
 	}
-	c.JSON(http.StatusOK, quickEntryChatLogResponse{Mode: req.Mode, Messages: messages})
+	c.JSON(http.StatusOK, chatLogResponse{Mode: req.Mode, Messages: messages})
 }
 
 func (h *QuickEntryHandler) ClearChatLog(c *gin.Context) {
@@ -176,18 +176,21 @@ func (h *QuickEntryHandler) ClearChatLog(c *gin.Context) {
 		return
 	}
 	_, err := h.db.Exec(context.Background(),
-		`DELETE FROM quick_entry_chat_logs WHERE user_id=$1 AND mode=$2`,
+		`DELETE FROM chat_logs WHERE user_id=$1 AND mode=$2`,
 		userID, mode,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ล้างประวัติแชทไม่สำเร็จ"})
 		return
 	}
-	c.JSON(http.StatusOK, quickEntryChatLogResponse{Mode: mode, Messages: json.RawMessage("[]")})
+	c.JSON(http.StatusOK, chatLogResponse{Mode: mode, Messages: json.RawMessage("[]")})
 }
 
 func validateQuickEntryInput(mode, text string) string {
 	text = strings.TrimSpace(text)
+	if len([]rune(text)) > 80 {
+		return "ข้อความยาวเกินไป กรุณาพิมพ์ไม่เกิน 80 ตัวอักษรครับ"
+	}
 	if quickEntryNegativeAmount.MatchString(text) {
 		return "จำนวนเงินต้องมากกว่า 0 บาทครับ กรุณาใส่จำนวนเงินเป็นค่าบวก เช่น \"กาแฟ 50\""
 	}
@@ -210,6 +213,7 @@ func validateQuickEntryInput(mode, text string) string {
 		return "ยังไม่พบจำนวนเงินครับ ลองพิมพ์ชื่อรายการพร้อมจำนวนเงิน เช่น \"กาแฟ 50\""
 	}
 
+
 	amountText := text[last[0]:last[1]]
 	amount, err := strconv.ParseFloat(strings.ReplaceAll(amountText, ",", ""), 64)
 	if err != nil || amount <= 0 {
@@ -231,6 +235,24 @@ func validateQuickEntryInput(mode, text string) string {
 	}
 
 	return ""
+}
+
+// lastAmountFromText หยิบ "เลขตัวสุดท้าย" ในข้อความเป็นจำนวนเงิน (deterministic)
+// คืน amount, ชื่อรายการที่ตัดเลขก้อนสุดท้ายออก, และ ok
+func lastAmountFromText(text string) (float64, string, bool) {
+	matches := quickEntryAmountRe.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return 0, "", false
+	}
+	last := matches[len(matches)-1]
+	amountText := text[last[0]:last[1]]
+	amount, err := strconv.ParseFloat(strings.ReplaceAll(amountText, ",", ""), 64)
+	if err != nil || amount <= 0 {
+		return 0, "", false
+	}
+	title := strings.TrimSpace(text[:last[0]] + " " + text[last[1]:])
+	title = strings.TrimSpace(strings.ReplaceAll(title, "บาท", ""))
+	return amount, title, true
 }
 
 func (h *QuickEntryHandler) Parse(c *gin.Context) {
@@ -267,9 +289,20 @@ func (h *QuickEntryHandler) Parse(c *gin.Context) {
 		result = parseQuickEntryFallback(req.Mode, req.Text)
 	}
 
+	// บังคับใช้ "เลขตัวสุดท้าย" เป็นจำนวนเงินเสมอ (ไม่พึ่งการตัดสินของ LLM)
+	if amt, regexTitle, ok := lastAmountFromText(req.Text); ok {
+		result.Amount = amt
+		if strings.TrimSpace(result.Title) == "" {
+			result.Title = regexTitle
+		}
+	}
+
 	result.Title = strings.TrimSpace(result.Title)
 	if result.Title == "" {
 		result.Title = strings.TrimSpace(req.Text)
+	}
+	if rn := []rune(result.Title); len(rn) > 100 {
+		result.Title = string(rn[:100])
 	}
 	result.Amount = math.Round(result.Amount*100) / 100
 	if result.Amount <= 0 {
@@ -360,7 +393,8 @@ func (h *QuickEntryHandler) parseQuickEntryWithLLM(mode, text string, categories
 - title ให้ตัดจำนวนเงินและคำว่า บาท ออก
 - ถ้า mode เป็น saving หรือ transfer ให้ category_name=null
 - ถ้า mode เป็น income หรือ expense ให้เลือก category_name จากหมวดหมู่ที่ให้มาเท่านั้น
-- ถ้าไม่มั่นใจหมวดหมู่ ให้ category_name=null และ confidence ต่ำกว่า 0.75`
+- ถ้าไม่มั่นใจหมวดหมู่ ให้ category_name=null และ confidence ต่ำกว่า 0.75
+- ถ้าข้อความไม่เหมือนรายการการเงิน (เช่น ทักทาย คุยเล่น หรือไม่มีบริบทรับ-จ่าย-ออม-โอน) ให้ confidence ต่ำกว่า 0.5`
 
 	userContent := fmt.Sprintf("mode: %s\nข้อความ: %s\nหมวดหมู่ที่เลือกได้: %s", mode, text, categoryText)
 	payload := llm.LLMChatReq{
