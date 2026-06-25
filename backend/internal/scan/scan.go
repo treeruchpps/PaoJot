@@ -19,6 +19,7 @@ import (
 
 	"paomoney/internal/config"
 	"paomoney/internal/shared/llm"
+	"paomoney/internal/shared/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,11 +31,7 @@ const (
 	scanDocUnknown = "unknown"
 )
 
-// -----------------------------------------------------------------------------
 // OCR result models
-// -----------------------------------------------------------------------------
-// These structs are the normalized shape returned to the frontend after a scan
-// result has been classified as a receipt or a slip.
 type ReceiptItem struct {
 	Name   string  `json:"name"`
 	Amount float64 `json:"amount"`
@@ -91,7 +88,6 @@ type typhoonOCRResp struct {
 		Error string `json:"error"`
 	} `json:"results"`
 }
-
 
 // -----------------------------------------------------------------------------
 // LLM prompts
@@ -959,12 +955,13 @@ type ScanJobResp struct {
 }
 
 type ScanHandler struct {
-	db  *pgxpool.Pool
-	cfg *config.Config
+	db    *pgxpool.Pool
+	cfg   *config.Config
+	store *storage.Storage
 }
 
-func NewScanHandler(db *pgxpool.Pool, cfg *config.Config) *ScanHandler {
-	h := &ScanHandler{db: db, cfg: cfg}
+func NewScanHandler(db *pgxpool.Pool, cfg *config.Config, store *storage.Storage) *ScanHandler {
+	h := &ScanHandler{db: db, cfg: cfg, store: store}
 	_ = h.ensureSchema(context.Background())
 	return h
 }
@@ -1026,9 +1023,6 @@ func (h *ScanHandler) CreateJob(c *gin.Context) {
 		return
 	}
 
-	uploadsDir := "uploads/scans"
-	_ = os.MkdirAll(uploadsDir, 0755)
-
 	var jobID string
 	if err := h.db.QueryRow(context.Background(),
 		`INSERT INTO scan_jobs (user_id, status, total_count) VALUES ($1, 'pending', $2) RETURNING id`,
@@ -1076,16 +1070,16 @@ func (h *ScanHandler) CreateJob(c *gin.Context) {
 		}
 
 		ext := imageExtensionForMime(mimeType)
-		filename := fmt.Sprintf("%s_%d%s", jobID[:8], time.Now().UnixNano(), ext)
-		filePath := filepath.Join(uploadsDir, filename)
-		if err := os.WriteFile(filePath, data, 0644); err != nil {
+		key := fmt.Sprintf("scans/%s_%d%s", jobID[:8], time.Now().UnixNano(), ext)
+		loc, err := h.store.Upload(context.Background(), key, mimeType, data)
+		if err != nil {
 			continue
 		}
 
 		if _, err := h.db.Exec(context.Background(),
 			`INSERT INTO scan_results (job_id, user_id, status, filename, image_path)
 			 VALUES ($1, $2, 'queued', $3, $4)`,
-			jobID, userID, fh.Filename, "/"+filePath,
+			jobID, userID, fh.Filename, loc,
 		); err != nil {
 			continue
 		}
@@ -1422,13 +1416,12 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 	rejectAs := func(docType, msg string) { complete("rejected", docType, msg, nil, false) }
 	reject := func(msg string) { rejectAs(scanDocUnknown, msg) }
 
-	fullPath := strings.TrimPrefix(imagePath, "/")
-	imageBytes, err := os.ReadFile(fullPath)
+	imageBytes, err := h.store.Download(ctx, imagePath)
 	if err != nil {
 		fail(fmt.Sprintf("อ่านไฟล์ไม่ได้: %v", err))
 		return
 	}
-	mimeType := imageMimeForExtension(filepath.Ext(fullPath))
+	mimeType := imageMimeForExtension(filepath.Ext(imagePath))
 
 	h.db.Exec(ctx, `UPDATE scan_results SET status='ocr', updated_at=NOW() WHERE id=$1`, resultID)
 	ocrText, err := h.callFinancialOCR(imageBytes, mimeType)

@@ -14,6 +14,7 @@ import (
 	"paomoney/internal/recurring"
 	"paomoney/internal/savingsgoal"
 	"paomoney/internal/scan"
+	"paomoney/internal/shared/storage"
 	"paomoney/internal/transaction"
 
 	"github.com/gin-gonic/gin"
@@ -35,17 +36,20 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		c.Next()
 	})
 
+	// Shared file storage (R2 or local fallback)
+	store := storage.New(cfg)
+
 	// Handlers
 	authH := auth.NewHandler(db, cfg)
 	profileH := profile.NewHandler(db)
 	accountH := account.NewHandler(db)
 	categoryH := category.NewHandler(db)
 	txH := transaction.NewHandler(db)
-	goalH := savingsgoal.NewHandler(db)
+	goalH := savingsgoal.NewHandler(db, store)
 	budgetH := budget.NewHandler(db)
 	recurH := recurring.NewHandler(db)
 	notiH := notification.NewHandler(db)
-	scanH := scan.NewScanHandler(db, cfg)
+	scanH := scan.NewScanHandler(db, cfg, store)
 	aiSummaryH := aisummary.NewAISummaryHandler(db, cfg)
 	quickEntryH := quickentry.NewQuickEntryHandler(db, cfg)
 

@@ -5,22 +5,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
+	"strings"
 	"time"
+
+	"paomoney/internal/shared/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
-	svc *Service
+	svc   *Service
+	store *storage.Storage
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
+func NewHandler(db *pgxpool.Pool, store *storage.Storage) *Handler {
 	repo := NewRepository(db)
 	repo.EnsureSchema()
-	return &Handler{svc: NewService(repo)}
+	return &Handler{svc: NewService(repo), store: store}
 }
 
 // writeErr map httpError → response เดิม (status + message)
@@ -58,12 +60,6 @@ func (h *Handler) UploadImage(c *gin.Context) {
 		return
 	}
 
-	uploadsDir := "uploads/goals"
-	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "สร้างโฟลเดอร์รูปภาพไม่สำเร็จ"})
-		return
-	}
-
 	ext := ".jpg"
 	if mimeType == "image/png" {
 		ext = ".png"
@@ -72,22 +68,28 @@ func (h *Handler) UploadImage(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	filename := fmt.Sprintf("%s_%d%s", userID[:8], time.Now().UnixNano(), ext)
-	filePath := filepath.Join(uploadsDir, filename)
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	key := fmt.Sprintf("goals/%s_%d%s", userID[:8], time.Now().UnixNano(), ext)
+	loc, err := h.store.Upload(c.Request.Context(), key, mimeType, data)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกรูปภาพไม่สำเร็จ"})
 		return
 	}
 
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	if forwarded := c.GetHeader("X-Forwarded-Proto"); forwarded != "" {
-		scheme = forwarded
+	// image_url ต้องเป็น URL เต็มเสมอ (frontend แสดง <img src> ตรงๆ)
+	// R2 → loc เป็น https://... ใช้ได้เลย; local → loc เป็น /uploads/... ต้องเติม host
+	imageURL := loc
+	if !strings.HasPrefix(loc, "http") {
+		scheme := "http"
+		if c.Request.TLS != nil {
+			scheme = "https"
+		}
+		if forwarded := c.GetHeader("X-Forwarded-Proto"); forwarded != "" {
+			scheme = forwarded
+		}
+		imageURL = fmt.Sprintf("%s://%s%s", scheme, c.Request.Host, loc)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"image_url": fmt.Sprintf("%s://%s/%s", scheme, c.Request.Host, filepath.ToSlash(filePath))})
+	c.JSON(http.StatusOK, gin.H{"image_url": imageURL})
 }
 
 // GET /api/v1/savings-goals
