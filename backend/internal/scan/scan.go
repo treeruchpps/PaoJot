@@ -108,13 +108,15 @@ var ocrDocumentClassifierPrompt = `คุณคือระบบแยกปร
   รวมถึง: G-Wallet, ถุงเงิน, คนละครึ่ง, เป๋าตัง, สลิปดิจิทัลวอลเล็ต
 - unknown = ข้อมูลไม่พอ หรือไม่มั่นใจ
 
-กฎสำคัญ:
+กฎสำคัญ (เน้นดูโครงสร้างทั้งเอกสาร ไม่ใช่แค่เจอคำใดคำหนึ่ง):
+- การที่ใบเสร็จมีคำว่า "โอน", "ธนาคาร", "ค่าธรรมเนียม", "เลขอ้างอิง" หรือมีช่องทางชำระเป็นการโอน ไม่ได้แปลว่าเป็น slip ห้ามตัดสินจากคำเดียว
+- slip ที่แท้จริงต้องมีโครงสร้าง "ผู้โอน → ผู้รับ" ชัดเจน (ชื่อผู้โอน + ชื่อ/บัญชีผู้รับ หรือมีลูกศร ↓) หรือเป็นหน้าผลลัพธ์ "โอนสำเร็จ/ชำระเงินสำเร็จ/ทำรายการสำเร็จ"
+- receipt ที่แท้จริงต้องมีรายการสินค้า/บริการพร้อมราคาตั้งแต่ 2 รายการขึ้นไป หรือมีร้านค้า + ยอดรวม/VAT/แคชเชียร์/เลขผู้เสียภาษี
 - Ref No, reference, transaction id เพียงอย่างเดียวไม่พอให้เป็น slip เพราะใบเสร็จก็มีได้
-- ถ้ามีโครงสร้างผู้โอน/ผู้รับ/บัญชี/ธนาคาร/PromptPay/ยอดโอน ให้จัดเป็น slip
-- ถ้ามีรายการสินค้า/บริการหลายรายการพร้อมราคา ร้านค้า หรือภาษี ให้จัดเป็น receipt
-- ถ้ามีทั้งสองแบบ ให้เลือกชนิดที่เป็นเอกสารหลักจากบริบททั้งหมด
-- "ทำรายการสำเร็จ" + "รหัสอ้างอิง" + G-Wallet ID → slip เสมอ แม้จะมี "ค่าสินค้า/บริการ" หรือ "สิทธิคนละครึ่ง" ปรากฏอยู่ด้วย
-- ถ้ามี sender→receiver structure (มีลูกศร ↓ หรือมีชื่อผู้โอนและผู้รับ) → slip
+- ถ้าเอกสารมีรายการสินค้าหลายรายการพร้อมราคา และไม่มีคู่ผู้โอน/ผู้รับ → receipt แม้จะมีคำว่าโอนหรือธนาคารปนอยู่
+- "ทำรายการสำเร็จ" + "รหัสอ้างอิง" + G-Wallet/ถุงเงิน → slip เสมอ แม้จะมี "ค่าสินค้า/บริการ" หรือ "สิทธิคนละครึ่ง"
+- ถ้ามีทั้งสองแบบจริงๆ (เช่น สลิปคนละครึ่งที่ลิสต์สินค้า) เลือกเอกสารหลัก: ถ้าเป็นหน้ายืนยันการชำระ/โอน → slip
+- ถ้าไม่มั่นใจให้ลด confidence ต่ำกว่า 0.6 แล้วตอบชนิดที่ใกล้เคียงที่สุด
 - confidence ต้องอยู่ระหว่าง 0 และ 1`
 
 var receiptParserPrompt = `คุณคือผู้ช่วยดึงข้อมูลจากข้อความ OCR ของใบเสร็จ/บิล
@@ -581,41 +583,24 @@ const (
 // The classifier first checks strong deterministic slip evidence, then scores
 // receipt/slip keywords, and finally can fall back to the LLM classifier.
 func classifyOCRDocument(text string) ocrDocType {
-	t := strings.ToLower(text)
-	if hasStrongSlipEvidence(text) {
+	strongSlip := hasStrongSlipEvidence(text)
+	strongReceipt := hasStrongReceiptEvidence(text)
+
+	// ทั้งคู่ชัด
+	if strongSlip && strongReceipt {
+		return ocrDocUnknown
+	}
+	if strongSlip {
 		return ocrDocSlip
 	}
-
-	slipKeywords := []string{
-		"promptpay", "พร้อมเพย์", "transfer", "โอนเงิน", "โอนสำเร็จ", "ชำระเงินสำเร็จ", "สลิป",
-		"sender", "receiver", "from account", "to account", "account no",
-		"k+", "เลขที่รายการ", "ค่าธรรมเนียม", "สแกนตรวจสอบสลิป",
-		"จากบัญชี", "ไปยังบัญชี", "ผู้โอน", "ผู้รับ", "ผู้รับเงิน",
-		"ธนาคาร", "kbank", "scb", "krungthai", "ktb", "bangkok bank", "bbl",
-		"kasikorn", "กสิกร", "ไทยพาณิชย์", "กรุงไทย", "กรุงเทพ", "กรุงศรี", "ออมสิน",
-		"g-wallet", "g wallet", "ถุงเงิน", "ทำรายการสำเร็จ", "รหัสอ้างอิง",
-		"คนละครึ่ง", "จำนวนเงินที่ชำระ", "ค่าสินค้า/บริการ",
-	}
-	receiptKeywords := []string{
-		"receipt", "tax invoice", "invoice", "vat", "subtotal", "total", "cash", "change",
-		"qty", "quantity", "cashier", "ใบเสร็จ", "ใบกำกับภาษี", "ภาษีมูลค่าเพิ่ม",
-		"รวมทั้งสิ้น", "ยอดรวม", "เงินทอน", "ส่วนลด", "จำนวน", "ราคา", "แคชเชียร์",
-		"สาขา", "เลขประจำตัวผู้เสียภาษี",
+	if strongReceipt {
+		return ocrDocReceipt
 	}
 
-	slipScore := 0
-	for _, keyword := range slipKeywords {
-		if strings.Contains(t, strings.ToLower(keyword)) {
-			slipScore++
-		}
-	}
-
-	receiptScore := 0
-	for _, keyword := range receiptKeywords {
-		if strings.Contains(t, strings.ToLower(keyword)) {
-			receiptScore++
-		}
-	}
+	// ไม่มีฝั่งไหนชัดเชิงโครงสร้าง → ให้คะแนนจากคำเฉพาะทาง (ตัดคำกำกวมที่เจอได้ทั้งสองแบบออก)
+	t := strings.ToLower(text)
+	slipScore := countKeywordHits(t, distinctiveSlipKeywords)
+	receiptScore := countKeywordHits(t, distinctiveReceiptKeywords)
 
 	if slipScore >= 2 && slipScore > receiptScore {
 		return ocrDocSlip
@@ -626,28 +611,117 @@ func classifyOCRDocument(text string) ocrDocType {
 	return ocrDocUnknown
 }
 
+// คำเฉพาะทางของแต่ละชนิด — เลี่ยงคำกำกวม (ธนาคาร/โอนเงิน/ค่าธรรมเนียม/จำนวนเงิน) ที่เจอได้ทั้งใบเสร็จและสลิป
+var distinctiveSlipKeywords = []string{
+	"promptpay", "พร้อมเพย์", "โอนสำเร็จ", "โอนเงินสำเร็จ", "ชำระเงินสำเร็จ", "สลิป",
+	"ผู้โอน", "ผู้รับเงิน", "จากบัญชี", "ไปยังบัญชี", "เลขที่รายการ",
+	"สแกนตรวจสอบสลิป", "g-wallet", "ถุงเงิน", "รหัสอ้างอิง", "k+",
+}
+
+var distinctiveReceiptKeywords = []string{
+	"receipt", "tax invoice", "ใบเสร็จ", "ใบกำกับภาษี", "ภาษีมูลค่าเพิ่ม",
+	"เงินทอน", "แคชเชียร์", "cashier", "เลขประจำตัวผู้เสียภาษี", "subtotal", "vat",
+}
+
+func countKeywordHits(lowerText string, keywords []string) int {
+	score := 0
+	for _, keyword := range keywords {
+		if strings.Contains(lowerText, strings.ToLower(keyword)) {
+			score++
+		}
+	}
+	return score
+}
+
+// hasStrongSlipEvidence ต้องเจอหลักฐานเชิงโครงสร้าง/วลีสำเร็จ ไม่ใช่แค่คำเดี่ยวที่ใบเสร็จก็มี
 func hasStrongSlipEvidence(text string) bool {
 	t := strings.ToLower(text)
-	hasPromptPayTransferContext := (strings.Contains(t, "promptpay") || strings.Contains(t, "พร้อมเพย์")) &&
-		(strings.Contains(t, "ผู้โอน") ||
-			strings.Contains(t, "ผู้รับ") ||
+
+	// วลี "สำเร็จ" ของการโอน/ชำระ ที่ใบเสร็จทั่วไปไม่มี
+	successPhrase := strings.Contains(t, "ชำระเงินสำเร็จ") ||
+		strings.Contains(t, "โอนสำเร็จ") ||
+		strings.Contains(t, "โอนเงินสำเร็จ") ||
+		strings.Contains(t, "ทำรายการสำเร็จ") ||
+		strings.Contains(t, "สแกนตรวจสอบสลิป")
+
+	// คอมโบ PromptPay + ปลายทาง (ต้องเจอคู่กัน)
+	promptPayCombo := (strings.Contains(t, "promptpay") || strings.Contains(t, "พร้อมเพย์")) &&
+		(strings.Contains(t, "ผู้รับ") ||
 			strings.Contains(t, "ผู้รับเงิน") ||
-			strings.Contains(t, "จากบัญชี") ||
 			strings.Contains(t, "ไปยังบัญชี") ||
 			strings.Contains(t, "เลขที่รายการ"))
 
-	hasGWalletSlipContext := (strings.Contains(t, "ทำรายการสำเร็จ") || strings.Contains(t, "g-wallet") || strings.Contains(t, "ถุงเงิน")) &&
+	// คอมโบ G-Wallet/ถุงเงิน + รหัสอ้างอิง
+	gWalletCombo := (strings.Contains(t, "ทำรายการสำเร็จ") || strings.Contains(t, "g-wallet") || strings.Contains(t, "ถุงเงิน")) &&
 		(strings.Contains(t, "รหัสอ้างอิง") || strings.Contains(t, "จำนวนเงินที่ชำระ"))
 
-	return strings.Contains(t, "ชำระเงินสำเร็จ") ||
-		strings.Contains(t, "โอนสำเร็จ") ||
-		strings.Contains(t, "ทำรายการสำเร็จ") ||
-		strings.Contains(t, "สแกนตรวจสอบสลิป") ||
-		strings.Contains(t, "เลขที่รายการ") ||
-		strings.Contains(t, "ค่าธรรมเนียม") ||
-		strings.Contains(t, "k+") ||
-		hasPromptPayTransferContext ||
-		hasGWalletSlipContext
+	return successPhrase || hasSenderReceiverStructure(text) || promptPayCombo || gWalletCombo
+}
+
+// hasSenderReceiverStructure = true เฉพาะเมื่อมีทั้งฝั่งผู้โอนและฝั่งผู้รับ (รูปร่างเฉพาะของสลิป)
+func hasSenderReceiverStructure(text string) bool {
+	t := strings.ToLower(text)
+	hasSender := strings.Contains(t, "ผู้โอน") ||
+		strings.Contains(t, "จากบัญชี") ||
+		strings.Contains(t, "from account") ||
+		strings.Contains(t, "from:")
+	hasReceiver := strings.Contains(t, "ผู้รับเงิน") ||
+		strings.Contains(t, "ผู้รับ") ||
+		strings.Contains(t, "ไปยังบัญชี") ||
+		strings.Contains(t, "to account") ||
+		strings.Contains(text, "↓")
+	return hasSender && hasReceiver
+}
+
+// hasStrongReceiptEvidence = มีคำเฉพาะใบเสร็จ/ใบกำกับภาษี หรือมีรายการสินค้า+ราคาหลายรายการ
+func hasStrongReceiptEvidence(text string) bool {
+	t := strings.ToLower(text)
+	receiptDocCue := strings.Contains(t, "ใบเสร็จ") ||
+		strings.Contains(t, "ใบกำกับภาษี") ||
+		strings.Contains(t, "tax invoice") ||
+		strings.Contains(t, "receipt") ||
+		strings.Contains(t, "เลขประจำตัวผู้เสียภาษี") ||
+		strings.Contains(t, "แคชเชียร์") ||
+		strings.Contains(t, "cashier") ||
+		strings.Contains(t, "เงินทอน")
+
+	return receiptDocCue || countReceiptLineItems(text) >= 2
+}
+
+var (
+	receiptItemNameRe  = regexp.MustCompile(`\p{L}{2,}`)
+	receiptItemPriceRe = regexp.MustCompile(`\d+[.,]\d{2}`)
+)
+
+// countReceiptLineItems นับบรรทัดที่ดูเหมือน "ชื่อสินค้า + ราคา(มีทศนิยม)" โดยข้ามบรรทัดสรุป/ยอดรวม
+func countReceiptLineItems(text string) int {
+	summaryHints := []string{
+		"total", "subtotal", "vat", "ภาษี", "รวม", "ยอด", "ทอน", "เงินสด",
+		"cash", "change", "ส่วนลด", "discount", "ค่าธรรมเนียม", "fee",
+		"ref", "อ้างอิง", "เลขที่รายการ", "balance", "คงเหลือ",
+	}
+	count := 0
+	for _, line := range strings.Split(text, "\n") {
+		l := strings.TrimSpace(line)
+		if l == "" {
+			continue
+		}
+		low := strings.ToLower(l)
+		isSummary := false
+		for _, hint := range summaryHints {
+			if strings.Contains(low, hint) {
+				isSummary = true
+				break
+			}
+		}
+		if isSummary {
+			continue
+		}
+		if receiptItemNameRe.MatchString(l) && receiptItemPriceRe.MatchString(l) {
+			count++
+		}
+	}
+	return count
 }
 
 func hasSlipTransferEvidence(text string, parsed *SlipData) bool {
@@ -1431,11 +1505,12 @@ func (h *ScanHandler) processOne(ctx context.Context, resultID, imagePath, filen
 	}
 	h.db.Exec(ctx, `UPDATE scan_results SET ocr_text=$1, updated_at=NOW() WHERE id=$2`, ocrText, resultID)
 
+	// classifyOCRDocument ตัดสินจากโครงสร้างก่อน ถ้าก้ำกึ่ง/ไม่ชัด (unknown) ค่อยถาม LLM
 	docType := classifyOCRDocument(ocrText)
-	if hasStrongSlipEvidence(ocrText) {
-		docType = ocrDocSlip
-	} else if classified, confidence, err := h.callOCRDocumentClassifier(ocrText); err == nil && confidence >= 0.6 {
-		docType = classified
+	if docType == ocrDocUnknown {
+		if classified, confidence, err := h.callOCRDocumentClassifier(ocrText); err == nil && confidence >= 0.6 {
+			docType = classified
+		}
 	}
 
 	h.db.Exec(ctx, `UPDATE scan_results SET status='parsing', document_type=$1, updated_at=NOW() WHERE id=$2`, string(docType), resultID)

@@ -75,6 +75,9 @@ CREATE TABLE categories (
     user_id    UUID             REFERENCES users(id) ON DELETE CASCADE,
     name       VARCHAR(100)     NOT NULL,
     type       transaction_type NOT NULL,
+    -- icon/color: NULL = ใช้สไตล์อัตโนมัติฝั่ง frontend, มีค่า = ผู้ใช้เลือกเอง (เฉพาะหมวดที่สร้างเอง)
+    icon       VARCHAR(50),
+    color      VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

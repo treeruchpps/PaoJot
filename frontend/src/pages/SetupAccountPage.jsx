@@ -16,7 +16,7 @@ export default function SetupAccountPage({ onComplete }) {
 
         {/* Welcome text */}
         <h1 className="text-3xl font-bold text-slate-800 mb-2">
-          ยินดีต้อนรับ 🎉
+          ยินดีต้อนรับ
         </h1>
         <p className="text-lg font-semibold text-[#2C6488] mb-2">{user?.username}</p>
         <p className="text-slate-500 text-sm leading-relaxed mb-8">

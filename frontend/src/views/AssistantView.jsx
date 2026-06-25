@@ -51,17 +51,24 @@ const firstBotMessage = (mode) => ({
   text: `ยินดีต้อนรับเข้าสู่แชท PaoJot ครับ พิมพ์รายการเพื่อจดบันทึก หรือส่งรูปภาพสลิป/ใบเสร็จเพื่อจำแนกสแกนได้เลยครับ`,
 });
 
-const getAiSummaryChatError = (message) => {
-  const text = message || '';
-  if (text.includes('รายการรายรับ/รายจ่าย') || text.includes('ข้อมูลธุรกรรมไม่เพียงพอ')) {
-    return 'ยังมีรายการรายรับ/รายจ่ายไม่เพียงพอสำหรับสรุปด้วย AI ครับ ลองบันทึกรายการเพิ่มก่อนแล้วค่อยสร้างสรุปอีกครั้ง';
-  }
-  return `ไม่สามารถดึงข้อมูลสรุปได้ในขณะนี้: ${text || 'ลองใหม่อีกครั้งภายหลัง'}`;
+// ตรวจว่าเป็น error ชั่วคราวจากฝั่ง AI (โหลดหนัก/ไม่ว่าง/timeout) ที่ลองใหม่แล้วมักหาย
+const isTransientAiError = (err) => {
+  if ([429, 500, 502, 503, 504].includes(err?.status)) return true;
+  const text = (err?.message || '').toLowerCase();
+  return /\b(429|5\d\d)\b|unavailable|overload|high demand|temporarily|try again|timeout|timed out|rate limit/.test(text);
 };
 
 const getAiSummaryFailureMessage = (err) => {
-  if (err?.status === 503) return 'เกิดข้อผิดพลาดกรุณาลองใหม่อีกครั้ง';
-  return getAiSummaryChatError(err?.message);
+  const text = err?.message || '';
+  // ข้อมูลธุรกรรมไม่พอสำหรับสรุป
+  if (text.includes('รายการรายรับ/รายจ่าย') || text.includes('ข้อมูลธุรกรรมไม่เพียงพอ')) {
+    return 'ยังมีรายการรายรับ/รายจ่ายไม่เพียงพอสำหรับสรุปด้วย AI ครับ ลองบันทึกรายการเพิ่มก่อนแล้วค่อยสร้างสรุปอีกครั้ง';
+  }
+  // โหลดหนัก/ไม่ว่างชั่วคราว — ไม่โชว์ error ดิบจากผู้ให้บริการ
+  if (isTransientAiError(err)) {
+    return 'ระบบ AI กำลังมีผู้ใช้งานหนาแน่นชั่วคราว กรุณาลองสร้างสรุปอีกครั้งในอีกสักครู่ครับ';
+  }
+  return 'ไม่สามารถสร้างสรุปได้ในขณะนี้ กรุณาลองใหม่อีกครั้งครับ';
 };
 
 const aiNotificationPeriod = (type) => {

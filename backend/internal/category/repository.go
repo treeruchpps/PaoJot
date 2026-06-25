@@ -55,7 +55,7 @@ func (r *Repository) EnsureDefaults(ctx context.Context) error {
 
 // List คืนหมวดของผู้ใช้ + หมวดเริ่มต้น เรียงตามลำดับที่กำหนด (กรองตาม type ได้)
 func (r *Repository) List(ctx context.Context, userID, typeFilter string) ([]Category, error) {
-	query := `SELECT id, user_id, name, type, created_at
+	query := `SELECT id, user_id, name, type, icon, color, created_at
 			  FROM categories
 			  WHERE (user_id = $1 OR user_id IS NULL)`
 	args := []interface{}{userID}
@@ -109,7 +109,7 @@ func (r *Repository) List(ctx context.Context, userID, typeFilter string) ([]Cat
 	categories := []Category{}
 	for rows.Next() {
 		var cat Category
-		if err := rows.Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type, &cat.CreatedAt); err != nil {
+		if err := rows.Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type, &cat.Icon, &cat.Color, &cat.CreatedAt); err != nil {
 			continue
 		}
 		categories = append(categories, cat)
@@ -121,11 +121,11 @@ func (r *Repository) List(ctx context.Context, userID, typeFilter string) ([]Cat
 func (r *Repository) Create(ctx context.Context, userID string, req CreateRequest) (Category, error) {
 	var cat Category
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO categories (user_id, name, type)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, user_id, name, type, created_at`,
-		userID, req.Name, req.Type,
-	).Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type, &cat.CreatedAt)
+		`INSERT INTO categories (user_id, name, type, icon, color)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, user_id, name, type, icon, color, created_at`,
+		userID, req.Name, req.Type, req.Icon, req.Color,
+	).Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type, &cat.Icon, &cat.Color, &cat.CreatedAt)
 	return cat, err
 }
 
@@ -134,11 +134,13 @@ func (r *Repository) Update(ctx context.Context, id, userID string, req UpdateRe
 	var cat Category
 	err := r.db.QueryRow(ctx,
 		`UPDATE categories
-		 SET name = COALESCE($1, name)
+		 SET name  = COALESCE($1, name),
+		     icon  = COALESCE($4, icon),
+		     color = COALESCE($5, color)
 		 WHERE id = $2 AND user_id = $3
-		 RETURNING id, user_id, name, type, created_at`,
-		req.Name, id, userID,
-	).Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type, &cat.CreatedAt)
+		 RETURNING id, user_id, name, type, icon, color, created_at`,
+		req.Name, id, userID, req.Icon, req.Color,
+	).Scan(&cat.ID, &cat.UserID, &cat.Name, &cat.Type, &cat.Icon, &cat.Color, &cat.CreatedAt)
 	if err != nil {
 		return Category{}, ErrNotFound
 	}

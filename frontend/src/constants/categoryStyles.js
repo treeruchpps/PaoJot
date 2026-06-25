@@ -63,19 +63,49 @@ function hashString(str = '') {
 }
 
 // คืนสไตล์ { icon, color } ของหมวดหมู่ — รับประกันว่ามีค่าคืนเสมอ
+// ลำดับความสำคัญ: ค่าที่ผู้ใช้เลือกเอง (cat.icon/cat.color) > preset หมวดเริ่มต้น > สีจาก hash
 export function getCategoryStyle(cat) {
   if (!cat) return { icon: FALLBACK_ICON, color: FALLBACK_COLOR };
 
+  // base = preset (หมวดเริ่มต้น) หรือ ไอคอนเริ่มต้น + สีจาก hash (หมวดที่สร้างเอง)
   const key = `${cat.type}:${cat.name}`;
   const preset = DEFAULT_CATEGORY_STYLES[key];
-  // หมวดเริ่มต้น (ไม่มี user_id) ที่มีใน preset → ใช้ค่า preset
-  if (!cat.user_id && preset) return preset;
-  // ชื่อ "อื่นๆ" หรือชื่อที่ตรง preset อื่น ๆ ก็ยืมสไตล์มาใช้ได้
-  if (preset) return preset;
+  const base = preset || {
+    icon: FALLBACK_ICON,
+    color: CUSTOM_PALETTE[hashString(cat.name || cat.id || '') % CUSTOM_PALETTE.length],
+  };
 
-  // หมวดที่ผู้ใช้สร้างเอง → ไอคอนเริ่มต้น + สีจาก hash ของชื่อ
-  const color = CUSTOM_PALETTE[hashString(cat.name || cat.id || '') % CUSTOM_PALETTE.length];
-  return { icon: FALLBACK_ICON, color };
+  // ค่าที่ผู้ใช้เลือกเอง (เก็บใน DB) override เสมอ ถ้าไม่มีค่อย fallback ไป base
+  const icon  = (cat.icon  && String(cat.icon).trim())  || base.icon;
+  const color = (cat.color && String(cat.color).trim()) || base.color;
+  return { icon, color };
+}
+
+// ── ตัวเลือกสำหรับฟอร์มสร้างหมวดหมู่ (เฉพาะหมวดที่ผู้ใช้สร้างเอง) ──
+
+// ไอคอน lucide ที่ให้เลือก (ชื่อต้องตรงกับ export ของ lucide-react)
+export const CATEGORY_ICONS = [
+  'Tag', 'UtensilsCrossed', 'Coffee', 'ShoppingBag', 'ShoppingCart', 'Package',
+  'Gift', 'Shirt', 'Car', 'Bus', 'Plane', 'Train', 'Bike', 'Fuel',
+  'Home', 'Building2', 'Bed', 'Lightbulb', 'Plug', 'Wifi', 'Smartphone', 'Phone',
+  'ReceiptText', 'CreditCard', 'Banknote', 'Wallet', 'PiggyBank', 'Landmark',
+  'DollarSign', 'Coins', 'TrendingUp', 'Briefcase', 'BriefcaseBusiness',
+  'GraduationCap', 'BookOpen', 'HeartPulse', 'Stethoscope', 'Pill', 'Dumbbell',
+  'Gamepad2', 'Music', 'Film', 'Camera', 'PawPrint', 'Baby', 'Users', 'HandHeart',
+  'Star', 'Zap', 'Sparkles', 'Wrench', 'Hammer', 'Palette', 'Globe', 'MapPin',
+  'Calendar', 'ArrowLeftRight',
+];
+
+// สี palette สำเร็จรูปให้กดเลือก
+export const COLOR_PALETTE = [
+  '#2C6488', '#3b82f6', '#06b6d4', '#10b981', '#5F9A7A', '#84cc16',
+  '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#8b5cf6', '#6366f1',
+  '#64748b', '#475569', '#0ea5e9', '#14b8a6', '#a855f7', '#94a3b8',
+];
+
+// ตรวจรูปแบบ hex (#RGB หรือ #RRGGBB)
+export function isValidHexColor(value = '') {
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(value).trim());
 }
 
 export const getCategoryIcon  = (cat) => getCategoryStyle(cat).icon;

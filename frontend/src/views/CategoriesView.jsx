@@ -6,7 +6,7 @@ import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { categories as categoriesApi } from '../services/api';
 import { CATEGORY_ORDER_KEY, applySavedCategoryOrder } from '../utils/categoryOrder';
-import { getCategoryStyle } from '../constants/categoryStyles';
+import { getCategoryStyle, CATEGORY_ICONS, COLOR_PALETTE, isValidHexColor } from '../constants/categoryStyles';
 
 const TAB_LABELS = { expense: 'รายจ่าย', income: 'รายรับ', transfer: 'โอนเงิน' };
 const CAT_MAX = 30;
@@ -17,7 +17,7 @@ export default function CategoriesView({ onRefresh }) {
   const [catList, setCatList]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm]           = useState({ name: '' });
+  const [form, setForm]           = useState({ name: '', icon: '', color: '' });
   const [saving, setSaving]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -104,18 +104,22 @@ export default function CategoriesView({ onRefresh }) {
 
   // ── Modal ─────────────────────────────────────────────────────────────────
   const openModal = () => {
-    setForm({ name: '' });
+    setForm({ name: '', icon: '', color: '' });
     setShowModal(true);
   };
 
   const save = async () => {
     if (!form.name.trim()) { showError('กรุณาใส่ชื่อหมวดหมู่'); return; }
+    if (form.color && !isValidHexColor(form.color)) { showError('รูปแบบสีไม่ถูกต้อง (เช่น #2C6488)'); return; }
     setSaving(true); try {
-      await categoriesApi.create({ name: form.name, type: tab });
+      const body = { name: form.name.trim(), type: tab };
+      if (form.icon) body.icon = form.icon;
+      if (isValidHexColor(form.color)) body.color = form.color;
+      await categoriesApi.create(body);
       await fetchCats();
       if (onRefresh) onRefresh();
       setShowModal(false);
-      setForm({ name: '' });
+      setForm({ name: '', icon: '', color: '' });
     } catch (err) { showError(err.message); }
     finally { setSaving(false); }
   };
@@ -234,9 +238,56 @@ export default function CategoriesView({ onRefresh }) {
             </div>
 
             <div>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">เลือกไอคอน</label>
+              <div className="grid grid-cols-8 gap-1.5 max-h-40 overflow-y-auto p-1 rounded-xl bg-slate-50 border border-slate-200">
+                {CATEGORY_ICONS.map((ic) => {
+                  const active = form.icon === ic;
+                  return (
+                    <button key={ic} type="button" title={ic}
+                      onClick={() => setForm({ ...form, icon: active ? '' : ic })}
+                      className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${active ? 'bg-[#2C6488]' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}>
+                      <Icon name={ic} size={16} color={active ? '#ffffff' : (isValidHexColor(form.color) ? form.color : '#64748b')} />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">ไม่เลือก = ใช้ไอคอนอัตโนมัติ</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">เลือกสี</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {COLOR_PALETTE.map((c) => {
+                  const active = (form.color || '').toLowerCase() === c.toLowerCase();
+                  return (
+                    <button key={c} type="button" title={c}
+                      onClick={() => setForm({ ...form, color: active ? '' : c })}
+                      className={`w-7 h-7 rounded-full transition-transform ${active ? 'ring-2 ring-offset-2 ring-[#2C6488] scale-110' : ''}`}
+                      style={{ background: c }} />
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="color" value={isValidHexColor(form.color) ? form.color : '#2C6488'}
+                  onChange={(e) => setForm({ ...form, color: e.target.value })}
+                  className="w-9 h-9 rounded-lg border border-slate-200 bg-transparent cursor-pointer p-0.5" />
+                <input value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })}
+                  placeholder="#2C6488 (ไม่ใส่ = สีอัตโนมัติ)"
+                  className={`flex-1 border rounded-xl px-3 py-2 text-sm bg-slate-50 text-slate-700 ${form.color && !isValidHexColor(form.color) ? 'border-red-400' : 'border-slate-200'}`} />
+              </div>
+              {form.color && !isValidHexColor(form.color) && (
+                <p className="text-[11px] text-red-500 mt-1">รูปแบบสีไม่ถูกต้อง (เช่น #2C6488)</p>
+              )}
+            </div>
+
+            <div>
               <label className="text-xs font-medium text-slate-500 mb-2 block">ตัวอย่าง</label>
               {(() => {
-                const preview = getCategoryStyle({ name: form.name, type: tab });
+                const preview = getCategoryStyle({
+                  name: form.name, type: tab,
+                  icon: form.icon || undefined,
+                  color: isValidHexColor(form.color) ? form.color : undefined,
+                });
                 return (
                   <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -249,7 +300,6 @@ export default function CategoriesView({ onRefresh }) {
                   </div>
                 );
               })()}
-              <p className="text-[11px] text-slate-400 mt-1.5">ไอคอนและสีถูกกำหนดให้อัตโนมัติ</p>
             </div>
 
             <div className="flex gap-3 pt-2">
