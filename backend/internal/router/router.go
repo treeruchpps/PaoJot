@@ -24,9 +24,14 @@ import (
 func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	r := gin.Default()
 
-	// CORS
+	// CORS — อนุญาตเฉพาะ origin ที่กำหนด (default local; prod ตั้งผ่าน env)
+	allowedOrigins := cfg.CORS.AllowedOrigins
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.GetHeader("Origin")
+		if origin != "" && originAllowed(origin, allowedOrigins) {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if c.Request.Method == "OPTIONS" {
@@ -150,4 +155,15 @@ func Setup(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	}
 
 	return r
+}
+
+// originAllowed ตรวจว่า origin ที่เรียกเข้ามาอยู่ในรายการที่อนุญาตไหม
+// รองรับ "*" (เปิดทุก origin) เผื่อกรณีตั้งใจเปิดกว้างผ่าน env
+func originAllowed(origin string, allowed []string) bool {
+	for _, a := range allowed {
+		if a == "*" || a == origin {
+			return true
+		}
+	}
+	return false
 }

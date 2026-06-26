@@ -14,7 +14,7 @@ import (
 
 // sentinel errors — handler ใช้ map เป็น HTTP status / redirect
 var (
-	ErrEmailTaken         = errors.New("email or username already exists")
+	ErrEmailTaken         = errors.New("email already exists")
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrAccountDisabled    = errors.New("account is disabled")
 	ErrWrongPassword      = errors.New("รหัสผ่านปัจจุบันไม่ถูกต้อง")

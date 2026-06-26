@@ -1,0 +1,18 @@
+# ---- secrets / env ----
+.env
+*.env
+!*.env.example
+
+# ---- backend ----
+backend/server
+backend/uploads/
+backend/tmp/
+
+# ---- frontend ----
+frontend/node_modules/
+frontend/build/
+frontend/.vercel/
+
+# ---- misc ----
+.DS_Store
+*.log

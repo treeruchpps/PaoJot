@@ -74,7 +74,7 @@ export function AuthProvider({ children }) {
   const formatAuthError = (message) => {
     const text = String(message || '').toLowerCase();
     if (text.includes('invalid email or password')) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-    if (text.includes('email or username already exists')) return 'อีเมลหรือชื่อผู้ใช้นี้ถูกใช้แล้ว';
+    if (text.includes('email already exists')) return 'อีเมลนี้ถูกใช้งานแล้ว';
     if (text.includes('required')) return 'กรุณากรอกข้อมูลให้ครบถ้วน';
     if (text.includes('email')) return 'รูปแบบอีเมลไม่ถูกต้อง';
     if (text.includes('min')) return 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร';

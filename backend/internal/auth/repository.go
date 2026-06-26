@@ -17,7 +17,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CreateUser สร้างผู้ใช้ใหม่จาก username/email/hash (อีเมล/ชื่อซ้ำ → error)
+// CreateUser สร้างผู้ใช้ใหม่จาก username/email/hash (อีเมลซ้ำ → error; username ซ้ำได้)
 func (r *Repository) CreateUser(ctx context.Context, username, email, passwordHash string) (User, error) {
 	var u User
 	err := r.db.QueryRow(ctx,

@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 )
 
@@ -9,10 +10,16 @@ type Config struct {
 	DB      DBConfig
 	JWT     JWTConfig
 	Server  ServerConfig
+	CORS    CORSConfig
 	Google  GoogleConfig
 	Typhoon TyphoonConfig
 	Gemini  GeminiConfig
 	R2      R2Config
+}
+
+// CORSConfig = รายชื่อ origin ที่อนุญาตให้เรียก API ข้ามโดเมน
+type CORSConfig struct {
+	AllowedOrigins []string
 }
 
 // R2Config = Cloudflare R2 object storage (ถ้าไม่ตั้งค่า ระบบจะ fallback เก็บไฟล์ลง local)
@@ -49,6 +56,7 @@ type DBConfig struct {
 	User     string
 	Password string
 	Name     string
+	SSLMode  string
 }
 
 type JWTConfig struct {
@@ -72,6 +80,8 @@ func Load() *Config {
 			User:     getEnv("DB_USER", "postgres"),
 			Password: getEnv("DB_PASSWORD", "postgres"),
 			Name:     getEnv("DB_NAME", "paomoney"),
+			// local Postgres ไม่มี SSL → default disable; prod (Supabase) ตั้ง DB_SSLMODE=require
+			SSLMode: getEnv("DB_SSLMODE", "disable"),
 		},
 		JWT: JWTConfig{
 			Secret:         getEnv("JWT_SECRET", "secret"),
@@ -79,7 +89,14 @@ func Load() *Config {
 			RefreshExpires: refreshExpires,
 		},
 		Server: ServerConfig{
-			Port: getEnv("SERVER_PORT", "8080"),
+			// Render กำหนด PORT ให้เอง; local ไม่ตั้งก็ fallback ไป SERVER_PORT แล้ว 8080
+			Port: getEnv("PORT", getEnv("SERVER_PORT", "8080")),
+		},
+		CORS: CORSConfig{
+			AllowedOrigins: parseAllowedOrigins(
+				getEnv("CORS_ALLOWED_ORIGINS", ""),
+				getEnv("FRONTEND_URL", "http://localhost:3000"),
+			),
 		},
 		Google: GoogleConfig{
 			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
@@ -125,4 +142,21 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+// parseAllowedOrigins: ถ้าตั้ง CORS_ALLOWED_ORIGINS (คั่นด้วย comma) ใช้ค่านั้น
+// ไม่งั้น fallback เป็น FRONTEND_URL (ซึ่ง default = http://localhost:3000)
+func parseAllowedOrigins(csv, frontendURL string) []string {
+	if strings.TrimSpace(csv) != "" {
+		var out []string
+		for _, o := range strings.Split(csv, ",") {
+			if t := strings.TrimSpace(o); t != "" {
+				out = append(out, t)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return []string{frontendURL}
 }

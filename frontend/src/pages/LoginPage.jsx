@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, ShieldUser, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSnackbar } from '../contexts/SnackbarContext';
 import { API_ORIGIN } from '../services/api';
 
 export default function LoginPage({ onSwitch, notice, onNoticeClear }) {
   const { login, submitting, error, clearError } = useAuth();
+  const { showError, showSuccess } = useSnackbar();
   const [form, setForm] = useState({ email: '', password: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -37,11 +39,20 @@ export default function LoginPage({ onSwitch, notice, onNoticeClear }) {
     await login(form.email.trim().toLowerCase(), form.password);
   };
 
+  // แสดงผล submit ผ่าน snackbar (เหมือนส่วนอื่นของแอป)
   useEffect(() => {
-    if (!notice) return undefined;
-    const timer = setTimeout(() => onNoticeClear?.(), 5000);
-    return () => clearTimeout(timer);
-  }, [notice, onNoticeClear]);
+    if (error) {
+      showError(error);
+      clearError();
+    }
+  }, [error, showError, clearError]);
+
+  useEffect(() => {
+    if (notice) {
+      showSuccess(notice);
+      onNoticeClear?.();
+    }
+  }, [notice, showSuccess, onNoticeClear]);
 
   const inputClass = (hasError, withIcon = false, withRightIcon = false) =>
     `w-full ${withIcon ? 'pl-9' : 'pl-4'} ${withRightIcon ? 'pr-10' : 'pr-4'} py-3 rounded-xl border bg-slate-50 text-slate-700 text-sm focus:outline-none focus:ring-2 transition-all ${
@@ -59,20 +70,6 @@ export default function LoginPage({ onSwitch, notice, onNoticeClear }) {
 
         <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-100">
           <h2 className="text-xl font-bold text-slate-800 mb-4">เข้าสู่ระบบ</h2>
-
-          {notice && (
-            <div className="mb-4 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2">
-              <ShieldUser size={16} color="#10b981" />
-              <p className="text-sm text-emerald-700">{notice}</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2">
-              <KeyRound size={16} color="#ef4444" />
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} noValidate className="space-y-3">
             <div>

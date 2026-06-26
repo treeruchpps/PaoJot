@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Shield, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSnackbar } from '../contexts/SnackbarContext';
 
 const WEEK_DAYS = [
   { value: 0, label: 'วันอาทิตย์' },
@@ -14,6 +15,7 @@ const WEEK_DAYS = [
 
 export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
   const { register, submitting, error, clearError } = useAuth();
+  const { showError } = useSnackbar();
   const [form, setForm] = useState({
     username: '',
     email: '',
@@ -37,6 +39,14 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
     { label: 'ดี', color: '#2C6488', width: '70%' },
     { label: 'แข็งแรง', color: '#10b981', width: '100%' },
   ][passwordStrength];
+
+  // แสดง error ตอน submit ผ่าน snackbar (field error ยังคงโชว์ใต้ช่องกรอกเหมือนเดิม)
+  useEffect(() => {
+    if (error) {
+      showError(error);
+      clearError();
+    }
+  }, [error, showError, clearError]);
 
   const validate = (values) => {
     const next = {};
@@ -92,13 +102,6 @@ export default function RegisterPage({ onSwitch, onRegisterSuccess }) {
 
         <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-100">
           <h2 className="text-xl font-bold text-slate-800 mb-4">สมัครสมาชิก</h2>
-
-          {error && (
-            <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2">
-              <Shield size={16} color="#ef4444" />
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
