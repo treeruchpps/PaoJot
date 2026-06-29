@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   MessageCircle, LayoutDashboard, Wallet, ArrowLeftRight, RefreshCw, Tag, 
   ChartPie, PiggyBank, Bell, Sun, Moon, LogOut, User, ChevronDown,
-  Menu, X
+  Menu, X, HelpCircle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { profile as profileApi } from '../../services/api';
 import NotificationPanel from './NotificationPanel';
+import HelpModal from './HelpModal';
 
 
 const accent = '#2C6488';
@@ -28,6 +29,7 @@ export default function Navbar({
   const [avatarUrl, setAvatarUrl] = useState(propAvatarUrl || '');
   const [showNotiPanel, setShowNotiPanel] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   
   // Hover states for dropdown groups
   const [activeDropdown, setActiveDropdown] = useState(null); // 'accounts_transactions' | 'budgets_goals' | null
@@ -248,8 +250,18 @@ export default function Navbar({
             {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
 
+          {/* Help / FAQ */}
+          <button
+            onClick={() => setShowHelp(true)}
+            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="ช่วยเหลือ / คำถามที่พบบ่อย"
+          >
+            <HelpCircle size={17} />
+          </button>
+          {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+
           {/* Light/Dark Toggle */}
-          <button 
+          <button
             onClick={onToggleDarkMode}
             className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             title={isDarkMode ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"}
