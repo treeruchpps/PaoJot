@@ -363,8 +363,8 @@ export default function ProfileView() {
           {/* Profile info */}
           <div className={cardCls}>
             <div className="flex items-center gap-3 p-5 border-b border-slate-100">
-              <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                <User size={17} color={accent} />
+              <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] dark:bg-slate-700/60 flex items-center justify-center flex-shrink-0">
+                <User size={17} className="text-[#2C6488] dark:text-[#4da2db]" />
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-slate-800">ข้อมูลโปรไฟล์</h2>
@@ -423,8 +423,8 @@ export default function ProfileView() {
           <div className={cardCls}>
             <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                  <Lock size={17} color={accent} />
+                <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] dark:bg-slate-700/60 flex items-center justify-center flex-shrink-0">
+                  <Lock size={17} className="text-[#2C6488] dark:text-[#4da2db]" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-slate-800">ความปลอดภัยของบัญชี</h2>
@@ -501,8 +501,8 @@ export default function ProfileView() {
           {/* System settings */}
           <div className={cardCls}>
             <div className="flex items-center gap-3 p-5 border-b border-slate-100">
-              <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                <Settings size={17} color={accent} />
+              <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] dark:bg-slate-700/60 flex items-center justify-center flex-shrink-0">
+                <Settings size={17} className="text-[#2C6488] dark:text-[#4da2db]" />
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-slate-800">ตั้งค่าระบบ</h2>
@@ -550,8 +550,8 @@ export default function ProfileView() {
           <div className={cardCls}>
             <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] flex items-center justify-center flex-shrink-0">
-                  <Sparkles size={17} color={accent} />
+                <div className="w-9 h-9 rounded-xl bg-[#EAF3F7] dark:bg-slate-700/60 flex items-center justify-center flex-shrink-0">
+                  <Sparkles size={17} className="text-[#2C6488] dark:text-[#4da2db]" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-slate-800">การใช้ข้อมูลกับ AI</h2>

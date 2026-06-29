@@ -74,7 +74,7 @@ function AssetKindDropdown({ value, onChange }) {
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className="w-full h-9 border border-slate-200 rounded-lg px-2.5 text-sm bg-slate-50 text-slate-700 flex items-center gap-2 hover:border-[#BFD8E4] transition-colors">
+        className="w-full h-9 border border-slate-200 rounded-lg px-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 flex items-center gap-2 hover:border-[#BFD8E4] transition-colors">
         <span className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: selected.color + '18' }}>
           <KindIcon icon={selected.icon} color={selected.color} size={14} />
         </span>
@@ -83,7 +83,7 @@ function AssetKindDropdown({ value, onChange }) {
       </button>
 
       {open && createPortal(
-        <div style={menuStyle} className={`bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden ${dropUp ? 'origin-bottom' : 'origin-top'}`}>
+        <div style={menuStyle} className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden ${dropUp ? 'origin-bottom' : 'origin-top'}`}>
           {ASSET_KINDS.map((kind) => (
             <button key={kind.value} type="button"
               onClick={() => { onChange(kind.value); setOpen(false); }}
@@ -226,8 +226,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
     
     return (
       <div
-        className="relative rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 card-hover hover:-translate-y-1.5 hover:shadow-md transition-all duration-300 overflow-hidden group"
-        style={{ backgroundColor: '#ffffff' }}
+        className="relative rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800 card-hover hover:-translate-y-1.5 hover:shadow-md transition-all duration-300 overflow-hidden group"
       >
         {/* Mobile: compact row */}
         <div className="flex sm:hidden items-center gap-3 relative z-10">
@@ -235,19 +234,19 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             <KindIcon icon={k.icon} color={k.color} size={18} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-slate-800 truncate">{acc.name}</p>
+            <p className="font-bold text-slate-800 dark:text-slate-100 truncate">{acc.name}</p>
             <p className="text-[11px] text-slate-400 mt-0.5 truncate">{k.label} · {acc.currency}</p>
           </div>
           <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
             <p className="text-base font-extrabold text-emerald-600 whitespace-nowrap">฿{fmt(acc.balance)}</p>
             <div className="flex gap-1">
-              <button onClick={() => onGoTransactions?.(acc.id)} className="w-6 h-6 rounded-md bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors" title="ดูรายการธุรกรรม">
+              <button onClick={() => onGoTransactions?.(acc.id)} className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-[#EAF3F7] dark:hover:bg-slate-600 flex items-center justify-center transition-colors" title="ดูรายการธุรกรรม">
                 <ReceiptText size={11} className="text-slate-500" />
               </button>
-              <button onClick={() => openEdit(acc)} className="w-6 h-6 rounded-md bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors" title="แก้ไข">
+              <button onClick={() => openEdit(acc)} className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-[#EAF3F7] dark:hover:bg-slate-600 flex items-center justify-center transition-colors" title="แก้ไข">
                 <Edit size={11} className="text-slate-500" />
               </button>
-              <button onClick={() => setDeleteTarget(acc)} className="w-6 h-6 rounded-md bg-slate-100 hover:bg-red-50 flex items-center justify-center transition-colors" title="ลบ">
+              <button onClick={() => setDeleteTarget(acc)} className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center justify-center transition-colors" title="ลบ">
                 <Trash2 size={11} className="text-slate-400 hover:text-red-500" />
               </button>
             </div>
@@ -263,23 +262,23 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
               <KindIcon icon={k.icon} color={k.color} size={20} />
             </div>
             <div>
-              <p className="font-bold text-slate-800 tracking-tight">{acc.name}</p>
+              <p className="font-bold text-slate-800 dark:text-slate-100 tracking-tight">{acc.name}</p>
               <p className="text-xs text-slate-400 mt-0.5">{k.label}</p>
             </div>
           </div>
           <div className="flex gap-1">
             <button onClick={() => onGoTransactions?.(acc.id)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
+              className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-[#EAF3F7] dark:hover:bg-slate-600 flex items-center justify-center transition-colors"
               title="ดูรายการธุรกรรม">
               <ReceiptText size={12} className="text-slate-500" />
             </button>
             <button onClick={() => openEdit(acc)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#EAF3F7] flex items-center justify-center transition-colors"
+              className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-[#EAF3F7] dark:hover:bg-slate-600 flex items-center justify-center transition-colors"
               title="แก้ไข">
               <Edit size={12} className="text-slate-500" />
             </button>
             <button onClick={() => setDeleteTarget(acc)}
-              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-50 flex items-center justify-center transition-colors"
+              className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center justify-center transition-colors"
               title="ลบ">
               <Trash2 size={12} className="text-slate-400 hover:text-red-500" />
             </button>
@@ -304,14 +303,14 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
   return (
     <div className="p-4 sm:p-6 space-y-5">
 
-      <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
-        <h2 className="text-base font-semibold text-slate-700">ภาพรวมบัญชี</h2>
+      <div className="rounded-2xl border border-[#2C6488]/10 dark:border-slate-700/50 bg-[#EAF3F7] dark:bg-slate-800/40 p-4 space-y-3">
+        <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">ภาพรวมบัญชี</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
             { label: 'ยอดเงินรวม', value: totalAssets, color: '#2C6488', bg: '#EAF3F7', prefix: '฿' },
             { label: 'บัญชีเงินทั้งหมด', value: regularAccounts.length, color: '#2C6488', bg: '#EAF3F7', suffix: ' บัญชี' },
           ].map((s, i) => (
-            <div key={i} className={`rounded-2xl p-4 bg-slate-50 border border-slate-100 ${i === 1 ? 'hidden sm:block' : ''}`}>
+            <div key={i} className={`rounded-2xl p-4 bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 ${i === 1 ? 'hidden sm:block' : ''}`}>
               <p className="text-xs text-slate-500 mb-1">{s.label}</p>
               <p className="text-2xl font-bold" style={{ color: s.color }}>
                 {s.prefix || ''}{s.prefix ? fmt(s.value) : s.value}{s.suffix || ''}
@@ -323,7 +322,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
 
       {/* Header + action buttons */}
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-700">บัญชีทั้งหมด</h2>
+        <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">บัญชีทั้งหมด</h2>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={openPoolAdd}
             className="text-xs px-3 py-2 rounded-xl font-medium flex items-center gap-1.5 border border-[#2C6488] bg-[#2C6488] text-white transition-colors hover:bg-[#25536F] hover:border-[#25536F]">
@@ -345,17 +344,17 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
               </p>
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => setAccPage((p) => Math.max(1, p - 1))} disabled={accSafePage === 1}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700">
                   ก่อนหน้า
                 </button>
                 {accPageNums.map((p, i) => (
                   <button key={`${p}-${i}`} type="button" onClick={() => setAccPage(p)}
-                    className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${accSafePage === p ? 'bg-[#2C6488] border-[#2C6488] text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-[#EAF3F7]'}`}>
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${accSafePage === p ? 'bg-[#2C6488] border-[#2C6488] text-white' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-[#EAF3F7] dark:hover:bg-slate-700'}`}>
                     {p}
                   </button>
                 ))}
                 <button type="button" onClick={() => setAccPage((p) => Math.min(accTotalPages, p + 1))} disabled={accSafePage === accTotalPages}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700">
                   ถัดไป
                 </button>
               </div>
@@ -366,7 +365,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
 
 
       {regularAccounts.length === 0 && (
-        <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
+        <div className="py-20 flex flex-col items-center gap-3 text-center text-slate-400 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
           <Briefcase size={40} color="#cbd5e1" />
           <div>
             <p className="text-sm font-semibold text-slate-600">ยังไม่มีบัญชีเงิน</p>
@@ -400,7 +399,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
               <label className="text-xs font-medium text-slate-500 mb-1 block">ชื่อบัญชี</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder=""
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
             </div>
 
             {/* Balance */}
@@ -419,7 +418,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
                 </label>
                 <input type="number" min="0" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })}
                   placeholder="0.00"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2C6488]/20 focus:border-[#2C6488] transition-all duration-200" />
               </div>
             )}
 
@@ -449,11 +448,11 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
             </div>
             {poolNamedRows > 0 && (
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl p-3 border border-slate-100 bg-white">
+                <div className="rounded-2xl p-3 border border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800">
                   <p className="text-[11px] text-slate-400">บัญชีที่จะสร้าง</p>
                   <p className="text-lg font-bold text-[#2C6488]">{poolNamedRows} บัญชี</p>
                 </div>
-                <div className="rounded-2xl p-3 border border-slate-100 bg-white">
+                <div className="rounded-2xl p-3 border border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800">
                   <p className="text-[11px] text-slate-400">ยอดเริ่มต้นรวม</p>
                   <p className="text-lg font-bold text-slate-700">฿{fmt(poolAllocated)}</p>
                 </div>
@@ -472,7 +471,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
                 {poolAddRows.map((row, idx) => {
                   const k = getKind(row.kind);
                   return (
-                    <div key={row.id} className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm">
+                    <div key={row.id} className="bg-white dark:bg-slate-800 rounded-2xl p-3 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: k.color + '18' }}>
@@ -499,7 +498,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
                           <label className="text-[10px] font-medium text-slate-400 mb-0.5 block">ชื่อบัญชี</label>
                           <input value={row.name} onChange={(e) => setPoolRowField(row.id, 'name', e.target.value)}
                             placeholder={`เช่น ${k.label}`}
-                            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-slate-50 text-slate-700" />
+                            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200" />
                         </div>
                         <div className="col-span-12 sm:col-span-4">
                           <label className="text-[10px] font-medium text-slate-400 mb-0.5 block">ยอดเงิน (฿)</label>
@@ -507,7 +506,7 @@ export default function AccountsView({ accounts, onRefresh, onGoTransactions }) 
                             <input type="number" min="0" value={row.balance}
                               onChange={(e) => setPoolRowField(row.id, 'balance', e.target.value)}
                               placeholder="0"
-                              className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-right bg-slate-50 text-slate-700 font-medium" />
+                              className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-right bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 font-medium" />
                           </div>
                         </div>
                       </div>

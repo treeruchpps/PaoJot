@@ -53,7 +53,7 @@ function CatSelect({ value, onChange, categories, placeholder = 'เลือก
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors">
+        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-700/50 text-sm text-slate-700 dark:text-slate-200 hover:border-[#BFD8E4] transition-colors">
         {selected ? (
           <>
             <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -69,7 +69,7 @@ function CatSelect({ value, onChange, categories, placeholder = 'เลือก
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
       </button>
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
           {categories.map((c) => {
             const cStyle = getCategoryStyle(c);
             return (
@@ -110,7 +110,7 @@ function AccSelect({ value, onChange, accounts }) {
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors">
+        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-700/50 text-sm text-slate-700 dark:text-slate-200 hover:border-[#BFD8E4] transition-colors">
         {selected ? (
           <>
             <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -129,7 +129,7 @@ function AccSelect({ value, onChange, accounts }) {
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
       </button>
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
           {accounts.map((a) => (
             <button key={a.id} type="button" onClick={() => { onChange(a.id); setOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors"
@@ -172,13 +172,13 @@ function FilterSelect({ value, onChange, options, widthClass = 'sm:w-auto' }) {
   return (
     <div className={`relative w-full ${widthClass}`} ref={ref}>
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className={`flex items-center justify-between gap-2 w-full ${widthClass} px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors`}>
+        className={`flex items-center justify-between gap-2 w-full ${widthClass} px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 hover:border-[#BFD8E4] transition-colors`}>
         <span className="flex-1 text-left truncate">{selected?.label ?? value}</span>
         <ChevronDown size={13} color="#94a3b8"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
       </button>
       {open && (
-        <div className="absolute z-50 left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-full">
+        <div className="absolute z-50 left-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden min-w-full">
           {options.map((o) => (
             <button key={o.value} type="button"
               onClick={() => { onChange(o.value); setOpen(false); }}
@@ -222,9 +222,9 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
   return (
     <div className="space-y-4">
       {/* Calendar grid */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700/60 overflow-hidden">
         {/* Day-of-week header */}
-        <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-100">
+        <div className="grid grid-cols-7 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700/60">
           {DAY_TH.map((d, i) => (
             <div key={i} className={`py-2.5 text-center text-xs font-semibold
               ${i === 0 ? 'text-red-400' : i === 6 ? 'text-[#6F9DB6]' : 'text-slate-500'}`}>
@@ -299,8 +299,8 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
 
       {/* Selected day detail */}
       {selectedDate && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700/60 overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-700">
               รายการวันที่ {formatDisplayDate(selectedDate)}
             </p>
@@ -316,8 +316,8 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
                   const acc   = getAcc(tx.account_id);
                   const toAcc = getAcc(tx.to_account_id);
                   return (
-                    <tr key={tx.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 text-xs text-slate-700 font-medium">{tx.name || '—'}</td>
+                    <tr key={tx.id} className="border-b border-slate-50 dark:border-slate-700/40 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                      <td className="px-4 py-3 text-xs text-slate-700 dark:text-slate-300 font-medium">{tx.name || '—'}</td>
                       <td className="px-4 py-3">
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
                           style={{ color: TYPE_COLOR[tx.type], background: TYPE_BG[tx.type] }}>
@@ -331,7 +331,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
                               style={{ background: getCategoryStyle(cat).color + '22' }}>
                               <Icon name={getCategoryStyle(cat).icon} size={11} color={getCategoryStyle(cat).color} />
                             </div>
-                            <span className="text-xs text-slate-700">{cat.name}</span>
+                            <span className="text-xs text-slate-700 dark:text-slate-300">{cat.name}</span>
                           </div>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
@@ -349,7 +349,7 @@ function CalendarView({ txList, filterMonth, getAcc, getCat, onRemove }) {
                       </td>
                       <td className="px-4 py-2">
                         <button onClick={() => onRemove(tx.id)}
-                          className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
+                          className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-red-100 dark:hover:bg-red-950/40 flex items-center justify-center transition-colors">
                           <Trash2 size={11} color="#94a3b8" />
                         </button>
                       </td>
@@ -429,6 +429,19 @@ function TxSwipeRow({ tx, cat, acc, toAcc, onEdit, onDelete }) {
         <span className="text-sm font-bold whitespace-nowrap flex-shrink-0" style={{ color: TYPE_COLOR[tx.type] }}>
           {sign}฿{fmt(tx.amount)}
         </span>
+        {/* ปุ่มแก้ไข/ลบ เห็นชัดในแถว (ไม่ต้องปัด) — stopPropagation กันไปชนกับการแตะแถวเพื่อแก้ไข */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button type="button" disabled={isAdj}
+            onClick={(e) => { e.stopPropagation(); if (!isAdj) onEdit(tx); }}
+            className={`w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center transition-colors ${isAdj ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#DCE8EE]'}`}>
+            <Edit size={13} color="#94a3b8" />
+          </button>
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); onDelete(tx); }}
+            className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-red-100 flex items-center justify-center transition-colors">
+            <Trash2 size={13} color="#94a3b8" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -809,14 +822,14 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
   return (
     <div className="p-4 sm:p-6 space-y-5">
 
-      <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-3">
-        <h2 className="text-base font-semibold text-slate-700">ภาพรวมรายการธุรกรรม</h2>
+      <div className="rounded-2xl border border-[#2C6488]/10 dark:border-slate-700/50 bg-[#EAF3F7] dark:bg-slate-800/40 p-4 space-y-3">
+        <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">ภาพรวมรายการธุรกรรม</h2>
         <div className="grid grid-cols-2 gap-4">
           {[
             { label: 'รายได้',  value: totalIncome,  color: '#10b981', bg: '#f0fdf4' },
             { label: 'รายจ่าย', value: totalExpense, color: '#ef4444', bg: '#fff1f2' },
           ].map((s, i) => (
-            <div key={i} className="rounded-2xl p-4 bg-slate-50 border border-slate-100">
+            <div key={i} className="rounded-2xl p-4 bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60">
               <p className="text-xs text-slate-500 mb-1">{s.label}</p>
               <p className="text-xl font-bold" style={{ color: s.color }}>
                 ฿{fmt(s.value)}
@@ -828,17 +841,17 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
       {/* ── Toolbar ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-base font-semibold text-slate-700">ประวัติรายการ</h2>
+        <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">ประวัติรายการ</h2>
         <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
-          <div className="flex bg-slate-100 rounded-xl p-1 gap-0.5">
+          <div className="flex bg-slate-100 dark:bg-slate-700/50 rounded-xl p-1 gap-0.5">
             {[
               { mode: 'list',     Icon: List,     title: 'รายการ' },
               { mode: 'calendar', Icon: Calendar, title: 'ปฏิทิน' },
             ].map(({ mode, Icon: IconComponent, title }) => (
               <button key={mode} onClick={() => setViewMode(mode)} title={title}
                 className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                  viewMode === mode ? 'bg-white shadow-sm text-[#2C6488]' : 'text-slate-400 hover:text-slate-600'
+                  viewMode === mode ? 'bg-white dark:bg-slate-600 shadow-sm text-[#2C6488] dark:text-[#4da2db]' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                 }`}>
                 <IconComponent size={15} color={viewMode === mode ? '#2C6488' : '#94a3b8'} />
               </button>
@@ -859,7 +872,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               <ChevronDown size={13} color="#ffffff" className={`transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} />
             </button>
             {addMenuOpen && hasAccounts && (
-              <div className="absolute right-0 top-full z-30 mt-2 w-44 rounded-2xl border border-slate-100 bg-white p-1.5 shadow-lg">
+              <div className="absolute right-0 top-full z-30 mt-2 w-44 rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-1.5 shadow-lg">
                 {['expense', 'income', 'transfer'].map((t) => (
                   <button
                     key={t}
@@ -879,7 +892,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
 
           {/* Export CSV */}
           <button onClick={exportCSV} disabled={exporting}
-            className="text-xs px-3 py-2 rounded-xl font-medium hidden lg:flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-wait">
+            className="text-xs px-3 py-2 rounded-xl font-medium hidden lg:flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-wait">
             {exporting ? <Loader2 size={13} color="#64748b" className="animate-spin" /> : <Download size={13} color="#64748b" />}
             {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
@@ -922,7 +935,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         {filterMonth === 'month' && (
           <input type="month" value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white text-slate-700" />
+            className="w-full sm:w-auto border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200" />
         )}
         <FilterSelect
           value={filterType}
@@ -947,7 +960,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         />
 
         {/* Search box */}
-        <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-white col-span-2 sm:flex-1 sm:min-w-48">
+        <div className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 col-span-2 sm:flex-1 sm:min-w-48">
           <Search size={14} color="#94a3b8" />
           <input
             value={search}
@@ -982,15 +995,15 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         />
       ) : (
         /* ── List view ────────────────────────────────────────────────────── */
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700/60 overflow-hidden">
           {displayList.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-sm">
               {search ? `ไม่พบรายการที่ตรงกับ "${search}"` : 'ไม่พบรายการ'}
             </div>
           ) : (
             <>
-              {/* Phone: grouped card list with swipe actions (sm+ uses table below) */}
-              <div className="sm:hidden">
+              {/* มือถือ + แท็บเล็ต: การ์ด (มีปุ่มแก้ไข/ลบในแถว + ปัดได้); จอใหญ่ (lg+) ใช้ตารางด้านล่าง */}
+              <div className="lg:hidden">
                 {paginatedList.map((tx, idx) => {
                   const showDate = idx === 0 || paginatedList[idx - 1].transaction_date !== tx.transaction_date;
                   return (
@@ -1006,9 +1019,9 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 })}
               </div>
 
-              <div className="hidden sm:block overflow-x-auto"><table className="w-full text-sm min-w-[720px]">
+              <div className="hidden lg:block overflow-x-auto"><table className="w-full text-sm min-w-[720px]">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50">
+                  <tr className="border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/60">
                     {[
                       { label: 'วันที่',      align: 'left',   sortKey: 'date' },
                       { label: 'ชื่อรายการ', align: 'left',   sortKey: 'name' },
@@ -1031,11 +1044,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                   const acc   = getAcc(tx.account_id);
                   const toAcc = getAcc(tx.to_account_id);
                   return (
-                    <tr key={tx.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                    <tr key={tx.id} className="border-b border-slate-50 dark:border-slate-700/40 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                       <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
                         {formatDisplayDate(tx.transaction_date, '')}
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-700 font-medium">
+                      <td className="px-4 py-3 text-xs text-slate-700 dark:text-slate-300 font-medium">
                         <div className="flex items-center gap-1.5">
                           <span>{tx.name || '—'}</span>
                           {tx.is_recurring && (
@@ -1059,7 +1072,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                               style={{ background: getCategoryStyle(cat).color + '22' }}>
                               <Icon name={getCategoryStyle(cat).icon} size={11} color={getCategoryStyle(cat).color} />
                             </div>
-                            <span className="text-xs text-slate-700">{cat.name}</span>
+                            <span className="text-xs text-slate-700 dark:text-slate-300">{cat.name}</span>
                           </div>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
@@ -1078,11 +1091,11 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       <td className="px-4 py-2">
                         <div className="flex gap-1">
                           <button onClick={() => openEdit(tx)} disabled={tx.type === 'adjustment'} title={tx.type === 'adjustment' ? 'รายการปรับยอดแก้ไขไม่ได้ หากผิดให้ลบบัญชีแล้วสร้างใหม่' : ''}
-                            className={`w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center transition-colors ${tx.type === 'adjustment' ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#DCE8EE]'}`}>
+                            className={`w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center transition-colors ${tx.type === 'adjustment' ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#DCE8EE] dark:hover:bg-slate-600'}`}>
                             <Edit size={11} color="#94a3b8" />
                           </button>
                           <button onClick={() => setDeleteTarget(tx)}
-                            className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-red-100 flex items-center justify-center transition-colors">
+                            className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-red-100 dark:hover:bg-red-950/40 flex items-center justify-center transition-colors">
                             <Trash2 size={11} color="#94a3b8" />
                           </button>
                         </div>
@@ -1093,7 +1106,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 </tbody>
               </table></div>
               {totalRows > TX_PAGE_SIZE && (
-                <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50">
+                <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/60">
                   <p className="text-xs text-slate-500">
                     แสดง {pageStart + 1}-{Math.min(pageStart + displayList.length, totalRows)} จาก {totalRows} รายการ
                   </p>
@@ -1102,7 +1115,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       type="button"
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                       disabled={safePage === 1}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700">
                       ก่อนหน้า
                     </button>
                     {pageNumbers.map((page, i) => (
@@ -1113,7 +1126,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                         className={`w-8 h-8 rounded-lg text-xs font-semibold border transition-colors ${
                           safePage === page
                             ? 'bg-[#2C6488] border-[#2C6488] text-white'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-[#EAF3F7]'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-[#EAF3F7] dark:hover:bg-slate-700'
                         }`}>
                         {page}
                       </button>
@@ -1122,7 +1135,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                       type="button"
                       onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                       disabled={safePage === totalPages}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700">
                       ถัดไป
                     </button>
                   </div>
@@ -1144,7 +1157,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
             {editId && (txType === 'income' || txType === 'expense') && (
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">ประเภท</label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-700/50 rounded-xl">
                   {[
                     { value: 'income', label: 'รายรับ', color: '#10b981' },
                     { value: 'expense', label: 'รายจ่าย', color: '#ef4444' },
@@ -1170,7 +1183,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               <label className="text-xs font-medium text-slate-500 mb-1 block">วันที่</label>
               <input type="date" value={form.transaction_date}
                 onChange={(e) => setForm({ ...form, transaction_date: e.target.value })}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200" />
             </div>
 
             {/* 2. ชื่อรายการ */}
@@ -1180,7 +1193,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="เช่น ค่าข้าวกลางวัน, เติมน้ำมัน"
                 maxLength={100}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200" />
             </div>
 
             {/* 3. จำนวนเงิน */}
@@ -1188,7 +1201,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               <label className="text-xs font-medium text-slate-500 mb-1 block">จำนวนเงิน (฿)</label>
               <input type="number" value={form.amount} placeholder="0.00" min="0"
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 text-lg font-bold" />
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 text-lg font-bold" />
             </div>
 
             {/* 4. หมวดหมู่ — แสดงทุก type (รวม transfer ถ้ามี) */}
@@ -1241,7 +1254,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
               <input value={form.note}
                 onChange={(e) => setForm({ ...form, note: e.target.value })}
                 placeholder="บันทึกข้อมูลเพิ่มเติม..."
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200" />
             </div>
 
             <div className="flex gap-3 pt-2">
@@ -1281,7 +1294,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
                 onChange={(e) => setAdjustBalance(e.target.value)}
                 placeholder="0.00"
                 min="0"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-lg font-bold bg-slate-50 text-slate-700"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-lg font-bold bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200"
               />
             </div>
 

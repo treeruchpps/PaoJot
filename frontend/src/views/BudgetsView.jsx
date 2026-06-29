@@ -227,7 +227,7 @@ export default function BudgetsView({ categories }) {
   return (
     <div className="p-4 sm:p-6 space-y-5">
       {!loading && visibleBudgets.length > 0 && (
-        <div className="rounded-2xl border border-[#2C6488]/10 bg-[#EAF3F7] p-4 space-y-4">
+        <div className="rounded-2xl border border-[#2C6488]/10 dark:border-slate-700/50 bg-[#EAF3F7] dark:bg-slate-800/40 p-4 space-y-4">
           <h2 className="text-base font-semibold text-slate-700">ภาพรวมงบประมาณ</h2>
           <div className="hidden sm:grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[

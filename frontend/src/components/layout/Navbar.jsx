@@ -250,6 +250,15 @@ export default function Navbar({
             {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
 
+          {/* Light/Dark Toggle */}
+          <button
+            onClick={onToggleDarkMode}
+            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title={isDarkMode ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"}
+          >
+            {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+
           {/* Help / FAQ */}
           <button
             onClick={() => setShowHelp(true)}
@@ -259,15 +268,6 @@ export default function Navbar({
             <HelpCircle size={17} />
           </button>
           {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
-
-          {/* Light/Dark Toggle */}
-          <button
-            onClick={onToggleDarkMode}
-            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title={isDarkMode ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"}
-          >
-            {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
 
           {/* Notifications Panel */}
           <div className="relative">

@@ -437,12 +437,12 @@ function DashSelect({ value, onChange, options, className = '', align = 'right' 
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />
       </button>
       {open && (
-        <div className={`absolute z-50 mt-1 min-w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto ${align === 'right' ? 'right-0' : 'left-0'}`}>
+        <div className={`absolute z-50 mt-1 min-w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto ${align === 'right' ? 'right-0' : 'left-0'}`}>
           {options.map((o) => (
             <button key={o.value} type="button"
               onClick={() => { onChange(o.value); setOpen(false); }}
               className={`w-full text-left px-3 py-2 text-sm whitespace-nowrap transition-colors ${
-                String(o.value) === String(value) ? 'bg-[#EAF3F7] text-[#2C6488] font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                String(o.value) === String(value) ? 'bg-[#EAF3F7] dark:bg-slate-700 text-[#2C6488] dark:text-[#4da2db] font-semibold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60'
               }`}>
               {o.label}
             </button>
@@ -697,12 +697,12 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       </div>
 
         {showAiSummaryCard && (
-          <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100 flex flex-col max-h-[440px]">
+          <div className="rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-sm border border-slate-100 dark:border-slate-700/60 flex flex-col max-h-[440px]">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Sparkles size={16} className="text-[#2C6488] flex-shrink-0" />
-                  <h3 className="text-sm font-semibold text-slate-700">AI สรุปการเงิน</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">AI สรุปการเงิน</h3>
                   {isFallback && (
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-200 animate-pulse">
                       รอบก่อนหน้า
@@ -716,7 +716,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                 )}
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
+                <div className="flex rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-100 dark:border-slate-700/50 p-1">
                   {[
                     ['weekly', 'สัปดาห์'],
                     ['monthly', 'เดือน'],
@@ -734,7 +734,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                 <button
                   type="button"
                   onClick={() => setShowAiSummaryModal(true)}
-                  className="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 inline-flex items-center justify-center hover:bg-slate-100"
+                  className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-700/60 text-slate-500 dark:text-slate-300 inline-flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700"
                   title="ขยายเต็มจอ"
                 >
                   <Maximize2 size={15} />
@@ -745,7 +745,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="rounded-xl bg-[#EAF3F7] border border-[#DCE8EE] px-3 py-3 mb-3">
                 <p className="text-xs font-semibold text-[#2C6488] mb-1">{aiSummary.title || 'สรุปการเงิน'}</p>
-                <p className="text-sm text-slate-700 leading-relaxed">{aiSummary.overview}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{aiSummary.overview}</p>
               </div>
 
               <div className="space-y-4">
@@ -804,7 +804,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                 <p className="mt-3 text-xs text-red-500">{aiError}</p>
               )}
 
-              <p className="mt-5 text-[10px] text-slate-400 italic text-center border-t border-slate-100 pt-3">
+              <p className="mt-5 text-[10px] text-slate-400 italic text-center border-t border-slate-100 dark:border-slate-700/60 pt-3">
                 *คำแนะนำนี้เป็นคำแนะนำเบื้องต้นจาก AI*
               </p>
             </div>
@@ -917,10 +917,10 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
         <>
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             {/* Donut */}
-            <div className="col-span-1 lg:col-span-2 order-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+            <div className="col-span-1 lg:col-span-2 order-2 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700/60">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700 mb-1">รายจ่ายตามหมวด</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">รายจ่ายตามหมวด</h3>
                   <p className="text-xs text-slate-400">
                     {donutPeriodLabel}
                     {' · '}฿{fmt(donutExpense)}
@@ -950,7 +950,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                             style={{ background: d.color || FALLBACK_CATEGORY_COLOR }} />
                           <span className="text-xs text-slate-600 truncate">{d.label}</span>
                         </div>
-                        <span className="text-xs font-medium text-slate-700 flex-shrink-0">฿{fmt(d.value)}</span>
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-shrink-0">฿{fmt(d.value)}</span>
                       </div>
                     ))}
                   </div>
@@ -959,24 +959,24 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             </div>
 
             {/* Bar & Line Chart Container */}
-            <div className="col-span-1 lg:col-span-3 order-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-between">
+            <div className="col-span-1 lg:col-span-3 order-1 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700/60 flex flex-col justify-between">
               <div>
                 <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-700">แนวโน้มการเงิน</h3>
+                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">แนวโน้มการเงิน</h3>
                     <p className="text-xs text-slate-400 mt-1">
                       {chartTab === 'compare'
                         ? `เปรียบเทียบรายเดือน ปี ${selectedYear}`
                         : `รายรับ รายจ่าย และการออมรายเดือน ปี ${selectedYear}`}
                     </p>
                   </div>
-                  <div className="flex rounded-xl bg-slate-50 border border-slate-100 p-1">
+                  <div className="flex rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-100 dark:border-slate-700/50 p-1">
                     <button
                       type="button"
                       onClick={() => setChartTab('trend')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         chartTab === 'trend'
-                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          ? 'bg-white dark:bg-slate-700 text-[#2C6488] dark:text-[#4da2db] shadow-sm'
                           : 'text-slate-500 hover:text-[#2C6488]'
                       }`}
                     >
@@ -987,7 +987,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                       onClick={() => setChartTab('compare')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         chartTab === 'compare'
-                          ? 'bg-white text-[#2C6488] shadow-sm'
+                          ? 'bg-white dark:bg-slate-700 text-[#2C6488] dark:text-[#4da2db] shadow-sm'
                           : 'text-slate-500 hover:text-[#2C6488]'
                       }`}
                     >
@@ -1052,13 +1052,13 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* Budget card */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
+        <div className="rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-sm border border-slate-100 dark:border-slate-700/60">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center">
-                <Wallet size={16} className="text-[#2C6488]" />
+              <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] dark:bg-slate-700/60 flex items-center justify-center">
+                <Wallet size={16} className="text-[#2C6488] dark:text-[#4da2db]" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-700">งบประมาณที่กำลังใช้</h3>
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">งบประมาณที่กำลังใช้</h3>
             </div>
             <button
               onClick={onGoBudgets}
@@ -1099,13 +1099,13 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                       <div className="flex items-center justify-between mb-1.5 gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cat.color }} />
-                          <span className="text-xs font-medium text-slate-600 truncate">{cat.name}</span>
+                          <span className="text-xs font-medium text-slate-600 dark:text-slate-300 truncate">{cat.name}</span>
                         </div>
                         <span className="text-xs font-semibold flex-shrink-0" style={{ color }}>
                           ฿{fmt(b.spent)} / {fmt(b.limit)}
                         </span>
                       </div>
-                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{ width: `${Math.min(100, b.pct)}%`, background: color }}
@@ -1118,9 +1118,9 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                   );
                 })}
               </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
                 <span className="text-slate-400">ใช้ไปรวม</span>
-                <span className="font-semibold text-slate-600">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">
                   ฿{fmt(budgetTotalSpent)} / {fmt(budgetTotalLimit)}
                   <span className="text-slate-400 font-normal"> ({budgetTotalPct}%)</span>
                 </span>
@@ -1130,13 +1130,13 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
         </div>
 
         {/* Savings goals card */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
+        <div className="rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-sm border border-slate-100 dark:border-slate-700/60">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] flex items-center justify-center">
-                <Target size={16} className="text-[#2C6488]" />
+              <div className="w-8 h-8 rounded-xl bg-[#EAF3F7] dark:bg-slate-700/60 flex items-center justify-center">
+                <Target size={16} className="text-[#2C6488] dark:text-[#4da2db]" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-700">เป้าหมายการออม</h3>
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">เป้าหมายการออม</h3>
             </div>
             <button
               onClick={onGoGoals}
@@ -1170,10 +1170,10 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               {topGoals.map((g) => (
                 <div key={g.id}>
                   <div className="flex items-center justify-between mb-1.5 gap-2">
-                    <span className="text-xs font-medium text-slate-600 truncate">{g.name}</span>
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300 truncate">{g.name}</span>
                     <span className="text-xs font-semibold flex-shrink-0" style={{ color: SAVING_COLOR }}>{Math.round(g.pct)}%</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{ width: `${g.pct}%`, background: SAVING_COLOR }}
@@ -1194,13 +1194,13 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       {/* AI Summary Full Screen Modal */}
       {showAiSummaryModal && hasAiSummary && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-2xl w-full max-h-[85vh] flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700/60 max-w-2xl w-full max-h-[85vh] flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-slate-100 pb-4 mb-4 flex-shrink-0">
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Sparkles size={18} className="text-[#2C6488]" />
-                  <h2 className="text-base font-bold text-slate-800">สรุปการเงินอัจฉริยะ</h2>
+                  <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">สรุปการเงินอัจฉริยะ</h2>
                   {isFallback && (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200">
                       รอบก่อนหน้า
@@ -1216,7 +1216,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               <button
                 type="button"
                 onClick={() => setShowAiSummaryModal(false)}
-                className="w-9 h-9 rounded-xl bg-slate-50 text-slate-500 inline-flex items-center justify-center hover:bg-slate-100"
+                className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-700/60 text-slate-500 dark:text-slate-300 inline-flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 <X size={18} />
               </button>
@@ -1226,12 +1226,12 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             <div className="flex-1 overflow-y-auto pr-1 space-y-5">
               <div className="rounded-2xl bg-[#EAF3F7] border border-[#DCE8EE] p-4">
                 <h4 className="text-sm font-bold text-[#2C6488] mb-1.5">{aiSummary.title || 'สรุปการเงิน'}</h4>
-                <p className="text-sm text-slate-700 leading-relaxed">{aiSummary.overview}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{aiSummary.overview}</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {aiSummary.highlights?.length > 0 && (
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                  <div className="bg-slate-50 dark:bg-slate-700/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/50">
                     <h4 className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#2C6488]" />
                       ประเด็นสำคัญ
@@ -1262,7 +1262,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
               </div>
 
               {aiSummary.suggestions?.length > 0 && (
-                <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
                   <h4 className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                     คำแนะนำเพื่อการวางแผนการเงิน
@@ -1282,7 +1282,7 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-between flex-shrink-0">
+            <div className="border-t border-slate-100 dark:border-slate-700/60 pt-3 mt-4 flex items-center justify-between flex-shrink-0">
               <p className="text-[10px] text-slate-400 italic">
                 *คำแนะนำนี้เป็นคำแนะนำเบื้องต้นจาก AI*
               </p>
