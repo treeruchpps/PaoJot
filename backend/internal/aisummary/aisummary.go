@@ -746,14 +746,15 @@ func summaryEligibility(input *aiSummaryInput) (bool, string) {
 	if input.ExpenseCount == 0 {
 		return false, "ยังไม่มีรายจ่ายในช่วงนี้"
 	}
+	// เกณฑ์เดียวกันทั้งรายสัปดาห์/รายเดือน: ต้องมีรายการรายรับ/รายจ่ายอย่างน้อย 10 รายการ
 	if input.PeriodType == "weekly" {
-		if input.TransactionCount <= 10 {
-			return false, "ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในสัปดาห์นี้ก่อน จึงจะสรุปด้วย AI ได้"
+		if input.TransactionCount < 10 {
+			return false, "ต้องมีรายการรายรับ/รายจ่ายอย่างน้อย 10 รายการในสัปดาห์นี้ก่อน จึงจะสรุปด้วย AI ได้"
 		}
 		return true, ""
 	}
-	if input.TransactionCount <= 10 {
-		return false, "ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้"
+	if input.TransactionCount < 10 {
+		return false, "ต้องมีรายการรายรับ/รายจ่ายอย่างน้อย 10 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้"
 	}
 	return true, ""
 }

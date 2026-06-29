@@ -121,6 +121,9 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [], re
   const isOver = projectedSpent > limit;
   const overAmount = projectedSpent - limit;
 
+  // สีหลอดตามระดับการใช้ (หลังรวมรายการนี้): เขียว < 80% · ส้ม ≥ 80% · แดงเมื่อเกินงบ
+  const barColor = isOver ? '#ef4444' : pctAfter >= 80 ? '#f59e0b' : '#10b981';
+
   return (
     <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200/60 dark:bg-slate-850 dark:border-slate-700/50 space-y-3">
       <div className="flex justify-between items-center gap-3 text-xs">
@@ -134,13 +137,15 @@ function BudgetImpactBar({ categoryId, amount, budgets = [], categories = [], re
       </div>
 
       <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden flex">
-        <div 
-          className="h-full bg-[#2C6488] transition-all duration-300"
-          style={{ width: spentWidth }}
+        {/* ส่วนที่ใช้ไปแล้ว (สีตามระดับการใช้) */}
+        <div
+          className="h-full transition-all duration-300"
+          style={{ width: spentWidth, backgroundColor: barColor }}
         />
-        <div 
-          className="h-full bg-amber-400 animate-pulse transition-all duration-300"
-          style={{ width: additionWidth }}
+        {/* ส่วนที่กำลังจะเพิ่มจากรายการนี้ (สีเดียวกันแต่จางลง + กระพริบ) */}
+        <div
+          className="h-full animate-pulse transition-all duration-300"
+          style={{ width: additionWidth, backgroundColor: barColor, opacity: 0.55 }}
         />
       </div>
 
@@ -250,8 +255,8 @@ function ScanAccSelect({ value, onChange, accounts }) {
               style={{ background: km(selected.kind).color + '25' }}>
               <Icon name={km(selected.kind).icon} size={11} color={km(selected.kind).color} />
             </div>
+            {/* ตอนปิด dropdown แสดงแค่ชื่อบัญชี ไม่โชว์ยอดเงิน (ยอดยังแสดงในรายการตอนเปิด) */}
             <span className="flex-1 text-left font-medium truncate">{selected.name}</span>
-            <span className="text-[10px] font-semibold flex-shrink-0 text-slate-500">฿{fmt(selected.balance)}</span>
           </>
         ) : (
           <span className="flex-1 text-left text-slate-400">เลือกบัญชี</span>
@@ -408,8 +413,8 @@ export default function AssistantView({ accounts = [], categories = [], notifica
   // ปุ่มสรุป AI: เปิดใช้ได้ต่อเมื่อข้อมูลรอบปัจจุบันถึงเกณฑ์ (ค่า null = ยังไม่รู้ผล → ไม่ล็อกไว้ก่อน)
   const weeklyEligible = aiEligibility.weekly?.eligible !== false;
   const monthlyEligible = aiEligibility.monthly?.eligible !== false;
-  const weeklyHint = aiEligibility.weekly?.reason || 'ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในสัปดาห์นี้ก่อน จึงจะสรุปด้วย AI ได้';
-  const monthlyHint = aiEligibility.monthly?.reason || 'ต้องมีรายการรายรับ/รายจ่ายมากกว่า 10 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้';
+  const weeklyHint = aiEligibility.weekly?.reason || 'ต้องมีรายการรายรับ/รายจ่ายอย่างน้อย 10 รายการในสัปดาห์นี้ก่อน จึงจะสรุปด้วย AI ได้';
+  const monthlyHint = aiEligibility.monthly?.reason || 'ต้องมีรายการรายรับ/รายจ่ายอย่างน้อย 10 รายการในเดือนนี้ก่อน จึงจะสรุปด้วย AI ได้';
 
   // Sync back chat log changes to database
   const saveChatLog = useCallback(async (msgs) => {
@@ -1555,14 +1560,27 @@ export default function AssistantView({ accounts = [], categories = [], notifica
     const previewGoal = goals.find((g) => g.id === previewGoalId);
     const previewCategory = categories.find((c) => c.id === nextCategoryId);
 
-    addMessage({
-      role: 'preview',
-      result,
-      account: previewAccount,
-      toAccount: previewToAccount,
-      goal: previewGoal,
-      category: previewCategory,
-      mode,
+    setMessages((prev) => {
+      // ปิดการ์ด choice ที่ค้าง + ลบ preview เก่าที่ยังไม่ได้บันทึก
+      // ให้เหลือ preview ที่ยังแก้ได้แค่ใบเดียว (กันการ์ดซ้ำตอนกดเปลี่ยนหมวด/บัญชี)
+      const cleaned = closeChoiceMessages(prev).filter(
+        (m) => !(m.role === 'preview' && !m.readonly)
+      );
+      const next = [
+        ...cleaned,
+        {
+          id: messageId(),
+          role: 'preview',
+          result,
+          account: previewAccount,
+          toAccount: previewToAccount,
+          goal: previewGoal,
+          category: previewCategory,
+          mode,
+        },
+      ];
+      saveChatLog(next);
+      return next;
     });
   };
 
@@ -1978,12 +1996,15 @@ export default function AssistantView({ accounts = [], categories = [], notifica
       const newItemState = { ...scanItemState, [key]: 'saved' };
       setScanItemState(newItemState);
       const totalItems = getReceiptReviewFinalItems(review).length;
-      const allResolved = totalItems > 0 && Array.from({ length: totalItems }, (_, i) => {
-        const st = newItemState[`${resultId}-${i}`];
-        return st === 'saved' || st === 'skipped';
-      }).every(Boolean);
+      const statuses = Array.from({ length: totalItems }, (_, i) => newItemState[`${resultId}-${i}`]);
+      const allResolved = totalItems > 0 && statuses.every((st) => st === 'saved' || st === 'skipped');
       if (allResolved) {
-        await scanJobsApi.skip(jobId, resultId);
+        // ถ้ามีรายการที่บันทึกจริงอย่างน้อยหนึ่ง → mark "saved", ถ้าข้ามหมดทุกอัน → "skipped"
+        if (statuses.some((st) => st === 'saved')) {
+          await scanJobsApi.save(jobId, resultId);
+        } else {
+          await scanJobsApi.skip(jobId, resultId);
+        }
       }
       await Promise.all([onRefresh?.(), fetchAuxData(), refreshScanJob(jobId)]);
     } catch (err) {
@@ -2045,7 +2066,8 @@ export default function AssistantView({ accounts = [], categories = [], notifica
         nextItemState[`${resultId}-${itemIdx}`] = 'saved';
       });
       setScanItemState(nextItemState);
-      await scanJobsApi.skip(jobId, resultId);
+      // บันทึกรายการจริงแล้ว → mark ผลสแกนเป็น "saved" (ไม่ใช่ skip ที่ทำให้ขึ้น "ไม่บันทึก")
+      await scanJobsApi.save(jobId, resultId);
       await Promise.all([onRefresh?.(), fetchAuxData(), refreshScanJob(jobId)]);
       addMessage({
         role: 'bot',
@@ -2378,7 +2400,8 @@ export default function AssistantView({ accounts = [], categories = [], notifica
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
                       <p className="text-[10px] font-semibold text-slate-400">หมวดหมู่</p>
-                      {isEditing && isDone ? (
+                      {/* สลิป: เปลี่ยนหมวดหมู่ได้ทันทีเมื่อสแกนเสร็จ (ไม่ต้องกดแก้ไขก่อน) */}
+                      {isDone ? (
                         <div className="mt-1">
                           <ScanCatSelect
                             value={review.category_id || ''}
@@ -2393,7 +2416,8 @@ export default function AssistantView({ accounts = [], categories = [], notifica
                     </div>
                     <div className="rounded-xl bg-white border border-[#DCE8EE] px-2.5 py-2 min-w-0">
                       <p className="text-[10px] font-semibold text-slate-400">บัญชี</p>
-                      {isEditing && isDone ? (
+                      {/* สลิป: เปลี่ยนบัญชีได้ทันทีเมื่อสแกนเสร็จ (ไม่ต้องกดแก้ไขก่อน) */}
+                      {isDone ? (
                         <div className="mt-1">
                           <ScanAccSelect
                             value={review.account_id || ''}

@@ -1,18 +1,36 @@
-# ---- secrets / env ----
+# ===========================================================================
+# PaoJot — root .gitignore
+# ===========================================================================
+
+# ---- secrets / env (commit เฉพาะไฟล์ *.env.example เท่านั้น) ----
 .env
+.env.local
+.env.*.local
 *.env
 !*.env.example
 
-# ---- backend ----
+# ---- backend (Go) ----
+# backend/server = ไบนารีจาก go build, uploads/ = ไฟล์สลิป local fallback
 backend/server
 backend/uploads/
 backend/tmp/
+*.exe
+*.test
+*.out
 
-# ---- frontend ----
+# ---- frontend (React / CRA) ----
 frontend/node_modules/
 frontend/build/
 frontend/.vercel/
+frontend/coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# ---- misc ----
+# ---- editor / OS ----
+.idea/
+.vscode/
+*.swp
 .DS_Store
+Thumbs.db
 *.log

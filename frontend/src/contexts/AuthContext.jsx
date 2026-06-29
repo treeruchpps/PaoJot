@@ -1,3 +1,6 @@
+// AuthContext — จัดการสถานะล็อกอินทั้งแอป (custom JWT: access/refresh token เก็บใน localStorage)
+// ใช้ผ่าน hook useAuth() → user, isAuthenticated, login, register, logout, error ฯลฯ
+// รองรับทั้งล็อกอินด้วย email/password และรับ token จาก Google OAuth callback (ผ่าน query string)
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { auth as authApi, profile as profileApi, setTokens, clearTokens, getAccessToken } from '../services/api';
 

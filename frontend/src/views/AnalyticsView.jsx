@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2, Target, ChevronRight } from 'lucide-react';
+import { Sun, Calendar, BarChart2, TrendingUp, Wallet, AlertCircle, Sparkles, X, Maximize2, Target, ChevronRight, ChevronDown } from 'lucide-react';
 import { transactions as txApi, profile as profileApi, savingsGoals as goalsApi, budgets as budgetsApi } from '../services/api';
 import { fmt } from '../constants/data';
 import { formatDisplayDateRange } from '../utils/dateFormat';
@@ -416,6 +416,43 @@ async function fetchDashboardTransactions(params = {}) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 
+// Custom dropdown สำหรับแดชบอร์ด — chevron หมุน ^ ขึ้น/ลงตอนเปิด-ปิด (native select ทำไม่ได้)
+function DashSelect({ value, onChange, options, className = '', align = 'right' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find((o) => String(o.value) === String(value));
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className={`flex items-center justify-between gap-2 ${className}`}>
+        <span className="truncate">{selected?.label ?? value}</span>
+        <ChevronDown size={14} className="flex-shrink-0 transition-transform duration-200"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+      </button>
+      {open && (
+        <div className={`absolute z-50 mt-1 min-w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto ${align === 'right' ? 'right-0' : 'left-0'}`}>
+          {options.map((o) => (
+            <button key={o.value} type="button"
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-sm whitespace-nowrap transition-colors ${
+                String(o.value) === String(value) ? 'bg-[#EAF3F7] text-[#2C6488] font-semibold' : 'text-slate-700 hover:bg-slate-50'
+              }`}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AnalyticsView({ accounts, categories, onGoProfile, onGoAccounts, onGoBudgets, onGoGoals, isDarkMode, quickEntryRefreshKey = 0 }) {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -500,6 +537,15 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   );
   const yearIncome = yearTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const yearExpense = yearTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  // เดือน (1-12) ที่มีรายจ่ายจริงในปีที่เลือก — ใช้กรอง dropdown ให้แสดงเฉพาะเดือนที่มีรายจ่าย
+  const expenseMonths = Array.from(
+    new Set(
+      yearTx
+        .filter((t) => t.type === 'expense')
+        .map((t) => parseInt((t.transaction_date || '').slice(5, 7), 10))
+        .filter((m) => m >= 1 && m <= 12)
+    )
+  ).sort((a, b) => a - b);
   const yearSaving = yearTx.reduce((s, t) => s + savingActivityAmount(t, activeSavingAccountIds), 0);
   const yearNetCashflow = totalAssets;
   const yearMonthly = getYearCashflowTrend(yearTx, activeSavingAccountIds);
@@ -508,6 +554,13 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
   const barIncomeTotal = yearIncome;
   const barExpenseTotal = yearExpense;
   const barSavingTotal = yearSaving;
+  // ถ้าเดือนที่เลือกค้างไว้ไม่มีรายจ่าย (เช่นสลับปี) ให้รีเซ็ตกลับเป็น "ทั้งปี"
+  useEffect(() => {
+    if (donutMonth !== 0 && !expenseMonths.includes(donutMonth)) {
+      setDonutMonth(0);
+    }
+  }, [donutMonth, expenseMonths]);
+
   const donutTx = donutMonth === 0
     ? yearTx
     : yearTx.filter((t) => parseInt((t.transaction_date || '').slice(5, 7), 10) === donutMonth);
@@ -573,52 +626,72 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
       {/* ── Overview ───────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-4 items-start">
         <div className="col-span-12 rounded-2xl border border-[#DCE8EE] bg-gradient-to-br from-[#EAF3F7] to-[#d7e7ee] p-5 overflow-hidden flex flex-col gap-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold mb-2 text-[#2C6488]">ภาพรวมการเงิน</p>
-              <h2 className="text-sm text-slate-500 mb-1">กระแสเงินสุทธิรวม</h2>
-              <p className="text-4xl font-bold whitespace-nowrap" style={{ color: yearNetCashflow >= 0 ? '#15803d' : '#dc2626' }}>
-                {signedBaht(yearNetCashflow, '')}
-              </p>
-              <p className="text-xs text-slate-400 mt-2">
-                สินทรัพย์จากบัญชี ฿{fmt(totalAssets)} · {accounts.filter((a) => a.type === 'asset').length} บัญชี
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                title="เลือกปี"
-                className="h-10 rounded-xl border border-white bg-white/80 px-3 text-sm font-semibold text-[#2C6488] outline-none hover:bg-white focus:border-[#BFD8E4] cursor-pointer"
-              >
-                {availableYears.map((y) => (
-                  <option key={y} value={y}>ปี {y}</option>
-                ))}
-              </select>
+          {accounts.length === 0 ? (
+            // ผู้ใช้ใหม่ยังไม่มีบัญชี → การ์ดภาพรวมกลายเป็นโหมด "เริ่มต้นใช้งาน" (โชว์จนกว่าจะสร้างบัญชี)
+            <div className="flex flex-col items-center text-center gap-3 py-4">
+              <div className="w-14 h-14 rounded-2xl bg-white/80 flex items-center justify-center">
+                <Wallet size={28} color="#2C6488" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[#2C6488] mb-1">ภาพรวมการเงิน</p>
+                <h2 className="text-lg font-bold text-slate-700">เริ่มต้นใช้งาน</h2>
+                <p className="text-sm text-slate-500 mt-1">สร้างบัญชีแรกของคุณ เพื่อเริ่มบันทึกรายรับ-รายจ่าย</p>
+              </div>
               <button
                 type="button"
                 onClick={onGoAccounts}
-                title="ไปหน้าบัญชี"
-                className="w-10 h-10 rounded-2xl flex items-center justify-center border border-white bg-white/80 hover:bg-white hover:border-[#BFD8E4] transition-colors flex-shrink-0"
+                className="mt-1 px-5 py-2.5 rounded-xl bg-[#2C6488] hover:bg-[#25536F] text-white text-sm font-semibold shadow-sm transition-colors inline-flex items-center gap-2"
               >
-                <Wallet size={20} color="#2C6488" />
+                <Wallet size={16} />
+                สร้างบัญชี
               </button>
             </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
-              <p className="text-xs text-slate-500 sm:mb-1 truncate">รายรับ ปี {selectedYear}</p>
-              <p className="text-base sm:text-lg font-bold text-emerald-600 whitespace-nowrap flex-shrink-0">฿{fmt(yearIncome)}</p>
-            </div>
-            <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
-              <p className="text-xs text-slate-500 sm:mb-1 truncate">รายจ่าย ปี {selectedYear}</p>
-              <p className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap flex-shrink-0">฿{fmt(yearExpense)}</p>
-            </div>
-            <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
-              <p className="text-xs text-slate-500 sm:mb-1 truncate">การออม ปี {selectedYear}</p>
-              <p className="text-base sm:text-lg font-bold whitespace-nowrap flex-shrink-0" style={{ color: SAVING_COLOR }}>฿{fmt(yearSaving)}</p>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold mb-2 text-[#2C6488]">ภาพรวมการเงิน</p>
+                  <h2 className="text-sm text-slate-500 mb-1">กระแสเงินสุทธิรวม</h2>
+                  <p className="text-4xl font-bold whitespace-nowrap" style={{ color: yearNetCashflow >= 0 ? '#15803d' : '#dc2626' }}>
+                    {signedBaht(yearNetCashflow, '')}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    สินทรัพย์จากบัญชี ฿{fmt(totalAssets)} · {accounts.filter((a) => a.type === 'asset').length} บัญชี
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <DashSelect
+                    value={selectedYear}
+                    onChange={(v) => setSelectedYear(Number(v))}
+                    options={availableYears.map((y) => ({ value: y, label: `ปี ${y}` }))}
+                    className="h-10 rounded-xl border border-white bg-white/80 px-3 text-sm font-semibold text-[#2C6488] hover:bg-white cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={onGoAccounts}
+                    title="ไปหน้าบัญชี"
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center border border-white bg-white/80 hover:bg-white hover:border-[#BFD8E4] transition-colors flex-shrink-0"
+                  >
+                    <Wallet size={20} color="#2C6488" />
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
+                  <p className="text-xs text-slate-500 sm:mb-1 truncate">รายรับ ปี {selectedYear}</p>
+                  <p className="text-base sm:text-lg font-bold text-emerald-600 whitespace-nowrap flex-shrink-0">฿{fmt(yearIncome)}</p>
+                </div>
+                <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
+                  <p className="text-xs text-slate-500 sm:mb-1 truncate">รายจ่าย ปี {selectedYear}</p>
+                  <p className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap flex-shrink-0">฿{fmt(yearExpense)}</p>
+                </div>
+                <div className="rounded-xl p-3 sm:p-4 border border-white bg-white/75 flex items-center justify-between gap-2 sm:block">
+                  <p className="text-xs text-slate-500 sm:mb-1 truncate">การออม ปี {selectedYear}</p>
+                  <p className="text-base sm:text-lg font-bold whitespace-nowrap flex-shrink-0" style={{ color: SAVING_COLOR }}>฿{fmt(yearSaving)}</p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
       </div>
@@ -853,16 +926,16 @@ export default function AnalyticsView({ accounts, categories, onGoProfile, onGoA
                     {' · '}฿{fmt(donutExpense)}
                   </p>
                 </div>
-                <select
+                {/* แสดงเฉพาะเดือนที่มีรายจ่ายจริงในปีที่เลือก + "ทั้งปี" เสมอ */}
+                <DashSelect
                   value={donutMonth}
-                  onChange={(e) => setDonutMonth(Number(e.target.value))}
-                  className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-[#2C6488] focus:ring-2 focus:ring-[#EAF3F7]"
-                >
-                  <option value={0}>ทั้งปี</option>
-                  {MONTH_LABELS.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
-                  ))}
-                </select>
+                  onChange={(v) => setDonutMonth(Number(v))}
+                  options={[
+                    { value: 0, label: 'ทั้งปี' },
+                    ...expenseMonths.map((m) => ({ value: m, label: MONTH_LABELS[m - 1] })),
+                  ]}
+                  className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:border-[#2C6488] cursor-pointer"
+                />
               </div>
               {donutData.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>

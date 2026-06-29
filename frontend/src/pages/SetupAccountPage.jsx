@@ -11,7 +11,7 @@ export default function SetupAccountPage({ onComplete }) {
         <img
           src="/images/Logo_PaoJot.png"
           alt="PaoJot"
-          className="w-20 h-20 rounded-3xl object-cover mx-auto mb-6 shadow-xl"
+          className="w-20 h-20 object-contain mx-auto mb-6"
         />
 
         {/* Welcome text */}

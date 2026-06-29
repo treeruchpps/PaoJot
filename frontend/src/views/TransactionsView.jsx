@@ -157,7 +157,8 @@ function AccSelect({ value, onChange, accounts }) {
 
 
 // ─── Custom Select: Filter (generic) ─────────────────────────────────────────
-function FilterSelect({ value, onChange, options }) {
+// widthClass = ความกว้างคงที่บน desktop (กันปุ่มขยับตอนเปลี่ยนตัวเลือก); มือถือใช้ w-full ตาม grid
+function FilterSelect({ value, onChange, options, widthClass = 'sm:w-auto' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const selected = options.find((o) => o.value === value);
@@ -169,10 +170,10 @@ function FilterSelect({ value, onChange, options }) {
   }, []);
 
   return (
-    <div className="relative w-full sm:w-auto" ref={ref}>
+    <div className={`relative w-full ${widthClass}`} ref={ref}>
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className="flex items-center justify-between gap-2 w-full sm:w-auto px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors whitespace-nowrap">
-        <span>{selected?.label ?? value}</span>
+        className={`flex items-center justify-between gap-2 w-full ${widthClass} px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 hover:border-[#BFD8E4] transition-colors`}>
+        <span className="flex-1 text-left truncate">{selected?.label ?? value}</span>
         <ChevronDown size={13} color="#94a3b8"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
       </button>
@@ -909,6 +910,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         <FilterSelect
           value={filterMonth}
           onChange={setFilterMonth}
+          widthClass="sm:w-40"
           options={[
             { value: 'today', label: 'วันนี้' },
             { value: 'week',  label: 'สัปดาห์นี้' },
@@ -925,6 +927,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         <FilterSelect
           value={filterType}
           onChange={setFilterType}
+          widthClass="sm:w-32"
           options={[
             { value: 'all',        label: 'ทุกประเภท' },
             { value: 'income',     label: 'รายรับ' },
@@ -936,6 +939,7 @@ export default function TransactionsView({ accounts, categories, onRefreshAccoun
         <FilterSelect
           value={filterAcc}
           onChange={setFilterAcc}
+          widthClass="sm:w-44"
           options={[
             { value: 'all', label: 'ทุกบัญชี' },
             ...accounts.map((a) => ({ value: a.id, label: a.name })),

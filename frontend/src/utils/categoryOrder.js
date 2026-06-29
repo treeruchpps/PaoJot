@@ -1,3 +1,9 @@
+// จัดลำดับการแสดง "หมวดหมู่" ให้เหมือนหน้า Categories ทุกที่ในแอป
+// - หมวดเริ่มต้น (ไม่มี user_id) เรียงตามลำดับที่กำหนดไว้ด้านล่าง
+// - หมวดที่ผู้ใช้สร้างเองต่อท้าย, หมวด "อื่นๆ" อยู่ท้ายสุดเสมอ
+// - ถ้าผู้ใช้เคยลากจัดลำดับเอง (เก็บใน localStorage) จะเคารพลำดับนั้นก่อน
+
+// key ใน localStorage ที่เก็บลำดับหมวดที่ผู้ใช้ลากจัดเอง
 export const CATEGORY_ORDER_KEY = 'pm_cat_order';
 
 export const EXPENSE_CATEGORY_ORDER = [
@@ -41,8 +47,10 @@ const expenseOrderMap = Object.fromEntries(EXPENSE_CATEGORY_ORDER.map((name, ind
 const incomeOrderMap = Object.fromEntries(INCOME_CATEGORY_ORDER.map((name, index) => [name, index]));
 const transferOrderMap = Object.fromEntries(TRANSFER_CATEGORY_ORDER.map((name, index) => [name, index]));
 
+// หมวด "อื่นๆ" เริ่มต้นของระบบ (ไม่มี user_id) — ใช้ดันไปท้ายสุดเสมอ
 export const isDefaultOtherCategory = (cat) => !cat?.user_id && cat?.name === 'อื่นๆ';
 
+// เรียงหมวดตามลำดับมาตรฐานของแต่ละประเภท (expense/income/transfer)
 export function sortCategoriesLikeCategoryPage(list = [], type = '') {
   const items = [...list];
   const orderMap = type === 'expense'
@@ -64,6 +72,7 @@ export function sortCategoriesLikeCategoryPage(list = [], type = '') {
   });
 }
 
+// คืนรายการหมวดตามลำดับที่ผู้ใช้บันทึกไว้ (ถ้ามี) ไม่งั้น fallback เป็นลำดับมาตรฐาน
 export function applySavedCategoryOrder(type, cats = []) {
   try {
     const orderMap = JSON.parse(localStorage.getItem(CATEGORY_ORDER_KEY) || '{}');

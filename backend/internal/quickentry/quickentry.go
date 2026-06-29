@@ -227,7 +227,9 @@ func validateQuickEntryInput(mode, text string) string {
 			titleText = strings.TrimSpace(strings.TrimPrefix(titleText, word))
 		}
 	}
-	if mode == "transfer" && strings.TrimSpace(titleText) == "" {
+	// อนุญาตให้พิมพ์แค่ "คำสั่ง + จำนวนเงิน" เช่น "รายรับ 2000" / "รายจ่าย 20"
+	// โดยไม่ต้องมีชื่อรายการ — handler จะตั้งชื่อ default ให้เอง (เช่น "รายรับ"/"รายจ่าย")
+	if strings.TrimSpace(titleText) == "" {
 		return ""
 	}
 	if !quickEntryMeaningfulText.MatchString(titleText) {

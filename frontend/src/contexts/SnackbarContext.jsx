@@ -1,3 +1,6 @@
+// SnackbarContext — ระบบแจ้งเตือนแบบ toast กลางจอล่าง ใช้ร่วมกันทั้งแอป
+// ใช้ผ่าน hook useSnackbar() → showError / showSuccess / showInfo
+// มีกันข้อความซ้ำในเวลาใกล้กัน (เช่น StrictMode รัน effect 2 รอบ) และแสดงพร้อมกันได้สูงสุด 5 อัน
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { X, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 
@@ -6,11 +9,20 @@ const SnackbarContext = createContext(null);
 export function SnackbarProvider({ children }) {
   const [snacks, setSnacks] = useState([]);
   const idRef = useRef(0);
+  const lastRef = useRef({ key: '', at: 0 });
 
   const show = useCallback((message, type = 'error', duration = 3500) => {
-    if (message == null || !String(message).trim()) return;
+    const msg = message == null ? '' : String(message).trim();
+    if (!msg) return;
+
+    // กัน snackbar ข้อความเดิมซ้ำในเวลาใกล้กัน (เช่น StrictMode รัน effect 2 รอบ / double-render)
+    const key = `${type}:${msg}`;
+    const now = Date.now();
+    if (lastRef.current.key === key && now - lastRef.current.at < 800) return;
+    lastRef.current = { key, at: now };
+
     const id = ++idRef.current;
-    setSnacks((prev) => [...prev.slice(-4), { id, message, type }]);
+    setSnacks((prev) => [...prev.slice(-4), { id, message: msg, type }]);
     setTimeout(() => {
       setSnacks((prev) => prev.filter((s) => s.id !== id));
     }, duration);

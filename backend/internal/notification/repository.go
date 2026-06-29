@@ -229,22 +229,20 @@ func (r *Repository) GenerateAISummary(ctx context.Context, userID string) {
 	currMonthStart := monthStart
 	currMonthEnd := monthStart.AddDate(0, 1, -1)
 
+	// เกณฑ์เดียวกันทั้งรายสัปดาห์/รายเดือน: ต้องมีรายการ income+expense อย่างน้อย 10 รายการ
 	// รอบที่จบแล้ว (เดิม)
-	r.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", prevWeekStart, prevWeekEnd, 11)
-	r.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", prevMonthStart, prevMonthEnd, 31)
+	r.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", prevWeekStart, prevWeekEnd, 10)
+	r.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", prevMonthStart, prevMonthEnd, 10)
 	// รอบปัจจุบัน — ยิง noti ทันทีที่ข้อมูลครบเกณฑ์ ให้ตรงกับปุ่มสร้างสรุปที่สว่างขึ้น
 	// reference_key อิงช่วงวันที่ จึงไม่ชนกับรอบที่จบแล้ว และไม่สร้างซ้ำเมื่อรอบนี้กลายเป็นรอบก่อนหน้า
-	r.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", currWeekStart, currWeekEnd, 11)
-	r.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", currMonthStart, currMonthEnd, 31)
+	r.insertAISummaryIfEligible(ctx, userID, "ai_weekly", "สรุปการเงินรายสัปดาห์พร้อมแล้ว", currWeekStart, currWeekEnd, 10)
+	r.insertAISummaryIfEligible(ctx, userID, "ai_monthly", "สรุปการเงินรายเดือนพร้อมแล้ว", currMonthStart, currMonthEnd, 10)
 }
 
 func (r *Repository) insertAISummaryIfEligible(ctx context.Context, userID, notiType, title string, start, end time.Time, minCount int) {
 	// ไม่บังคับว่าต้องเป็นวันแรกของสัปดาห์/เดือนพอดี — start/end ถูกคำนวณเป็นรอบ
 	// สัปดาห์/เดือน "ก่อนหน้า" ที่จบไปแล้วอยู่แล้ว และมี reference_key กันสร้างซ้ำ
 	// ดังนั้นเปิดแอปวันไหนของรอบปัจจุบันก็จะได้สรุปของรอบที่เพิ่งจบ (สร้างครั้งเดียว)
-	if notiType == "ai_monthly" && minCount > 11 {
-		minCount = 11
-	}
 
 	var count, expenseCount int
 	if err := r.db.QueryRow(ctx, `
