@@ -16,8 +16,6 @@ const WEEK_START_OPTS = [
   { value: 6, label: 'วันเสาร์' },
 ];
 
-const accent = '#2C6488';
-
 export default function ProfileView() {
   const { showError, showSuccess } = useSnackbar();
   const { user, logout } = useAuth();
