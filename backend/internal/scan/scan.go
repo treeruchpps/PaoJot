@@ -644,14 +644,14 @@ func hasStrongSlipEvidence(text string) bool {
 		strings.Contains(t, "ทำรายการสำเร็จ") ||
 		strings.Contains(t, "สแกนตรวจสอบสลิป")
 
-	// คอมโบ PromptPay + ปลายทาง (ต้องเจอคู่กัน)
+	// PromptPay + ปลายทาง (ต้องเจอคู่กัน)
 	promptPayCombo := (strings.Contains(t, "promptpay") || strings.Contains(t, "พร้อมเพย์")) &&
 		(strings.Contains(t, "ผู้รับ") ||
 			strings.Contains(t, "ผู้รับเงิน") ||
 			strings.Contains(t, "ไปยังบัญชี") ||
 			strings.Contains(t, "เลขที่รายการ"))
 
-	// คอมโบ G-Wallet/ถุงเงิน + รหัสอ้างอิง
+	// G-Wallet/ถุงเงิน + รหัสอ้างอิง
 	gWalletCombo := (strings.Contains(t, "ทำรายการสำเร็จ") || strings.Contains(t, "g-wallet") || strings.Contains(t, "ถุงเงิน")) &&
 		(strings.Contains(t, "รหัสอ้างอิง") || strings.Contains(t, "จำนวนเงินที่ชำระ"))
 
